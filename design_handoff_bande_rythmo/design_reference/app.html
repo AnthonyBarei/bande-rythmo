@@ -1,0 +1,974 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<title>Bande Rythmo — état actuel de l'app</title>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0c0c0c;
+    --surface: #111111;
+    --surface2: #161616;
+    --surface3: #1e1e1e;
+    --border: #242424;
+    --border2: #2e2e2e;
+    --text: #e0e0e0;
+    --text2: #808080;
+    --text3: #484848;
+    --accent: #ff9900;
+    --accent-dim: rgba(255, 153, 0, 0.12);
+    --danger: #e54545;
+    --success: #44bb55;
+    --radius: 4px;
+    --font-ui: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-mono: 'Courier New', Courier, monospace;
+  }
+  html, body, #root { height: 100%; background: var(--bg); color: var(--text); font-family: var(--font-ui); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: var(--surface); }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #444; }
+  input, textarea { font-family: var(--font-ui); font-size: 13px; background: var(--surface3); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); outline: none; padding: 6px 10px; transition: border-color .15s; }
+  input:focus, textarea:focus { border-color: var(--accent); }
+  button { font-family: var(--font-ui); font-size: 13px; cursor: pointer; border: none; border-radius: var(--radius); transition: opacity .15s, background .15s; outline: none; }
+  button:disabled { opacity: .35; cursor: not-allowed; }
+  button:not(:disabled):hover { opacity: .88; }
+  video { display: block; }
+  .mono { font-family: var(--font-mono); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef, useMemo, useCallback } = React;
+
+/* ============ Demo data — mirrors the live API shape ============ */
+const DEMO_CLIPS = [
+  {
+    clip_id: 'c1', name: 'Scène pluie — toit',
+    start: 12.3, end: 27.8, segment_path: 'segments/c1.mp4',
+    thumbnail_path: null,
+    subtitles: [
+      { start: 0.4, end: 2.1, character: 'Anna', text: "Tu m'entends ?" },
+      { start: 2.4, end: 4.6, character: 'Marc', text: "À peine. Reste où tu es." },
+      { start: 4.9, end: 7.2, character: 'Anna', text: "Je ne peux pas, ça lâche." },
+      { start: 7.5, end: 10.0, character: 'Marc', text: "Donne-moi ta main." },
+      { start: 10.4, end: 13.1, character: 'Anna', text: "Tiens bon, j'arrive." },
+      { start: 13.4, end: 15.5, character: 'Marc', text: "Doucement..." },
+    ],
+  },
+  {
+    clip_id: 'c2', name: 'Dialogue cuisine',
+    start: 45.0, end: 58.2, segment_path: 'segments/c2.mp4',
+    thumbnail_path: null,
+    subtitles: [
+      { start: 0.2, end: 2.5, character: 'Léa', text: "Tu as goûté ?" },
+      { start: 2.8, end: 5.0, character: 'Tom', text: "Pas encore, ça sent bon." },
+    ],
+  },
+  { clip_id: 'c3', name: 'Plan large — gare', start: 0, end: 8.4, segment_path: 'segments/c3.mp4', thumbnail_path: null, subtitles: [] },
+  { clip_id: 'c4', name: 'Voix off intro', start: 0, end: 12.0, segment_path: 'segments/c4.mp4', thumbnail_path: null, subtitles: [] },
+  { clip_id: 'c5', name: 'Réveil chambre', start: 2.0, end: 9.5, segment_path: 'segments/c5.mp4', thumbnail_path: null, subtitles: [] },
+];
+
+const CURSOR_X_RATIO = 0.30;
+const H_TRACK = 64;
+const BR_CONTROLS_H = 32;
+const FONT_BR = 'bold 28px "Courier New", monospace';
+const FONT_LABEL = 'bold 9px sans-serif';
+const TRACK_COLORS = [
+  { bg: 'rgba(255,153,0,0.10)',  text: '#f90',  label: '#f90' },
+  { bg: 'rgba(80,180,255,0.10)', text: '#5bf',  label: '#5bf' },
+  { bg: 'rgba(255,100,160,0.10)',text: '#f6a',  label: '#f6a' },
+  { bg: 'rgba(100,230,160,0.10)',text: '#6eb',  label: '#6eb' },
+];
+
+const fmt = t => { if (t === null || t === undefined) return '--:--.--'; const m = Math.floor(t / 60); const s = (t % 60).toFixed(2).padStart(5, '0'); return `${String(m).padStart(2,'0')}:${s}`; };
+const fmtShort = t => { const m = Math.floor(t / 60); const s = (t % 60).toFixed(0).padStart(2,'0'); return `${m}:${s}`; };
+
+/* ============ Sidebar ============ */
+const NAV = [
+  { id: 'import', icon: '⬆', label: 'Importer' },
+  { id: 'clips',  icon: '▤',  label: 'Mes Clips' },
+];
+function Sidebar({ section, onNavigate, clipCount }) {
+  return (
+    <aside style={{ width:200, minWidth:200, background:'#0e0e0e', borderRight:'1px solid #1e1e1e', display:'flex', flexDirection:'column' }}>
+      <div style={{ padding:'20px 20px 16px', borderBottom:'1px solid #1e1e1e' }}>
+        <div style={{ fontFamily:'var(--font-mono)', fontSize:13, letterSpacing:3, color:'#ff9900', fontWeight:'bold' }}>BANDE RYTHMO</div>
+        <div style={{ fontSize:10, color:'var(--text3)', marginTop:2, letterSpacing:1 }}>POST-PRODUCTION</div>
+      </div>
+      <nav style={{ flex:1, padding:'12px 0' }}>
+        {NAV.map(({ id, icon, label }) => {
+          const active = section === id;
+          const showBadge = id === 'clips' && clipCount > 0;
+          return (
+            <button key={id} onClick={() => onNavigate(id)} style={{
+              display:'flex', alignItems:'center', gap:10, width:'100%', padding:'10px 20px',
+              background: active ? 'var(--accent-dim)' : 'transparent',
+              color: active ? '#ff9900' : 'var(--text2)',
+              borderLeft:`2px solid ${active ? '#ff9900' : 'transparent'}`,
+              borderRadius:0, textAlign:'left', fontSize:13, fontWeight: active?600:400,
+            }}>
+              <span style={{ fontSize:15, width:18, textAlign:'center' }}>{icon}</span>
+              <span style={{ flex:1 }}>{label}</span>
+              {showBadge && <span style={{ background:'#ff9900', color:'#000', fontSize:10, fontWeight:700, borderRadius:10, padding:'1px 6px', minWidth:18, textAlign:'center' }}>{clipCount}</span>}
+            </button>
+          );
+        })}
+      </nav>
+      <div style={{ padding:'12px 20px', borderTop:'1px solid #1e1e1e', fontSize:11, color:'var(--text3)' }}>whisper · ffmpeg · local</div>
+    </aside>
+  );
+}
+
+/* ============ Placeholder for video — animated striped block ============ */
+function VideoPlaceholder({ label='vidéo source', tall=false }) {
+  return (
+    <div style={{
+      width:'100%', height: tall ? 380 : 220, background:
+        'repeating-linear-gradient(45deg, #111 0 14px, #161616 14px 28px)',
+      borderBottom:'1px solid #1a1a1a',
+      display:'flex', alignItems:'center', justifyContent:'center',
+      position:'relative', color:'#3a3a3a', fontFamily:'var(--font-mono)', fontSize:12, letterSpacing:2,
+    }}>
+      <span>{label.toUpperCase()}</span>
+    </div>
+  );
+}
+
+/* ============ Drag-to-create Clip Timeline ============ */
+function ClipTimeline({ duration, currentTime, savedSegments, pendingSegments, draftRange, onSeek, onChangePending, onSetDraft, onCommitDraft }) {
+  const ref = useRef(null);
+  const dragRef = useRef(null);
+  const [hoverT, setHoverT] = useState(null);
+  const PAD = 8;
+
+  const timeAt = (clientX) => {
+    const rect = ref.current.getBoundingClientRect();
+    const x = Math.max(0, Math.min(rect.width - PAD*2, clientX - rect.left - PAD));
+    return (x / (rect.width - PAD*2)) * duration;
+  };
+
+  function onMouseDown(e) {
+    if (e.button !== 0) return;
+    const t = timeAt(e.clientX);
+    const tgt = e.target.getAttribute('data-handle');
+    const segId = e.target.getAttribute('data-seg');
+    if (tgt && segId) {
+      const idx = pendingSegments.findIndex(s => `p${s._id}` === segId);
+      if (idx >= 0) {
+        dragRef.current = { mode: tgt, idx, orig: pendingSegments[idx], startT: t };
+        return;
+      }
+    }
+    dragRef.current = { mode: 'create', startT: t };
+    onSetDraft({ start: t, end: t });
+  }
+  function onMouseMove(e) {
+    const t = timeAt(e.clientX);
+    setHoverT(t);
+    const d = dragRef.current; if (!d) return;
+    if (d.mode === 'create') {
+      const a = Math.min(d.startT, t), b = Math.max(d.startT, t);
+      onSetDraft({ start: a, end: b });
+    } else if (d.mode === 'shift') {
+      const dt = t - d.startT;
+      const dur = d.orig.end - d.orig.start;
+      const start = Math.max(0, Math.min(duration - dur, d.orig.start + dt));
+      onChangePending(pendingSegments.map((s,i) => i===d.idx ? { ...s, start, end: start + dur } : s));
+    } else if (d.mode === 'left') {
+      const start = Math.max(0, Math.min(d.orig.end - 0.2, t));
+      onChangePending(pendingSegments.map((s,i) => i===d.idx ? { ...s, start } : s));
+    } else if (d.mode === 'right') {
+      const end = Math.min(duration, Math.max(d.orig.start + 0.2, t));
+      onChangePending(pendingSegments.map((s,i) => i===d.idx ? { ...s, end } : s));
+    }
+  }
+  function onMouseUp(e) {
+    const d = dragRef.current; dragRef.current = null;
+    if (!d) return;
+    if (d.mode === 'create') {
+      const t = timeAt(e.clientX);
+      const a = Math.min(d.startT, t), b = Math.max(d.startT, t);
+      if (b - a < 0.2) { onSetDraft(null); onSeek(a); }
+      else { onCommitDraft({ start: a, end: b }); }
+    }
+  }
+  useEffect(() => {
+    const up = (e) => onMouseUp(e);
+    const mv = (e) => { if (dragRef.current) onMouseMove(e); };
+    window.addEventListener('mouseup', up);
+    window.addEventListener('mousemove', mv);
+    return () => { window.removeEventListener('mouseup', up); window.removeEventListener('mousemove', mv); };
+  });
+
+  const ticks = [];
+  for (let i = 0; i <= Math.floor(duration); i += 5) ticks.push(i);
+  const xPct = (t) => `calc(${PAD}px + ${(t/duration)*100}% - ${(t/duration)*PAD*2}px)`;
+  const wPct = (a,b) => `calc(${((b-a)/duration)*100}% - ${((b-a)/duration)*PAD*2}px)`;
+
+  return (
+    <div ref={ref} onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseLeave={() => setHoverT(null)}
+      style={{ position:'relative', height:80, background:'#0a0a0a', borderTop:'1px solid var(--border)', borderBottom:'1px solid var(--border)', cursor:'crosshair', userSelect:'none' }}>
+      <div style={{ position:'absolute', top:0, left:0, right:0, height:16, borderBottom:'1px solid #161616', pointerEvents:'none' }}>
+        {ticks.map(t => (
+          <div key={t} style={{ position:'absolute', left:xPct(t), top:0, color:'#3a3a3a', fontSize:9, fontFamily:'var(--font-mono)' }}>
+            <div style={{ position:'absolute', left:0, top:0, width:1, height:5, background:'#222' }} />
+            <span style={{ position:'absolute', left:3, top:2 }}>{fmt(t)}</span>
+          </div>
+        ))}
+      </div>
+      <div style={{ position:'absolute', left:PAD, right:PAD, top:20, height:42, background:'repeating-linear-gradient(to right, transparent 0 1px, #1a1a1a 1px 2px, transparent 2px 4px)', borderRadius:2, pointerEvents:'none' }} />
+      {savedSegments.map((seg) => (
+        <div key={seg.id} title={seg.name} style={{ position:'absolute', top:20, height:42, left:xPct(seg.start), width:wPct(seg.start, seg.end), background:'rgba(68,187,85,0.10)', border:'1px solid rgba(68,187,85,0.4)', borderRadius:2, pointerEvents:'none', display:'flex', alignItems:'center', paddingLeft:5 }}>
+          <span style={{ fontSize:9, color:'#44bb55', fontFamily:'var(--font-mono)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>✓ {seg.name}</span>
+        </div>
+      ))}
+      {pendingSegments.map((seg) => (
+        <div key={seg._id} data-seg={`p${seg._id}`} data-handle="shift"
+          style={{ position:'absolute', top:20, height:42, left:xPct(seg.start), width:wPct(seg.start, seg.end), background:'rgba(255,153,0,0.18)', border:'1px solid rgba(255,153,0,0.7)', borderRadius:2, cursor:'grab', display:'flex', alignItems:'center', paddingLeft:7 }}>
+          <span data-seg={`p${seg._id}`} data-handle="shift" style={{ fontSize:10, color:'#f90', fontFamily:'var(--font-mono)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', pointerEvents:'none' }}>◎ {seg.name} · {(seg.end-seg.start).toFixed(1)}s</span>
+          <div data-seg={`p${seg._id}`} data-handle="left" style={{ position:'absolute', left:-3, top:0, bottom:0, width:8, cursor:'ew-resize', background:'linear-gradient(to right, #f90, transparent)' }} />
+          <div data-seg={`p${seg._id}`} data-handle="right" style={{ position:'absolute', right:-3, top:0, bottom:0, width:8, cursor:'ew-resize', background:'linear-gradient(to left, #f90, transparent)' }} />
+        </div>
+      ))}
+      {draftRange && draftRange.end > draftRange.start && (
+        <div style={{ position:'absolute', top:20, height:42, left:xPct(draftRange.start), width:wPct(draftRange.start, draftRange.end), background:'rgba(255,153,0,0.32)', border:'2px dashed #f90', borderRadius:2, pointerEvents:'none', display:'flex', alignItems:'center', justifyContent:'center', color:'#fff', fontSize:10, fontFamily:'var(--font-mono)' }}>{(draftRange.end-draftRange.start).toFixed(1)}s</div>
+      )}
+      {hoverT !== null && !dragRef.current && (
+        <div style={{ position:'absolute', top:16, bottom:0, left:xPct(hoverT), width:1, background:'rgba(255,255,255,0.15)', pointerEvents:'none' }} />
+      )}
+      <div style={{ position:'absolute', top:0, bottom:0, left:xPct(currentTime), width:1, background:'#fff', pointerEvents:'none' }}>
+        <div style={{ position:'absolute', top:0, left:'50%', transform:'translateX(-50%)', width:0, height:0, borderLeft:'5px solid transparent', borderRight:'5px solid transparent', borderTop:'7px solid #fff' }} />
+      </div>
+      <div style={{ position:'absolute', bottom:3, right:8, fontSize:9, color:'#333', fontFamily:'var(--font-mono)', pointerEvents:'none' }}>glisser pour créer · poignées pour redimensionner · clic court = seek</div>
+    </div>
+  );
+}
+
+const Kbd = ({ children }) => (
+  <span style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', padding:'1px 5px', background:'#1a1a1a', border:'1px solid #333', borderBottom:'2px solid #333', borderRadius:3, fontFamily:'var(--font-mono)', fontSize:10, color:'var(--text3)', lineHeight:'16px' }}>{children}</span>
+);
+const ShortcutHint = ({ keys, label }) => (
+  <span style={{ display:'flex', alignItems:'center', gap:4, fontSize:11, color:'var(--text3)' }}>
+    {keys.map(k => <Kbd key={k}>{k}</Kbd>)}<span>{label}</span>
+  </span>
+);
+
+/* ============ Import section ============ */
+function ImportSection({ hasVideo, onImport, clips }) {
+  const [currentTime, setCurrentTime] = useState(8.2);
+  const duration = 42.5;
+  const [draft, setDraft] = useState(null);
+  const [clipNameDraft, setClipNameDraft] = useState('');
+  const [pending, setPending] = useState([
+    { _id:1, name:'Réplique studio A', start:5.2, end:9.8 },
+    { _id:2, name:'Plan dialogue', start:18.4, end:24.1 },
+  ]);
+  const _idRef = useRef(2);
+  const saved = [{ id:'cN', name:'Plan ouverture', start:1.0, end:4.5 }];
+  function commitDraft(range) {
+    _idRef.current += 1;
+    const _id = _idRef.current;
+    const name = clipNameDraft.trim() || `Clip ${saved.length + pending.length + 2}`;
+    setPending(p => [...p, { _id, name, start: range.start, end: range.end }]);
+    setClipNameDraft('');
+    setDraft(null);
+  }
+
+  if (!hasVideo) {
+    return (
+      <div style={{ height:'100%', display:'flex', flexDirection:'column' }}>
+        <div style={{ padding:'20px 24px', borderBottom:'1px solid var(--border)', background:'var(--surface)', display:'flex', alignItems:'center', gap:16 }}>
+          <div>
+            <h1 style={{ fontSize:16, fontWeight:600 }}>Importer une vidéo</h1>
+            <p style={{ fontSize:12, color:'var(--text2)', marginTop:2 }}>Chargez votre source, marquez des segments IN/OUT, découpez en clips</p>
+          </div>
+          <div style={{ marginLeft:'auto' }}>
+            <button onClick={onImport} style={{ padding:'8px 20px', background:'#ff9900', color:'#000', fontWeight:600, fontSize:13, borderRadius:4 }}>⬆ Importer vidéo</button>
+          </div>
+        </div>
+        <div onClick={onImport} style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:16, color:'var(--text3)', cursor:'pointer' }}>
+          <div style={{ fontSize:48, opacity:.3 }}>▤</div>
+          <div style={{ fontSize:14, color:'var(--text2)' }}>Cliquez pour importer une vidéo</div>
+          <div style={{ fontSize:12 }}>MP4, MOV, MKV, AVI — lecture locale, aucun upload cloud</div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ height:'100%', display:'flex', flexDirection:'column' }}>
+      <div style={{ padding:'20px 24px', borderBottom:'1px solid var(--border)', background:'var(--surface)', display:'flex', alignItems:'center', gap:16 }}>
+        <div>
+          <h1 style={{ fontSize:16, fontWeight:600 }}>Importer une vidéo</h1>
+          <p style={{ fontSize:12, color:'var(--text2)', marginTop:2 }}>Chargez votre source, marquez des segments IN/OUT, découpez en clips</p>
+        </div>
+        <div style={{ marginLeft:'auto' }}>
+          <button style={{ padding:'8px 20px', background:'var(--surface3)', color:'var(--text)', border:'1px solid var(--border2)', fontSize:13, borderRadius:4 }}>↺ Changer vidéo</button>
+        </div>
+      </div>
+      <div style={{ flex:1, overflow:'auto' }}>
+        <div style={{ padding:'8px 16px', background:'var(--surface2)', borderBottom:'1px solid var(--border)', fontSize:12, color:'var(--text2)' }}>📄 episode_03_brut.mkv</div>
+
+        <VideoPlaceholder label="aperçu source — lecture / pause" />
+
+        <ClipTimeline duration={duration} currentTime={currentTime} savedSegments={saved} pendingSegments={pending} draftRange={draft} onSeek={setCurrentTime} onChangePending={setPending} onSetDraft={setDraft} onCommitDraft={commitDraft} />
+
+        <div style={{ padding:'10px 16px', background:'var(--surface)', borderBottom:'1px solid var(--border)', display:'flex', gap:10, flexWrap:'wrap', alignItems:'center', fontSize:12, color:'var(--text2)' }}>
+          <span style={{ color:'#f90' }}>◎</span>
+          <span><strong style={{ color:'var(--text)' }}>Glissez sur la timeline</strong> pour délimiter un clip — déplacez ou redimensionnez les blocs orange ensuite.</span>
+          <div style={{ flex:1 }} />
+          <span style={{ fontFamily:'var(--font-mono)', fontSize:12, color:'var(--text3)' }}>{fmt(currentTime)} / {fmt(duration)}</span>
+        </div>
+
+        <div style={{ padding:'5px 16px', background:'#0e0e0e', borderBottom:'1px solid var(--border)', display:'flex', gap:14, flexWrap:'wrap', alignItems:'center' }}>
+          <ShortcutHint keys={['Espace']} label="Lecture/Pause" />
+          <ShortcutHint keys={['←','→']} label="±5s" />
+          <ShortcutHint keys={['⇧←','⇧→']} label="±1s" />
+          <ShortcutHint keys={['M']} label="Mute" />
+          <ShortcutHint keys={['Suppr']} label="Supprimer bloc" />
+        </div>
+
+        <div style={{ padding:'12px 16px', background:'var(--surface2)', borderBottom:'1px solid var(--border)', display:'flex', gap:8, alignItems:'center' }}>
+          <input value={clipNameDraft} onChange={e=>setClipNameDraft(e.target.value)} placeholder={`Nom du prochain clip (défaut : Clip ${saved.length+pending.length+1})`} style={{ flex:1, maxWidth:300 }} />
+          <span style={{ fontSize:11, color:'var(--text3)' }}>appliqué au prochain bloc créé</span>
+        </div>
+
+        <div style={{ padding:'0 16px 8px' }}>
+          <div style={{ fontSize:11, color:'var(--text3)', textTransform:'uppercase', letterSpacing:1, padding:'10px 0 6px' }}>À créer ({pending.length})</div>
+          <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
+            {pending.map(c => (
+              <div key={c._id} style={{ display:'flex', alignItems:'center', gap:10, padding:'7px 10px', background:'var(--surface)', border:'1px solid #f903', borderRadius:4 }}>
+                <span style={{ color:'#f90', fontSize:11 }}>◎</span>
+                <span style={{ flex:1, fontSize:13 }}>{c.name}</span>
+                <span style={{ fontFamily:'var(--font-mono)', fontSize:11, color:'var(--text2)' }}>{fmt(c.start)} → {fmt(c.end)}</span>
+                <span style={{ fontSize:11, color:'var(--text3)' }}>{(c.end-c.start).toFixed(1)}s</span>
+                <button onClick={()=>setPending(p=>p.filter(x=>x._id!==c._id))} style={{ color:'#f554', background:'none', fontSize:12, padding:'2px 5px' }}>✕</button>
+              </div>
+            ))}
+          </div>
+          <div style={{ marginTop:10, display:'flex', alignItems:'center', gap:10 }}>
+            <button style={{ padding:'8px 16px', background:'#f90', color:'#000', fontWeight:600, fontSize:13, borderRadius:4 }}>✂ Créer {pending.length} clip{pending.length>1?'s':''}</button>
+            <Kbd>Ctrl</Kbd><span style={{ fontSize:11, color:'var(--text3)' }}>+</span><Kbd>S</Kbd>
+          </div>
+        </div>
+
+        <div style={{ padding:'0 16px 16px' }}>
+          <div style={{ fontSize:11, color:'var(--text3)', textTransform:'uppercase', letterSpacing:1, padding:'12px 0 8px' }}>Clips créés ({saved.length})</div>
+          {saved.map(c => (
+            <div key={c.clip_id} style={{ display:'flex', alignItems:'center', gap:10, padding:'7px 10px', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:4 }}>
+              <span style={{ color:'var(--success)', fontSize:12 }}>✓</span>
+              <span style={{ flex:1, fontSize:13 }}>{c.name}</span>
+              <span style={{ fontFamily:'var(--font-mono)', fontSize:11, color:'var(--text2)' }}>{fmt(c.start)} → {fmt(c.end)}</span>
+              <span style={{ fontSize:11, color:'var(--text3)' }}>{(c.end-c.start).toFixed(1)}s</span>
+            </div>
+          ))}
+          <div style={{ marginTop:10, fontSize:12, color:'var(--text2)' }}>→ Retrouvez vos clips dans <strong style={{ color:'#f90' }}>Mes Clips</strong></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============ Clip Card ============ */
+function ClipCard({ clip, onDub }) {
+  const [hover, setHover] = useState(false);
+  const duration = clip.end - clip.start;
+  const hasSubs = clip.subtitles?.length > 0;
+  return (
+    <div onMouseEnter={()=>setHover(true)} onMouseLeave={()=>setHover(false)} style={{
+      background:'var(--surface)', border:`1px solid ${hover?'#3a3a3a':'var(--border)'}`,
+      borderRadius:6, overflow:'hidden', transform: hover?'translateY(-1px)':'none', transition:'all .15s',
+    }}>
+      <div onClick={()=>onDub(clip)} style={{ position:'relative', aspectRatio:'16/9', background:
+        'repeating-linear-gradient(45deg, #0c0c0c 0 12px, #131313 12px 24px)', cursor:'pointer',
+        display:'flex', alignItems:'center', justifyContent:'center', color:'#2c2c2c', fontFamily:'var(--font-mono)', fontSize:11, letterSpacing:2 }}>
+        <span>THUMBNAIL</span>
+        <div style={{ position:'absolute', bottom:6, right:6, background:'rgba(0,0,0,.75)', color:'#fff', fontSize:11, padding:'2px 6px', borderRadius:3, fontFamily:'var(--font-mono)' }}>{fmtShort(duration)}</div>
+        {hasSubs && <div style={{ position:'absolute', top:6, right:6, background:'#ff9900', color:'#000', fontSize:10, fontWeight:700, padding:'2px 6px', borderRadius:3 }}>BR</div>}
+        {hover && (
+          <div style={{ position:'absolute', inset:0, background:'rgba(255,153,0,0.08)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+            <div style={{ width:40, height:40, borderRadius:'50%', background:'rgba(255,153,0,.9)', display:'flex', alignItems:'center', justifyContent:'center', color:'#000', fontSize:16 }}>◉</div>
+          </div>
+        )}
+      </div>
+      <div style={{ padding:'10px 12px' }}>
+        <div style={{ fontSize:13, fontWeight:600, marginBottom:4, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{clip.name}</div>
+        <div style={{ fontSize:11, color:'var(--text3)', fontFamily:'var(--font-mono)' }}>
+          {fmtShort(clip.start)} → {fmtShort(clip.end)}
+          {hasSubs && <span style={{ marginLeft:6, color:'var(--text2)' }}>{clip.subtitles.length} répliques</span>}
+        </div>
+      </div>
+      <div style={{ display:'flex', borderTop:'1px solid var(--border)', background:'var(--surface2)' }}>
+        <ActionBtn onClick={()=>onDub(clip)} accent flex>◉ Doubler</ActionBtn>
+        <ActionBtn>▶</ActionBtn>
+        <ActionBtn title="Exporter MP3 — audio uniquement">MP3</ActionBtn>
+        <ActionBtn>GIF</ActionBtn>
+        <ActionBtn danger>✕</ActionBtn>
+      </div>
+    </div>
+  );
+}
+function ActionBtn({ children, onClick, accent, danger, flex, title }) {
+  const [h, setH] = useState(false);
+  return (
+    <button onClick={onClick} title={title} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)} style={{
+      flex: flex?1:undefined, padding:'8px 10px',
+      background: h ? (danger?'rgba(229,69,69,.15)':accent?'rgba(255,153,0,.12)':'var(--surface3)') : 'transparent',
+      color: danger?'var(--danger)':accent?'#ff9900':'var(--text2)',
+      fontSize:11, fontWeight: accent?600:400, borderRight:'1px solid var(--border)', borderRadius:0,
+    }}>{children}</button>
+  );
+}
+
+function ClipsLibrary({ clips, onDub }) {
+  return (
+    <div style={{ height:'100%', display:'flex', flexDirection:'column' }}>
+      <div style={{ padding:'20px 24px', borderBottom:'1px solid var(--border)', background:'var(--surface)', display:'flex', alignItems:'center', gap:16 }}>
+        <div>
+          <h1 style={{ fontSize:16, fontWeight:600 }}>Mes Clips</h1>
+          <p style={{ fontSize:12, color:'var(--text2)', marginTop:2 }}>
+            {clips.length} clip{clips.length!==1?'s':''} — cliquez pour doubler, GIF ou exporter
+          </p>
+        </div>
+        <button style={{ marginLeft:'auto', padding:'7px 14px', background:'var(--surface3)', color:'var(--text2)', border:'1px solid var(--border2)', borderRadius:4, fontSize:12 }}>↺ Actualiser</button>
+      </div>
+      <div style={{ flex:1, overflow:'auto', padding:20 }}>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(260px, 1fr))', gap:16 }}>
+          {clips.map(c => <ClipCard key={c.clip_id} clip={c} onDub={onDub} />)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============ Bande Rythmo Canvas (animated) ============ */
+function BandeRythmoCanvas({ subtitles, currentTime, charMap, numTracks, canvasH, pxPerSec, brOffset, rythmoStyle }) {
+  const ref = useRef(null);
+  const stateRef = useRef({ subtitles, currentTime, charMap, numTracks, canvasH, pxPerSec, brOffset, rythmoStyle });
+  stateRef.current = { subtitles, currentTime, charMap, numTracks, canvasH, pxPerSec, brOffset, rythmoStyle };
+
+  useEffect(() => {
+    let raf;
+    function draw() {
+      const { subtitles, currentTime, charMap, numTracks, canvasH, pxPerSec, brOffset, rythmoStyle } = stateRef.current;
+      const canvas = ref.current; if (!canvas) { raf = requestAnimationFrame(draw); return; }
+      const cssW = canvas.offsetWidth;
+      if (cssW > 0 && canvas.width !== cssW) canvas.width = cssW;
+      if (canvas.height !== canvasH) canvas.height = canvasH;
+      const ctx = canvas.getContext('2d');
+      const W = canvas.width;
+      const t = currentTime + brOffset;
+      const cursor_x = W * CURSOR_X_RATIO;
+
+      const isNeon = rythmoStyle === 'neon';
+      const isMinimal = rythmoStyle === 'minimal';
+      ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+
+      ctx.fillStyle = isNeon ? '#020203' : '#050505'; ctx.fillRect(0, 0, W, canvasH);
+
+      // track separators
+      const trackH = canvasH / numTracks;
+      for (let i = 1; i < numTracks; i++) {
+        ctx.strokeStyle = isMinimal ? '#141414' : '#1a1a1a'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(0, i*trackH); ctx.lineTo(W, i*trackH); ctx.stroke();
+      }
+
+      // fake waveform per track (skip in minimal)
+      if (!isMinimal) {
+        for (let track = 0; track < numTracks; track++) {
+          const yMid = track * trackH + trackH/2;
+          const maxAmp = trackH * 0.38;
+          const baseLabel = TRACK_COLORS[track % TRACK_COLORS.length].label;
+          if (isNeon) {
+            ctx.strokeStyle = baseLabel; ctx.lineWidth = 1.2;
+            ctx.shadowColor = baseLabel; ctx.shadowBlur = 6;
+            ctx.beginPath();
+            for (let x = 0; x < W; x += 2) {
+              const sampleT = t + (x - cursor_x) / pxPerSec;
+              const v = Math.sin(sampleT*7 + track*1.3) * 0.6 + Math.sin(sampleT*23 + track*0.7) * 0.3 + Math.sin(sampleT*3) * 0.1;
+              const y = yMid + v * maxAmp;
+              if (x===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+            }
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+          } else {
+            ctx.fillStyle = TRACK_COLORS[track % TRACK_COLORS.length].bg.replace('0.10','0.20');
+            for (let x = 0; x < W; x += 2) {
+              const sampleT = t + (x - cursor_x) / pxPerSec;
+              const v = Math.abs(Math.sin(sampleT*7 + track*1.3) * 0.6 + Math.sin(sampleT*23 + track*0.7) * 0.3 + Math.sin(sampleT*3) * 0.1);
+              const amp = Math.max(1, v * maxAmp);
+              ctx.fillRect(x, yMid - amp, 1.5, amp * 2);
+            }
+          }
+        }
+      }
+
+      // subtitle blocks
+      for (const sub of subtitles) {
+        const trackIdx = charMap[sub.character || ''] ?? 0;
+        const yTop = trackIdx * trackH;
+        const left = cursor_x + (sub.start - t) * pxPerSec;
+        const right = cursor_x + (sub.end - t) * pxPerSec;
+        if (right < 0 || left > W) continue;
+        const color = TRACK_COLORS[trackIdx % TRACK_COLORS.length];
+        const lx = Math.max(0, left), rx = Math.min(W, right);
+        if (isMinimal) {
+          // thin underline only, brighter when active
+          const isActive = t >= sub.start && t <= sub.end;
+          ctx.fillStyle = isActive ? color.label : 'rgba(255,255,255,0.18)';
+          ctx.fillRect(lx, yTop + trackH - 4, rx - lx, 2);
+        } else if (isNeon) {
+          ctx.strokeStyle = color.label; ctx.lineWidth = 1;
+          ctx.strokeRect(lx + 0.5, yTop + 2.5, rx - lx - 1, trackH - 5);
+        } else {
+          ctx.fillStyle = color.bg;
+          ctx.fillRect(lx, yTop+1, rx - lx, trackH-2);
+        }
+      }
+
+      // subtitle text stretched
+      for (const sub of subtitles) {
+        const trackIdx = charMap[sub.character || ''] ?? 0;
+        const yCenter = trackIdx * trackH + trackH/2;
+        const left = cursor_x + (sub.start - t) * pxPerSec;
+        const right = cursor_x + (sub.end - t) * pxPerSec;
+        const blockW = right - left;
+        if (right < 0 || left > W) continue;
+        const isActive = t >= sub.start && t <= sub.end;
+        if (sub.text) {
+          ctx.font = FONT_BR; ctx.textBaseline = 'middle';
+          const naturalW = ctx.measureText(sub.text).width;
+          const scaleX = naturalW > 0 ? blockW / naturalW : 1;
+          if (isNeon) {
+            ctx.fillStyle = isActive ? '#fff' : 'rgba(220,240,255,0.55)';
+            ctx.shadowColor = TRACK_COLORS[trackIdx % TRACK_COLORS.length].label;
+            ctx.shadowBlur = isActive ? 8 : 3;
+          } else {
+            ctx.fillStyle = isActive ? '#fff' : 'rgba(255,255,255,0.35)';
+          }
+          ctx.save(); ctx.translate(left, yCenter); ctx.scale(scaleX, 1);
+          ctx.fillText(sub.text, 0, 0); ctx.restore();
+          ctx.shadowBlur = 0;
+        }
+        if (sub.character) {
+          ctx.font = FONT_LABEL;
+          ctx.fillStyle = TRACK_COLORS[trackIdx % TRACK_COLORS.length].label;
+          ctx.textBaseline = 'top';
+          ctx.fillText(sub.character.toUpperCase(), 4, trackIdx*trackH + 3);
+        }
+      }
+
+      // tick marks
+      const tStart = t - cursor_x / pxPerSec;
+      const tEnd = t + (W - cursor_x) / pxPerSec;
+      for (let tick = Math.ceil(tStart); tick <= Math.floor(tEnd); tick++) {
+        const tx = cursor_x + (tick - t) * pxPerSec;
+        ctx.strokeStyle = tick < 0 ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.06)';
+        ctx.beginPath(); ctx.moveTo(tx,0); ctx.lineTo(tx,canvasH); ctx.stroke();
+        if (tick >= 0) {
+          ctx.fillStyle = 'rgba(255,255,255,0.2)';
+          ctx.font = '9px monospace'; ctx.textBaseline = 'bottom';
+          ctx.fillText(fmt(tick), tx+2, canvasH);
+        }
+      }
+
+      // cursor line + triangle
+      ctx.strokeStyle = '#f90'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(cursor_x, 0); ctx.lineTo(cursor_x, canvasH); ctx.stroke();
+      ctx.fillStyle = '#f90';
+      ctx.beginPath();
+      ctx.moveTo(cursor_x-7, 0); ctx.lineTo(cursor_x+7, 0); ctx.lineTo(cursor_x, 10); ctx.closePath(); ctx.fill();
+
+      raf = requestAnimationFrame(draw);
+    }
+    raf = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  return (
+    <canvas ref={ref} width={800} height={canvasH}
+      style={{ display:'block', width:'100%', height:canvasH+'px', cursor:'crosshair', userSelect:'none' }} />
+  );
+}
+
+/* ============ Subtitle list (left panel) ============ */
+function SubtitleList({ subtitles, currentTime, onSeek, onChange }) {
+  return (
+    <div>
+      <div style={{ display:'flex', gap:4, marginBottom:8, flexWrap:'wrap', alignItems:'center' }}>
+        <button style={toolBtn}>+ Réplique</button>
+        <button style={toolBtn}>⇅ Trier</button>
+        <span style={{ fontSize:9, color:'var(--text3)', marginLeft:4 }}>Décaler tout</span>
+        <button style={toolBtn}>-1s</button>
+        <button style={toolBtn}>-.1</button>
+        <button style={toolBtn}>+.1</button>
+        <button style={toolBtn}>+1s</button>
+      </div>
+      <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
+        {subtitles.map((sub, i) => {
+          const active = currentTime >= sub.start && currentTime <= sub.end;
+          const dur = (sub.end - sub.start).toFixed(2);
+          return (
+            <div key={i} style={{
+              background: active ? 'rgba(255,153,0,0.07)' : 'var(--surface)',
+              border:`1px solid ${active?'rgba(255,153,0,0.45)':'var(--border)'}`,
+              borderRadius:4,
+            }}>
+              <div style={{ display:'flex', alignItems:'center', gap:3, padding:'5px 6px 3px' }}>
+                <span style={{ fontSize:9, color:'var(--text3)', minWidth:14, textAlign:'right' }}>{i+1}</span>
+                <input value={sub.character || ''} readOnly style={{ ...inpRow, width:60, color:'#f90' }} />
+                <button onClick={()=>onSeek(sub.start)} style={tcBtn}>{fmt(sub.start)}</button>
+                <span style={{ color:'var(--text3)', fontSize:9 }}>→</span>
+                <button onClick={()=>onSeek(sub.end)} style={tcBtn}>{fmt(sub.end)}</button>
+                <span style={{ fontSize:9, color:'var(--text3)', minWidth:28 }}>{dur}s</span>
+                <div style={{ flex:1 }} />
+                <button style={{ color:'#f554', background:'none', border:'none', fontSize:11, padding:'1px 4px' }}>✕</button>
+              </div>
+              <div style={{ display:'flex', gap:3, padding:'2px 6px 4px', paddingLeft:22 }}>
+                <input value={sub.text} readOnly style={{ ...inpRow, flex:1 }} />
+                <button style={{ ...actionBtn, color:'#f90', borderColor:'#f904' }}>⟵IN</button>
+                <button style={{ ...actionBtn, color:'#f90', borderColor:'#f904' }}>OUT⟶</button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+const toolBtn = { padding:'3px 8px', background:'var(--surface3)', color:'var(--text2)', border:'1px solid var(--border2)', borderRadius:3, fontSize:10 };
+const inpRow = { background:'var(--surface3)', color:'var(--text)', border:'1px solid var(--border2)', padding:'3px 5px', fontSize:12, borderRadius:3 };
+const tcBtn = { background:'var(--surface3)', color:'var(--text3)', border:'1px solid var(--border2)', borderRadius:2, padding:'1px 4px', fontFamily:'var(--font-mono)', fontSize:10 };
+const actionBtn = { background:'none', border:'1px solid transparent', borderRadius:3, fontSize:10, padding:'2px 5px', fontFamily:'var(--font-mono)' };
+
+/* ============ Dubbing Workspace ============ */
+function DubbingWorkspace({ clip, onBack, tweaks }) {
+  const [subtitles, setSubtitles] = useState(clip.subtitles);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [playing, setPlaying] = useState(true);
+  const [muted, setMuted] = useState(false);
+  const [speed, setSpeed] = useState(1);
+  const [brOffset, setBrOffset] = useState(0);
+  const [pxPerSec, setPxPerSec] = useState(120);
+  const [lang, setLang] = useState('fr');
+  const [showExport, setShowExport] = useState(false);
+
+  // Auto-advance clock (simulated playback)
+  useEffect(() => {
+    if (!playing) return;
+    let last = performance.now();
+    let raf;
+    const tick = (now) => {
+      const dt = (now - last) / 1000;
+      last = now;
+      setCurrentTime(t => {
+        const dur = subtitles.length ? Math.max(...subtitles.map(s=>s.end)) + 2 : 20;
+        const next = t + dt * speed;
+        return next > dur ? 0 : next;
+      });
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [playing, speed, subtitles]);
+
+  const charMap = useMemo(() => {
+    const seen = [];
+    for (const s of subtitles) { const c = s.character || ''; if (!seen.includes(c)) seen.push(c); }
+    return Object.fromEntries(seen.map((c,i) => [c, i]));
+  }, [subtitles]);
+  const numTracks = Math.max(1, Object.keys(charMap).length);
+  const canvasH = Math.min(numTracks * H_TRACK, 200);
+  const totalDur = subtitles.length ? Math.max(...subtitles.map(s=>s.end)) + 2 : 20;
+
+  const activeSub = subtitles.find(s => currentTime+brOffset >= s.start && currentTime+brOffset <= s.end);
+
+  return (
+    <div style={{ height:'100%', display:'flex', flexDirection:'column', overflow:'hidden' }}>
+      {/* Header */}
+      <div style={{ padding:'7px 14px', borderBottom:'1px solid var(--border)', background:'var(--surface)', display:'flex', alignItems:'center', gap:10, flexShrink:0, flexWrap:'wrap' }}>
+        <button onClick={onBack} style={{ padding:'4px 10px', background:'var(--surface3)', color:'var(--text2)', border:'1px solid var(--border2)', borderRadius:4, fontSize:11 }}>← Mes Clips</button>
+        <span style={{ fontSize:13, fontWeight:700 }}>{clip.name}</span>
+        <span style={{ fontSize:11, color:'var(--text3)', fontFamily:'var(--font-mono)' }}>{(clip.end-clip.start).toFixed(1)}s · {subtitles.length} réplique{subtitles.length!==1?'s':''}</span>
+        <span style={{ fontSize:11, color:'var(--success)' }}>✓ Sauvegardé</span>
+        <div style={{ flex:1 }} />
+        <select value={lang} onChange={e=>setLang(e.target.value)} style={{ background:'var(--surface3)', color:'var(--text2)', border:'1px solid var(--border2)', borderRadius:4, padding:'3px 5px', fontSize:11 }}>
+          <option value="fr">FR — Français</option>
+          <option value="en">EN — English</option>
+          <option value="auto">🔍 Auto-détect</option>
+        </select>
+        <button style={{ padding:'4px 12px', background:'var(--surface3)', color:'var(--text2)', border:'1px solid var(--border2)', borderRadius:4, fontSize:11 }}>◉ Whisper</button>
+        <button onClick={()=>setShowExport(v=>!v)} style={{ padding:'4px 12px', background: showExport?'#f90':'var(--surface3)', color: showExport?'#000':'var(--text2)', border:`1px solid ${showExport?'#f90':'var(--border2)'}`, borderRadius:4, fontSize:11, fontWeight: showExport?700:400 }}>↗ Exporter</button>
+      </div>
+
+      {/* Body */}
+      <div style={{ flex:1, display:'flex', overflow:'hidden', minHeight:0 }}>
+        {/* Left: subtitle list */}
+        <div style={{ width:370, flexShrink:0, borderRight:'1px solid var(--border)', display:'flex', flexDirection:'column', overflow:'hidden' }}>
+          <div style={{ padding:'4px 10px', background:'var(--surface)', borderBottom:'1px solid var(--border)' }}>
+            <span style={{ fontSize:9, fontWeight:700, color:'var(--text3)', textTransform:'uppercase', letterSpacing:1 }}>Répliques</span>
+          </div>
+          <div style={{ flex:1, overflow:'auto', padding:'6px 8px' }}>
+            <SubtitleList subtitles={subtitles} currentTime={currentTime} onSeek={setCurrentTime} onChange={setSubtitles} />
+          </div>
+        </div>
+
+        {/* Right: video + controls */}
+        <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden', minWidth:0 }}>
+          <div style={{ background:'#000', position:'relative', flex:1, minHeight:0,
+            backgroundImage:'repeating-linear-gradient(45deg, #0a0a0a 0 14px, #0e0e0e 14px 28px)',
+            display:'flex', alignItems:'center', justifyContent:'center', color:'#2a2a2a', fontFamily:'var(--font-mono)', fontSize:12, letterSpacing:2,
+          }}>
+            <span>APERÇU CLIP</span>
+            {activeSub && (
+              <div style={{ position:'absolute', bottom:12, left:'50%', transform:'translateX(-50%)', background:'rgba(0,0,0,0.82)', color:'#fff', padding:'4px 16px', borderRadius:3, fontSize:15, maxWidth:'90%', textAlign:'center', fontFamily:'var(--font-mono)', borderTop:`2px solid ${TRACK_COLORS[(charMap[activeSub.character||'']??0)%TRACK_COLORS.length].label}` }}>
+                {activeSub.character && (
+                  <div style={{ color: TRACK_COLORS[(charMap[activeSub.character||'']??0)%TRACK_COLORS.length].label, fontSize:9, marginBottom:2, letterSpacing:1, fontWeight:700 }}>
+                    {activeSub.character.toUpperCase()}
+                  </div>
+                )}
+                {activeSub.text}
+              </div>
+            )}
+          </div>
+
+          {/* Player controls */}
+          <div style={{ background:'#0a0a0a', borderTop:'1px solid #111', padding:'5px 12px', display:'flex', alignItems:'center', gap:8, flexShrink:0 }}>
+            <button onClick={()=>setPlaying(p=>!p)} style={{ background:'none', color:'#f90', fontSize:14, padding:'3px 7px', border:'1px solid #f904', borderRadius:3, minWidth:30, lineHeight:1 }}>{playing?'⏸':'▶'}</button>
+            <span style={{ fontFamily:'var(--font-mono)', fontSize:10, color:'var(--text2)', minWidth:72 }}>{fmt(currentTime)} / {fmt(totalDur)}</span>
+            <input type="range" min={0} max={totalDur} step={0.05} value={currentTime} onChange={e=>setCurrentTime(parseFloat(e.target.value))} style={{ flex:1, accentColor:'#f90', height:4 }} />
+            <select value={speed} onChange={e=>setSpeed(parseFloat(e.target.value))} style={{ background:'var(--surface3)', color:'var(--text2)', border:'1px solid var(--border2)', borderRadius:3, padding:'2px 4px', fontSize:10 }}>
+              {[0.5,0.75,1,1.25,1.5].map(s => <option key={s} value={s}>{s}×</option>)}
+            </select>
+            <button onClick={()=>setMuted(m=>!m)} style={{ background:'none', color: muted?'#333':'var(--text2)', fontSize:12, padding:'2px 6px', border:'1px solid var(--border2)', borderRadius:3 }}>{muted?'🔇':'🔊'}</button>
+          </div>
+        </div>
+      </div>
+
+      {/* Bande Rythmo */}
+      <div style={{ flexShrink:0, borderTop:'2px solid #1a1a1a', background:'#050505' }}>
+        <div style={{ height:BR_CONTROLS_H, display:'flex', alignItems:'center', gap:10, padding:'0 10px', borderBottom:'1px solid #111' }}>
+          <span style={{ fontSize:9, color:'#444', textTransform:'uppercase', letterSpacing:1 }}>Bande Rythmo</span>
+          {Object.entries(charMap).map(([char,idx]) => (
+            <span key={char} style={{ fontSize:9, color: TRACK_COLORS[idx%TRACK_COLORS.length].label, letterSpacing:.5 }}>▪ {char || '(défaut)'}</span>
+          ))}
+          <div style={{ flex:1 }} />
+          <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+            <span style={{ fontSize:9, color:'#444' }}>Décalage</span>
+            <input type="range" min={-2} max={2} step={0.05} value={brOffset} onChange={e=>setBrOffset(parseFloat(e.target.value))} style={{ width:70, accentColor:'#f90' }} />
+            <span style={{ fontSize:9, color: brOffset!==0?'#f90':'#333', fontFamily:'var(--font-mono)', minWidth:36 }}>{brOffset>=0?'+':''}{brOffset.toFixed(2)}s</span>
+          </div>
+          <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+            <span style={{ fontSize:9, color:'#444' }}>Zoom</span>
+            <button onClick={()=>setPxPerSec(p=>Math.max(40,p-20))} style={{ fontSize:10, color:'#555', background:'none', border:'1px solid #222', borderRadius:2, padding:'1px 5px' }}>−</button>
+            <span style={{ fontSize:9, color:'#555', fontFamily:'var(--font-mono)', minWidth:28, textAlign:'center' }}>{pxPerSec}</span>
+            <button onClick={()=>setPxPerSec(p=>Math.min(400,p+20))} style={{ fontSize:10, color:'#555', background:'none', border:'1px solid #222', borderRadius:2, padding:'1px 5px' }}>+</button>
+          </div>
+        </div>
+        <BandeRythmoCanvas subtitles={subtitles} currentTime={currentTime} charMap={charMap} numTracks={numTracks} canvasH={canvasH} pxPerSec={pxPerSec} brOffset={brOffset} rythmoStyle={tweaks?.rythmoStyle || 'classique'} />
+      </div>
+
+      {showExport && (
+        <div style={{ borderTop:'2px solid #f90', background:'var(--surface)', padding:14, flexShrink:0, maxHeight:260, overflow:'auto' }}>
+          <ExportPanel subtitles={subtitles} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============ Export Panel ============ */
+const FORMATS = [
+  { id:'srt', label:'SRT', icon:'📄', desc:'Sous-titres standard', color:'#4488ff', needsSubs:true },
+  { id:'ass', label:'ASS', icon:'🎬', desc:'Défilement BR intégré', color:'#aa44ff', needsSubs:true },
+  { id:'mp4', label:'MP4 + BR', icon:'🎥', desc:'Vidéo avec bande rythmo incrustée', color:'#44bb55', needsSubs:true },
+  { id:'gif', label:'GIF', icon:'🌀', desc:'Clip animé', color:'#ff6644', needsSubs:false },
+  { id:'mp3', label:'MP3', icon:'🎵', desc:'Audio — StreamDeck, Discord…', color:'#ff6688', needsSubs:false },
+  { id:'wav', label:'WAV', icon:'🎚️', desc:'Audio non compressé', color:'#aa88ff', needsSubs:false },
+];
+function ExportPanel({ subtitles }) {
+  return (
+    <div>
+      <div style={{ marginBottom:14 }}>
+        <h2 style={{ fontSize:15, fontWeight:600, marginBottom:4 }}>Exporter le clip</h2>
+        <p style={{ fontSize:12, color:'var(--text2)' }}>Choisissez le format selon votre usage. {subtitles.length} répliques incluses.</p>
+      </div>
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(180px, 1fr))', gap:10 }}>
+        {FORMATS.map(({ id, label, icon, desc, color, needsSubs }) => {
+          const unavailable = needsSubs && !subtitles.length;
+          return (
+            <div key={id} style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:8, overflow:'hidden', opacity: unavailable?.45:1 }}>
+              <div style={{ padding:'12px 14px 10px', borderBottom:'1px solid var(--border)' }}>
+                <div style={{ fontSize:20, marginBottom:4 }}>{icon}</div>
+                <div style={{ fontSize:14, fontWeight:700, color, marginBottom:2 }}>.{label}</div>
+                <div style={{ fontSize:11, color:'var(--text2)' }}>{desc}</div>
+              </div>
+              <div style={{ padding:'8px 14px' }}>
+                <button disabled={unavailable} style={{ width:'100%', padding:'7px 0', background:color, color:'#fff', fontWeight:600, fontSize:12, borderRadius:4 }}>Exporter {label}</button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ============ Tweakable defaults ============ */
+const TWEAK_DEFAULS = /*EDITMODE-BEGIN*/{
+  "density": "studio",
+  "palette": "orange",
+  "rythmoStyle": "classique"
+}/*EDITMODE-END*/;
+
+const DENSITY_OPTS = [
+  { id:'cinema',  label:'Cinéma',  zoom:1.10, hint:'aéré, théâtral' },
+  { id:'studio',  label:'Studio',  zoom:1.00, hint:'équilibré' },
+  { id:'compact', label:'Compact', zoom:0.90, hint:'station de travail' },
+];
+const PALETTE_OPTS = [
+  { id:'orange',  label:'Orange',  filter:'none',                   swatch:'#ff9900' },
+  { id:'cyan',    label:'Néon',    filter:'hue-rotate(180deg)',     swatch:'#00b8ff' },
+  { id:'magenta', label:'Vintage', filter:'hue-rotate(290deg)',     swatch:'#ff3a8a' },
+  { id:'ink',     label:'Encre',   filter:'saturate(0) brightness(1.06)', swatch:'#cccccc' },
+];
+const RYTHMO_OPTS = [
+  { id:'classique', label:'Classique', hint:'translucide, texte étiré' },
+  { id:'neon',      label:'Néon',      hint:'traits lumineux, fond pur' },
+  { id:'minimal',   label:'Minimal',   hint:'texte seul, sans waveform' },
+];
+
+/* ============ Tweaks Panel ============ */
+function TweaksPanel({ tweaks, setTweak }) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    function onMsg(e) {
+      if (e?.data?.type === '__activate_edit_mode') setOpen(true);
+      if (e?.data?.type === '__deactivate_edit_mode') setOpen(false);
+    }
+    window.addEventListener('message', onMsg);
+    try { window.parent.postMessage({type:'__edit_mode_available'}, '*'); } catch {}
+    return () => window.removeEventListener('message', onMsg);
+  }, []);
+  function close() {
+    setOpen(false);
+    try { window.parent.postMessage({type:'__edit_mode_dismissed'}, '*'); } catch {}
+  }
+  if (!open) return null;
+  return (
+    <div style={{
+      position:'fixed', right:18, bottom:18, width:288, zIndex:9999,
+      background:'rgba(14,14,14,0.96)', backdropFilter:'blur(8px)',
+      border:'1px solid #2e2e2e', borderRadius:8,
+      boxShadow:'0 18px 40px rgba(0,0,0,.55), 0 0 0 1px rgba(255,153,0,0.08)',
+      fontFamily:'var(--font-ui)', color:'var(--text)', userSelect:'none',
+    }}>
+      <div style={{ display:'flex', alignItems:'center', padding:'10px 12px', borderBottom:'1px solid #1e1e1e' }}>
+        <div style={{ fontSize:11, fontFamily:'var(--font-mono)', letterSpacing:2, color:'#f90' }}>TWEAKS</div>
+        <div style={{ flex:1 }} />
+        <button onClick={close} style={{ background:'none', color:'var(--text3)', fontSize:14, padding:'0 4px', lineHeight:1 }}>✕</button>
+      </div>
+      <div style={{ padding:'12px 12px 14px', display:'flex', flexDirection:'column', gap:14 }}>
+        <TwSection title="Densité" hint={DENSITY_OPTS.find(o=>o.id===tweaks.density)?.hint}>
+          <TwRadio options={DENSITY_OPTS} value={tweaks.density} onChange={v=>setTweak('density', v)} />
+        </TwSection>
+        <TwSection title="Palette" hint={PALETTE_OPTS.find(o=>o.id===tweaks.palette)?.label}>
+          <div style={{ display:'flex', gap:8 }}>
+            {PALETTE_OPTS.map(o => {
+              const sel = tweaks.palette === o.id;
+              return (
+                <button key={o.id} onClick={()=>setTweak('palette', o.id)} title={o.label} style={{
+                  flex:1, height:34, borderRadius:5, padding:0, border:`2px solid ${sel?'#fff':'#2a2a2a'}`,
+                  background:o.swatch, position:'relative', cursor:'pointer',
+                  boxShadow: sel?'0 0 0 2px rgba(255,255,255,.06)':'none',
+                }}>
+                  {sel && <span style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', color:'#000', fontSize:14, fontWeight:700, textShadow:'0 1px 0 rgba(255,255,255,.4)' }}>✓</span>}
+                </button>
+              );
+            })}
+          </div>
+        </TwSection>
+        <TwSection title="Bande rythmo" hint={RYTHMO_OPTS.find(o=>o.id===tweaks.rythmoStyle)?.hint}>
+          <TwRadio options={RYTHMO_OPTS} value={tweaks.rythmoStyle} onChange={v=>setTweak('rythmoStyle', v)} />
+        </TwSection>
+      </div>
+    </div>
+  );
+}
+function TwSection({ title, hint, children }) {
+  return (
+    <div>
+      <div style={{ display:'flex', alignItems:'baseline', marginBottom:6 }}>
+        <span style={{ fontSize:11, fontWeight:600, color:'var(--text)', letterSpacing:.5 }}>{title}</span>
+        {hint && <span style={{ marginLeft:'auto', fontSize:10, color:'var(--text3)', fontStyle:'italic' }}>{hint}</span>}
+      </div>
+      {children}
+    </div>
+  );
+}
+function TwRadio({ options, value, onChange }) {
+  return (
+    <div style={{ display:'flex', background:'#0a0a0a', border:'1px solid #222', borderRadius:5, padding:2 }}>
+      {options.map(o => {
+        const sel = value === o.id;
+        return (
+          <button key={o.id} onClick={()=>onChange(o.id)} style={{
+            flex:1, padding:'6px 4px', fontSize:11, fontWeight: sel?600:400,
+            background: sel?'rgba(255,153,0,0.16)':'transparent',
+            color: sel?'#f90':'var(--text2)',
+            border:'none', borderRadius:3,
+          }}>{o.label}</button>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ============ App ============ */
+function App() {
+  const [section, setSection] = useState('dub');
+  const [hasVideo, setHasVideo] = useState(true);
+  const [clips, setClips] = useState(DEMO_CLIPS);
+  const [activeClip, setActiveClip] = useState(DEMO_CLIPS[0]);
+  const [tweaks, setTweaks] = useState(TWEAK_DEFAULS);
+
+  function setTweak(k, v) {
+    setTweaks(prev => {
+      const next = typeof k === 'object' ? { ...prev, ...k } : { ...prev, [k]: v };
+      try { window.parent.postMessage({ type:'__edit_mode_set_keys', edits: next }, '*'); } catch {}
+      return next;
+    });
+  }
+
+  function handleDub(clip) { setActiveClip(clip); setSection('dub'); }
+
+  const density = DENSITY_OPTS.find(o => o.id === tweaks.density) || DENSITY_OPTS[1];
+  const palette = PALETTE_OPTS.find(o => o.id === tweaks.palette) || PALETTE_OPTS[0];
+
+  return (
+    <div style={{
+      display:'flex', height:'100vh', overflow:'hidden', background:'var(--bg)',
+      filter: palette.filter,
+      zoom: density.zoom,
+    }}>
+      <Sidebar section={section} onNavigate={setSection} clipCount={clips.length} />
+      <main style={{ flex:1, overflow:'hidden', display:'flex', flexDirection:'column', minWidth:0 }}>
+        {section === 'import' && <ImportSection hasVideo={hasVideo} onImport={()=>setHasVideo(true)} clips={clips} />}
+        {section === 'clips' && <ClipsLibrary clips={clips} onDub={handleDub} />}
+        {section === 'dub' && activeClip && <DubbingWorkspace clip={activeClip} onBack={()=>setSection('clips')} tweaks={tweaks} />}
+      </main>
+      <TweaksPanel tweaks={tweaks} setTweak={setTweak} />
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
