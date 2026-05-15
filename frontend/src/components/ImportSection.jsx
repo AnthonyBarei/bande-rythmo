@@ -11,11 +11,12 @@ const selectStyle = {
   fontSize: 12,
 }
 
-const TAB = { LOCAL: 'local', PLEX: 'plex' }
+const TAB = { LOCAL: 'local', PLEX: 'plex', URL: 'url' }
 
 export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
   const [tab, setTab] = useState(TAB.LOCAL)
   const [error, setError] = useState(null)
+  const [urlInput, setUrlInput] = useState('')
   const [picking, setPicking] = useState(false)
   const [remuxing, setRemuxing] = useState(false)
   const [streams, setStreams] = useState(null)
@@ -112,6 +113,22 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
     }
   }
 
+  function handleUrlLoad() {
+    const u = urlInput.trim()
+    if (!u) return
+    if (!/^https?:\/\//i.test(u)) { setError('URL invalide — doit commencer par http:// ou https://'); return }
+    setError(null)
+    setStreams(null)
+    setVideoStream(null)
+    setAudioStream(null)
+    setRemuxing(false)
+    setAudioSrc(null)
+    stopPoll()
+    sourceIdRef.current = null
+    const filename = u.split('/').pop()?.split('?')[0] || 'video'
+    onVideoSet({ filename, sourcePath: u, sourceId: null, url: u })
+  }
+
   function handlePlexSelected(source) {
     setError(null)
     setStreams(null)
@@ -152,7 +169,7 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
 
         {/* Source tabs */}
         <div style={{ display: 'flex', gap: 4, marginLeft: 16 }}>
-          {[{ id: TAB.LOCAL, label: '💻 Local' }, { id: TAB.PLEX, label: '▶ Plex' }].map(t => (
+          {[{ id: TAB.LOCAL, label: '💻 Fichier' }, { id: TAB.PLEX, label: '▶ Plex' }, { id: TAB.URL, label: '🔗 URL' }].map(t => (
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
@@ -213,6 +230,30 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
           <div style={{ fontSize: 48, opacity: 0.3 }}>💻</div>
           <div style={{ fontSize: 14, color: 'var(--text2)' }}>Cliquez pour choisir un fichier local</div>
           <div style={{ fontSize: 12 }}>MP4, MOV, MKV, AVI — lu directement, aucun upload</div>
+        </div>
+      )}
+
+      {/* URL source panel */}
+      {tab === TAB.URL && !video && (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, padding: 24 }}>
+          <div style={{ fontSize: 40, opacity: 0.3 }}>🔗</div>
+          <div style={{ fontSize: 14, color: 'var(--text2)' }}>Coller l’URL d’une vidéo</div>
+          <div style={{ display: 'flex', gap: 8, width: '100%', maxWidth: 540 }}>
+            <input
+              value={urlInput}
+              onChange={e => setUrlInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') handleUrlLoad() }}
+              placeholder="https://exemple.com/video.mp4"
+              style={{ flex: 1, fontFamily: 'var(--font-mono)', fontSize: 12 }}
+            />
+            <button
+              onClick={handleUrlLoad}
+              style={{ padding: '8px 18px', background: 'var(--accent)', color: '#000', fontWeight: 600, fontSize: 13, borderRadius: 'var(--radius)' }}
+            >
+              Charger
+            </button>
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--text3)' }}>Le flux est lu directement — aucun téléchargement.</div>
         </div>
       )}
 

@@ -27,11 +27,12 @@ export default function VideoEditor({ video, onClipsCreated, videoStream, audioS
   const videoRef = useRef(null)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
-  const [nextName, setNextName] = useState('')
   const [pendingClips, setPendingClips] = useState([])
   const [savedClips, setSavedClips] = useState([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
+  const [editingId, setEditingId] = useState(null)
+  const [editValue, setEditValue] = useState('')
   const pendingRef = useRef(pendingClips)
   useEffect(() => { pendingRef.current = pendingClips }, [pendingClips])
 
@@ -40,7 +41,7 @@ export default function VideoEditor({ video, onClipsCreated, videoStream, audioS
     setDuration(0)
     setPendingClips([])
     setSavedClips([])
-    setNextName('')
+    setEditingId(null)
   }, [video?.url])
 
   const saveAll = useCallback(async () => {
@@ -112,9 +113,7 @@ export default function VideoEditor({ video, onClipsCreated, videoStream, audioS
   }, [saveAll])
 
   function handleAdd(start, end) {
-    const name = nextName.trim() || `Clip ${savedClips.length + pendingClips.length + 1}`
-    setPendingClips(prev => [...prev, { _id: newId(), name, start, end }])
-    setNextName('')
+    setPendingClips(prev => [...prev, { _id: newId(), name: '', start, end }])
   }
 
   function handleUpdate(id, start, end) {
@@ -123,6 +122,18 @@ export default function VideoEditor({ video, onClipsCreated, videoStream, audioS
 
   function handleRemove(id) {
     setPendingClips(prev => prev.filter(c => c._id !== id))
+  }
+
+  function startEdit(c) {
+    setEditingId(c._id)
+    setEditValue(c.name)
+  }
+
+  function commitEdit() {
+    if (editingId != null) {
+      setPendingClips(prev => prev.map(c => c._id === editingId ? { ...c, name: editValue.trim() } : c))
+    }
+    setEditingId(null)
   }
 
   return (
@@ -181,45 +192,63 @@ export default function VideoEditor({ video, onClipsCreated, videoStream, audioS
         ))}
       </div>
 
-      {/* Clip name input */}
-      <div style={{
-        padding: '10px 16px', background: 'var(--surface2)', borderBottom: '1px solid var(--border)',
-        display: 'flex', gap: 10, alignItems: 'center',
-      }}>
-        <input
-          value={nextName}
-          onChange={e => setNextName(e.target.value)}
-          placeholder={`Nom du prochain clip (défaut : Clip ${savedClips.length + pendingClips.length + 1})`}
-          style={{ flex: 1, maxWidth: 300 }}
-        />
-        <span style={{ fontSize: 11, color: 'var(--text3)' }}>appliqué au prochain bloc créé</span>
-      </div>
-
-      {/* Pending clips queue */}
+      {/* Pending clips queue — inline rename */}
       {pendingClips.length > 0 && (
-        <div style={{ padding: '0 16px 8px' }}>
-          <div style={{ fontSize: 11, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, padding: '10px 0 6px' }}>
-            À créer ({pendingClips.length})
+        <div style={{ padding: '12px 16px 8px' }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
+            <span style={{ fontSize: 10.5, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, fontFamily: 'var(--font-mono)' }}>
+              Clips en attente
+            </span>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>{pendingClips.length}</span>
+            <div style={{ flex: 1 }} />
+            <span style={{ fontSize: 10.5, color: 'var(--text4)' }}>Cliquer le nom pour éditer · ⏎ valider</span>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-            {pendingClips.map(c => (
+            {pendingClips.map((c, idx) => (
               <div key={c._id} style={{
-                display: 'flex', alignItems: 'center', gap: 10,
+                display: 'grid', gridTemplateColumns: '28px 1fr auto auto 28px',
+                alignItems: 'center', gap: 10,
                 padding: '7px 10px', background: 'var(--surface)',
-                border: '1px solid #f5c5183', borderRadius: 4,
+                border: '1px solid var(--border)', borderRadius: 'var(--radius)',
               }}>
-                <span style={{ color: '#f5c518', fontSize: 11 }}>◎</span>
-                <span style={{ flex: 1, fontSize: 13 }}>{c.name}</span>
+                <span style={{
+                  width: 16, height: 16, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: 'var(--accent-soft)', color: 'var(--accent)',
+                  fontFamily: 'var(--font-mono)', fontSize: 9.5, fontWeight: 800, borderRadius: 4,
+                }}>{idx + 1}</span>
+                {editingId === c._id ? (
+                  <input
+                    autoFocus
+                    value={editValue}
+                    onChange={e => setEditValue(e.target.value)}
+                    onBlur={commitEdit}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') commitEdit()
+                      if (e.key === 'Escape') setEditingId(null)
+                    }}
+                    style={{ fontSize: 13 }}
+                  />
+                ) : (
+                  <span
+                    onClick={() => startEdit(c)}
+                    style={{ fontSize: 13, cursor: 'text', color: c.name ? 'var(--text)' : 'var(--text3)', fontStyle: c.name ? 'normal' : 'italic' }}
+                  >
+                    {c.name || 'Sans nom — cliquer pour nommer ✎'}
+                  </span>
+                )}
                 <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text2)' }}>
                   {fmt(c.start)} → {fmt(c.end)}
                 </span>
-                <span style={{ fontSize: 11, color: 'var(--text3)' }}>{(c.end - c.start).toFixed(1)}s</span>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--accent)' }}>
+                  {(c.end - c.start).toFixed(1)}s
+                </span>
                 <button
                   onClick={() => handleRemove(c._id)}
-                  style={{ color: '#f554', background: 'none', fontSize: 12, padding: '2px 5px', borderRadius: 2, border: 'none' }}
-                  onMouseEnter={e => e.currentTarget.style.color = '#f55'}
-                  onMouseLeave={e => e.currentTarget.style.color = '#f554'}
-                >✕</button>
+                  title="Retirer"
+                  style={{ color: 'var(--text3)', background: 'none', fontSize: 12, padding: '2px 5px', borderRadius: 3, border: 'none' }}
+                  onMouseEnter={e => e.currentTarget.style.color = 'var(--danger)'}
+                  onMouseLeave={e => e.currentTarget.style.color = 'var(--text3)'}
+                >🗑</button>
               </div>
             ))}
           </div>
@@ -230,12 +259,12 @@ export default function VideoEditor({ video, onClipsCreated, videoStream, audioS
               disabled={saving}
               style={{
                 padding: '8px 16px',
-                background: saving ? '#333' : '#f5c518',
-                color: saving ? '#555' : '#000',
-                fontWeight: 600, fontSize: 13, borderRadius: 4,
+                background: saving ? 'var(--surface3)' : 'var(--accent)',
+                color: saving ? 'var(--text3)' : '#000',
+                fontWeight: 600, fontSize: 13, borderRadius: 'var(--radius)',
               }}
             >
-              {saving ? '⏳ Création...' : `✂ Créer ${pendingClips.length} clip${pendingClips.length > 1 ? 's' : ''}`}
+              {saving ? '⏳ Création…' : `Créer ${pendingClips.length} clip${pendingClips.length > 1 ? 's' : ''}`}
             </button>
             <Kbd>Ctrl</Kbd>
             <span style={{ fontSize: 11, color: 'var(--text3)' }}>+</span>
