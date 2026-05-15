@@ -20,8 +20,8 @@ const TRACK_COLORS = [
   { bg: 'rgba(100,230,160,0.10)',text: '#6eb',  label: '#6eb' },
 ]
 
-const REACTION_TAGS = ['rire', 'souffle', 'cri', 'chuchoté', 'pleure', 'soupir']
-const RESP_MARK = '*'
+const REACTION_TAGS = ['rire', 'souffle', 'cri', 'chuchoté', 'pleure', 'soupir', 'grogne', 'gémit', 'ahane', 'bégaie']
+const RESP_TAGS = ['inspire', 'expire', 'soupire', 'halète', 'souffle', 'retient son souffle', 'respire fort']
 
 const Ic = ({ d, fill, size = 16 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill={fill || 'none'} stroke={fill ? 'none' : 'currentColor'} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block' }}>
@@ -1102,7 +1102,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
       </div>
 
       {/* ── Bande Rythmo — full width ── */}
-      <div style={{ flexShrink: 0, borderTop: '2px solid #1a1a1a', background: '#050505', height: brPanelHeight, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
+      <div style={{ flexShrink: 0, borderTop: '2px solid #1a1a1a', background: '#050505', height: brPanelHeight, display: 'flex', flexDirection: 'column', overflow: 'visible', position: 'relative' }}>
         {/* Vertical resize handle */}
         <div
           onMouseDown={e => {
@@ -1301,6 +1301,8 @@ function BandeRythmoToolbar({
   const [showReact, setShowReact] = React.useState(false)
   const [showResp, setShowResp] = React.useState(false)
   const [showNote, setShowNote] = React.useState(false)
+  const [dropdownAnchor, setDropdownAnchor] = React.useState({ bottom: 60, left: 200 })
+  const toolbarRef = React.useRef(null)
   const [loop, setLoop] = React.useState(false)
   const [locked, setLocked] = React.useState(false)
   const [recording, setRecording] = React.useState(false)
@@ -1319,14 +1321,22 @@ function BandeRythmoToolbar({
     onSubtitlesChange(subtitles.map((s, i) => i === targetIdx ? { ...s, ...patch } : s))
   }
 
-  function insertResp() {
-    if (!target) return
+  function openDropdown(type, leftOffset) {
+    const rect = toolbarRef.current?.getBoundingClientRect()
+    if (rect) setDropdownAnchor({ bottom: window.innerHeight - rect.top + 4, left: rect.left + leftOffset })
+    if (type === 'resp') { setShowResp(s => !s); setShowReact(false) }
+    else { setShowReact(s => !s); setShowResp(false) }
+    setShowNote(false)
+  }
+
+  function insertTagSub(text) {
     const v = videoRef.current
     const t = v ? v.currentTime : 0
-    const ratio = Math.max(0, Math.min(1, (t - target.start) / Math.max(0.01, target.end - target.start)))
-    const pos = Math.round((target.text || '').length * ratio)
-    const txt = target.text || ''
-    updateTarget({ text: txt.slice(0, pos) + RESP_MARK + txt.slice(pos) })
+    const newSub = { start: t, end: t + 0.5, text, character: '', reactions: [] }
+    const next = [...subtitles, newSub].sort((a, b) => a.start - b.start)
+    onSubtitlesChange(next)
+    setShowResp(false)
+    setShowReact(false)
   }
 
   function setIN() {
@@ -1390,7 +1400,7 @@ function BandeRythmoToolbar({
   const sep = <div style={{ width: 1, alignSelf: 'stretch', background: '#1f1f1f', margin: '2px 4px' }} />
 
   return (
-    <div style={{
+    <div ref={toolbarRef} style={{
       position: 'relative', background: 'linear-gradient(to bottom, #0e0e0e, #0a0a0a)',
       borderBottom: '1px solid #1c1c1c', padding: '8px 12px',
       display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
@@ -1449,16 +1459,14 @@ function BandeRythmoToolbar({
 
       {/* Respiration + reactions */}
       <div style={grp}>
-        <button onClick={insertResp} title="Insérer respiration au temps courant" style={btn(target != null)}>
-          <Ic d={ICONS.breath} />
-        </button>
-        <button onClick={() => setShowResp(s => !s)} title="Respirations…"
-          style={{ ...btn(target != null, showResp), padding: '0 10px', fontSize: 12, fontWeight: 600, letterSpacing: 0.3 }}>
+        <button onClick={() => openDropdown('resp', 0)} title="Respirations…"
+          style={{ ...btn(true, showResp), padding: '0 10px', fontSize: 12, fontWeight: 600, letterSpacing: 0.3 }}>
+          <Ic d={ICONS.breath} size={14} />
           Respirations
         </button>
         {sep}
-        <button onClick={() => setShowReact(s => !s)} title="Réactions…"
-          style={{ ...btn(target != null, showReact), padding: '0 10px', fontSize: 12, fontWeight: 600, letterSpacing: 0.3 }}>
+        <button onClick={() => openDropdown('react', 160)} title="Réactions…"
+          style={{ ...btn(true, showReact), padding: '0 10px', fontSize: 12, fontWeight: 600, letterSpacing: 0.3 }}>
           <Ic d={ICONS.reactions} size={14} />
           Réactions
         </button>
@@ -1540,55 +1548,49 @@ function BandeRythmoToolbar({
         )}
       </div>
 
-      {/* Reactions popover */}
-      {showReact && target && (
+      {/* Respirations dropdown */}
+      {showResp && (
         <div style={{
-          position: 'absolute', bottom: 'calc(100% + 4px)', left: 330, zIndex: 10,
-          background: '#0c0c0c', border: '1px solid #f90', borderRadius: 4,
-          padding: 8, display: 'flex', gap: 5, flexWrap: 'wrap', maxWidth: 340,
-          boxShadow: '0 6px 18px rgba(0,0,0,0.7)',
+          position: 'fixed', bottom: dropdownAnchor.bottom, left: dropdownAnchor.left, zIndex: 9999,
+          background: '#0c0c0c', border: '1px solid #e54545', borderRadius: 6,
+          padding: 6, minWidth: 200, boxShadow: '0 6px 18px rgba(0,0,0,0.7)',
         }}>
-          <div style={{ width: '100%', fontSize: 9, color: '#f90', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>
-            Réactions — réplique #{targetIdx + 1}
+          <div style={{ fontSize: 9, color: '#e54545', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 5, padding: '0 4px' }}>
+            Ajouter respiration au {fmt(videoRef.current?.currentTime ?? 0)}
           </div>
-          {REACTION_TAGS.map(r => {
-            const has = (target.reactions || []).includes(r)
-            return (
-              <button key={r}
-                onClick={() => updateTarget({ reactions: has ? (target.reactions || []).filter(x => x !== r) : [...(target.reactions || []), r] })}
-                style={{
-                  fontSize: 10, padding: '3px 9px',
-                  background: has ? 'rgba(80,180,255,0.18)' : 'transparent',
-                  border: `1px solid ${has ? '#5bf' : '#333'}`,
-                  color: has ? '#5bf' : 'var(--text2)', borderRadius: 12, cursor: 'pointer',
-                }}>{r}</button>
-            )
-          })}
+          {RESP_TAGS.map(r => (
+            <button key={r} onClick={() => insertTagSub(r)} style={{
+              display: 'block', width: '100%', textAlign: 'left',
+              padding: '5px 10px', background: 'none', border: 'none',
+              color: 'var(--text)', fontSize: 12, cursor: 'pointer', borderRadius: 4,
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = 'rgba(229,69,69,0.12)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'none'}
+            >{r}</button>
+          ))}
         </div>
       )}
 
-      {/* Respirations popover */}
-      {showResp && target && (
+      {/* Réactions dropdown */}
+      {showReact && (
         <div style={{
-          position: 'absolute', bottom: 'calc(100% + 4px)', left: 200, zIndex: 10,
-          background: '#0c0c0c', border: '1px solid #e54545', borderRadius: 4,
-          padding: 8, minWidth: 260, boxShadow: '0 6px 18px rgba(0,0,0,0.7)',
+          position: 'fixed', bottom: dropdownAnchor.bottom, left: dropdownAnchor.left, zIndex: 9999,
+          background: '#0c0c0c', border: '1px solid #5bf', borderRadius: 6,
+          padding: 6, minWidth: 200, boxShadow: '0 6px 18px rgba(0,0,0,0.7)',
         }}>
-          <div style={{ fontSize: 9, color: '#e54545', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>
-            Respirations — réplique #{targetIdx + 1}
+          <div style={{ fontSize: 9, color: '#5bf', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 5, padding: '0 4px' }}>
+            Ajouter réaction au {fmt(videoRef.current?.currentTime ?? 0)}
           </div>
-          <div style={{ fontSize: 11, color: 'var(--text2)', marginBottom: 6 }}>
-            Texte : <span style={{ fontFamily: 'var(--font-mono)' }}>{target.text || '(vide)'}</span>
-          </div>
-          <div style={{ display: 'flex', gap: 5 }}>
-            <button onClick={insertResp} style={{ padding: '3px 8px', background: 'none', border: '1px solid #e5454555', color: '#e54545', borderRadius: 3, fontSize: 10, cursor: 'pointer' }}>
-              + Insérer (*)
-            </button>
-            <button onClick={() => updateTarget({ text: (target.text || '').replace(/\*/g, '') })}
-              style={{ padding: '3px 8px', background: 'none', border: '1px solid #333', color: 'var(--text2)', borderRadius: 3, fontSize: 10, cursor: 'pointer' }}>
-              Tout retirer
-            </button>
-          </div>
+          {REACTION_TAGS.map(r => (
+            <button key={r} onClick={() => insertTagSub(r)} style={{
+              display: 'block', width: '100%', textAlign: 'left',
+              padding: '5px 10px', background: 'none', border: 'none',
+              color: 'var(--text)', fontSize: 12, cursor: 'pointer', borderRadius: 4,
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = 'rgba(80,180,255,0.12)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'none'}
+            >{r}</button>
+          ))}
         </div>
       )}
 
