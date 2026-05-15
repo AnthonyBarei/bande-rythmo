@@ -2,32 +2,19 @@ import React, { useState, useRef } from 'react'
 import VideoEditor from './VideoEditor'
 
 export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
-  const [uploading, setUploading] = useState(false)
   const [error, setError] = useState(null)
   const fileRef = useRef(null)
 
-  async function handleFile(e) {
+  function handleFile(e) {
     const file = e.target.files[0]
     if (!file) return
-    setUploading(true)
     setError(null)
-    try {
-      const form = new FormData()
-      form.append('file', file)
-      const res = await fetch('/api/video/upload', { method: 'POST', body: form })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const data = await res.json()
-      onVideoSet({
-        id: data.video_id,
-        url: URL.createObjectURL(file),
-        filename: file.name,
-      })
-    } catch (e) {
-      setError('Upload échoué : ' + e.message)
-    } finally {
-      setUploading(false)
-      e.target.value = ''
-    }
+    onVideoSet({
+      file,
+      url: URL.createObjectURL(file),
+      filename: file.name,
+    })
+    e.target.value = ''
   }
 
   return (
@@ -44,7 +31,6 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
           <input ref={fileRef} type="file" accept="video/*" onChange={handleFile} style={{ display: 'none' }} />
           <button
             onClick={() => fileRef.current.click()}
-            disabled={uploading}
             style={{
               padding: '8px 20px',
               background: video ? 'var(--surface3)' : '#ff9900',
@@ -55,7 +41,7 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
               borderRadius: 4,
             }}
           >
-            {uploading ? 'Chargement...' : video ? '↺ Changer vidéo' : '⬆ Importer vidéo'}
+            {video ? '↺ Changer vidéo' : '⬆ Importer vidéo'}
           </button>
         </div>
       </div>
@@ -77,7 +63,6 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
         </div>
       ) : (
         <div style={{ flex: 1, overflow: 'auto' }}>
-          {/* File info */}
           <div style={{ padding: '8px 16px', background: 'var(--surface2)', borderBottom: '1px solid var(--border)', fontSize: 12, color: 'var(--text2)', display: 'flex', gap: 12 }}>
             <span>📄 {video.filename}</span>
           </div>

@@ -41,7 +41,7 @@ export default function VideoEditor({ video, onClipsCreated }) {
     setPendingClips([])
     setSavedClips([])
     setNextName('')
-  }, [video?.id])
+  }, [video?.url])
 
   const saveAll = useCallback(async () => {
     const pending = pendingRef.current
@@ -49,15 +49,14 @@ export default function VideoEditor({ video, onClipsCreated }) {
     setSaving(true)
     setError(null)
     try {
-      const results = await Promise.all(
-        pending.map(c =>
-          fetch('/api/clips/create', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ video_id: video.id, start: c.start, end: c.end, name: c.name }),
-          }).then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() })
-        )
-      )
+      const form = new FormData()
+      form.append('file', video.file, video.filename)
+      form.append('clips_json', JSON.stringify(
+        pending.map(c => ({ name: c.name, start: c.start, end: c.end }))
+      ))
+      const res = await fetch('/api/clips/batch', { method: 'POST', body: form })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const results = await res.json()
       setSavedClips(prev => [...results, ...prev])
       setPendingClips([])
       onClipsCreated(results)
@@ -66,7 +65,7 @@ export default function VideoEditor({ video, onClipsCreated }) {
     } finally {
       setSaving(false)
     }
-  }, [video?.id, onClipsCreated])
+  }, [video?.url, video?.file, video?.filename, onClipsCreated])
 
   useEffect(() => {
     function onKey(e) {
