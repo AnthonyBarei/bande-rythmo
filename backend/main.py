@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from database import init_db
-from routes import video, transcription, export, clips, meme, files, plex
+from routes import video, transcription, export, clips, meme, files, plex, takes
 
 
 @asynccontextmanager
@@ -26,7 +26,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-for d in ("segments", "exports", "thumbnails", "memes", "sources"):
+for d in ("segments", "exports", "thumbnails", "memes", "sources", "takes"):
     os.makedirs(d, exist_ok=True)
 
 app.include_router(video.router, prefix="/api/video", tags=["video"])
@@ -36,8 +36,10 @@ app.include_router(clips.router, prefix="/api/clips", tags=["clips"])
 app.include_router(meme.router, prefix="/api/meme", tags=["meme"])
 app.include_router(files.router, prefix="/api/files", tags=["files"])
 app.include_router(plex.router, prefix="/api/plex", tags=["plex"])
+app.include_router(takes.router, prefix="/api/takes", tags=["takes"])
 
 app.mount("/segments", StaticFiles(directory="segments"), name="segments")
 app.mount("/exports", StaticFiles(directory="exports"), name="exports")
 app.mount("/thumbnails", StaticFiles(directory="thumbnails"), name="thumbnails")
 app.mount("/memes", StaticFiles(directory="memes"), name="memes")
+app.mount("/takes", StaticFiles(directory="takes"), name="takes")

@@ -38,3 +38,16 @@ class Subtitle(Base):
     text = Column(String, nullable=False, default="")
 
     clip = relationship("Clip", back_populates="subtitles")
+
+
+class Take(Base):
+    __tablename__ = "takes"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    clip_id = Column(String, ForeignKey("clips.clip_id", ondelete="CASCADE"), nullable=False)
+    character = Column(String, default="")
+    subtitle_index = Column(Integer, nullable=True)
+    audio_path = Column(String, nullable=False)
+    duration = Column(Float, nullable=False, default=0.0)
+    label = Column(String, default="")
+    created_at = Column(DateTime, default=datetime.now)

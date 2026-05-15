@@ -20,7 +20,7 @@ def get_db():
 
 
 def init_db():
-    from models import Clip, Subtitle  # noqa: F401
+    from models import Clip, Subtitle, Take  # noqa: F401
     Base.metadata.create_all(bind=engine)
     from sqlalchemy import text
     with engine.connect() as conn:
