@@ -226,13 +226,12 @@ export default function MemeGenerator({ initialImageUrl = null, initialImageName
   async function generate() {
     const active = texts.filter(t => t.content.trim())
     if (!imageUrl) { setError('Choisissez une image.'); return }
-    if (!active.length) { setError('Saisissez au moins un texte.'); return }
     setLoading(true); setError(null); setResultUrl(null)
     try {
       const fd = new FormData()
       const r = await fetch(imageUrl)
       const blob = await r.blob()
-      const name = initialImageName || 'image.jpg'
+      const name = initialImageName || 'image.png'
       fd.append('file', new File([blob], name, { type: blob.type }))
       fd.append('texts', JSON.stringify(active.map(l => ({
         content: l.content,
@@ -253,7 +252,9 @@ export default function MemeGenerator({ initialImageUrl = null, initialImageName
 
   function download() {
     if (!resultUrl) return
-    const a = document.createElement('a'); a.href = resultUrl; a.download = 'meme.jpg'; a.click()
+    const isGif = (initialImageName || '').toLowerCase().endsWith('.gif')
+    const ext = isGif ? 'gif' : 'png'
+    const a = document.createElement('a'); a.href = resultUrl; a.download = `meme.${ext}`; a.click()
   }
 
   const sel = texts.find(t => t.id === selectedId)
@@ -462,7 +463,7 @@ export default function MemeGenerator({ initialImageUrl = null, initialImageName
 
               <button
                 onClick={generate}
-                disabled={loading || !texts.some(t => t.content.trim())}
+                disabled={loading || !imageUrl}
                 style={{
                   padding: '10px', fontWeight: 700, borderRadius: 4, fontSize: 13,
                   background: loading ? 'var(--surface3)' : '#fc3',

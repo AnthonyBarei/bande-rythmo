@@ -122,14 +122,10 @@ def _apply_texts(img: Image.Image, texts_data: list[dict]) -> Image.Image:
 def _render_image(in_path: str, out_path: str, texts_data: list[dict], out_ext: str):
     img = Image.open(in_path)
     out = _apply_texts(img.convert("RGBA"), texts_data)
-    if out_ext in ("jpg", "jpeg"):
-        out.convert("RGB").save(out_path, quality=92)
-    elif out_ext == "png":
-        out.save(out_path, optimize=True)
-    elif out_ext == "webp":
+    if out_ext == "webp":
         out.save(out_path, quality=92)
     else:
-        out.save(out_path)
+        out.save(out_path, optimize=True)
 
 
 def _render_gif(in_path: str, out_path: str, texts_data: list[dict]):
@@ -162,17 +158,16 @@ async def generate(
     except Exception:
         texts_data = []
 
-    if not any(t.get("content", "").strip() for t in texts_data):
-        raise HTTPException(400, "At least one non-empty text layer required")
-
     name = (file.filename or "input").lower()
     ext  = name.rsplit(".", 1)[-1] if "." in name else ""
     if ext not in ALLOWED_EXT:
         raise HTTPException(400, f"Unsupported format: {ext}. Use {sorted(ALLOWED_EXT)}")
 
+    out_ext = "gif" if ext == "gif" else "png"
+
     uid      = str(uuid.uuid4())
     in_path  = os.path.join(MEMES_DIR, f"in_{uid}.{ext}")
-    out_path = os.path.join(MEMES_DIR, f"out_{uid}.{ext}")
+    out_path = os.path.join(MEMES_DIR, f"out_{uid}.{out_ext}")
 
     with open(in_path, "wb") as f:
         f.write(await file.read())
@@ -182,9 +177,9 @@ async def generate(
             await asyncio.to_thread(_render_gif, in_path, out_path, texts_data)
             media = "image/gif"
         else:
-            await asyncio.to_thread(_render_image, in_path, out_path, texts_data, ext)
-            media = f"image/{'jpeg' if ext in ('jpg', 'jpeg') else ext}"
+            await asyncio.to_thread(_render_image, in_path, out_path, texts_data, out_ext)
+            media = "image/png"
     except Exception as e:
         raise HTTPException(500, f"Render failed: {e}")
 
-    return FileResponse(out_path, filename=f"meme.{ext}", media_type=media)
+    return FileResponse(out_path, filename=f"meme.{out_ext}", media_type=media)
