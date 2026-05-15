@@ -401,15 +401,24 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
           ctx.fillText(chipLabel, chipX + 4, avatarY + r)
         }
 
-        // Text at natural width, clipped to block
+        // Text: auto-fit font size to block width, min floor
         if (sub.text) {
           const trackH2 = H / numTracks
           const textY = yCenter + (sub.character ? 6 : 0)
           const BASE_FONT = Math.max(16, Math.round(28 * fontScaleRef.current))
-          ctx.font = `bold ${BASE_FONT}px "Courier New", monospace`
+          const MIN_FONT = Math.max(10, Math.round(12 * fontScaleRef.current))
+          const PADDING = sub.character ? 30 : 6 // leave room for avatar chip
+
+          // Fit font size so text fills block but never shrinks below MIN_FONT
+          let fontSize = BASE_FONT
+          ctx.font = `bold ${fontSize}px "Courier New", monospace`
+          const naturalW = ctx.measureText(sub.text).width
+          const availW = blockW - PADDING
+          if (naturalW > availW && availW > 0) {
+            fontSize = Math.max(MIN_FONT, Math.floor(BASE_FONT * availW / naturalW))
+            ctx.font = `bold ${fontSize}px "Courier New", monospace`
+          }
           ctx.textBaseline = 'middle'
-          const scaleX = 1
-          const scaleY = 1
 
           const baseFill = isActive ? '#fff' : 'rgba(255,255,255,0.35)'
           if (isNeon) {
@@ -423,8 +432,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
           ctx.beginPath()
           ctx.rect(Math.max(0, leftX), yTop + 1, Math.min(W, rightX) - Math.max(0, leftX), trackH2 - 2)
           ctx.clip()
-          ctx.translate(leftX, textY)
-          ctx.scale(scaleX, scaleY)
+          ctx.translate(Math.max(0, leftX) + PADDING, textY)
           const segs = sub.text.split(/(\*)/)
           let curX = 0
           for (const seg of segs) {
@@ -612,16 +620,23 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
           }
           if (sub.text) {
             const O_BASE_FONT = Math.max(10, Math.round(20 * fontScaleRef.current))
-            oc.font = `bold ${O_BASE_FONT}px "Courier New", monospace`
+            const O_MIN_FONT = Math.max(7, Math.round(9 * fontScaleRef.current))
+            const O_PAD = 4
+            let oFontSize = O_BASE_FONT
+            oc.font = `bold ${oFontSize}px "Courier New", monospace`
+            const oNatW = oc.measureText(sub.text).width
+            const oAvailW = bw - O_PAD
+            if (oNatW > oAvailW && oAvailW > 0) {
+              oFontSize = Math.max(O_MIN_FONT, Math.floor(O_BASE_FONT * oAvailW / oNatW))
+              oc.font = `bold ${oFontSize}px "Courier New", monospace`
+            }
             oc.textBaseline = 'middle'
-            const sx = 1
             const inactiveFill = oIsNeon ? 'rgba(220,240,255,0.55)' : 'rgba(255,255,255,0.35)'
             oc.save()
             oc.beginPath()
             oc.rect(bx, trackIdx * oTrackH + 1, bw, oTrackH - 2)
             oc.clip()
-            oc.translate(leftX, trackIdx * oTrackH + oTrackH / 2)
-            oc.scale(sx, 1)
+            oc.translate(Math.max(0, leftX) + O_PAD, trackIdx * oTrackH + oTrackH / 2)
             const segs = sub.text.split(/(\*)/)
             let cx2 = 0
             for (const seg of segs) {
