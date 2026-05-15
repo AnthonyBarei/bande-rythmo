@@ -1,5 +1,32 @@
+import json
 import subprocess
 import os
+
+
+def probe_streams(path: str) -> dict:
+    result = subprocess.run(
+        ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", path],
+        capture_output=True,
+    )
+    data = json.loads(result.stdout or b"{}")
+    video_streams, audio_streams = [], []
+    for s in data.get("streams", []):
+        codec_type = s.get("codec_type", "")
+        codec_name = s.get("codec_name", "unknown").upper()
+        tags = s.get("tags", {})
+        parts = [codec_name]
+        if s.get("width"):
+            parts.append(f"{s['width']}x{s['height']}")
+        if tags.get("language"):
+            parts.append(tags["language"])
+        if tags.get("title"):
+            parts.append(tags["title"])
+        label = " · ".join(parts)
+        if codec_type == "video":
+            video_streams.append({"relative_index": len(video_streams), "label": label})
+        elif codec_type == "audio":
+            audio_streams.append({"relative_index": len(audio_streams), "label": label})
+    return {"video_streams": video_streams, "audio_streams": audio_streams}
 
 
 def extract_segment(source: str, start: float, end: float, output: str,

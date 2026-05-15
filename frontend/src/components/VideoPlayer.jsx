@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react'
+import React, { useRef, useState, useEffect } from 'react'
 
 const fmt = t => {
   if (!t && t !== 0) return '00:00.00'
@@ -9,6 +9,7 @@ const fmt = t => {
 
 export default function VideoPlayer({
   src,
+  audioSrc,         // separate audio track (m4a) synced with video
   videoRef: externalRef,
   maxHeight = 420,
   onTimeUpdate,
@@ -18,6 +19,7 @@ export default function VideoPlayer({
 }) {
   const internalRef = useRef(null)
   const ref = externalRef || internalRef
+  const audioRef = useRef(null)
 
   const [playing, setPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
@@ -25,6 +27,43 @@ export default function VideoPlayer({
   const [muted, setMuted] = useState(false)
   const [speed, setSpeed] = useState(1)
   const [ready, setReady] = useState(false)
+
+  // Reload video when src changes
+  useEffect(() => {
+    const v = ref.current
+    if (!v || !src) return
+    v.load()
+  }, [src])
+
+  // Reload audio when audioSrc changes
+  useEffect(() => {
+    const a = audioRef.current
+    if (!a) return
+    a.load()
+  }, [audioSrc])
+
+  // Sync audio element to video play/pause/seek/rate
+  useEffect(() => {
+    const v = ref.current
+    const a = audioRef.current
+    if (!v || !a || !audioSrc) return
+
+    const onPlay = () => { a.currentTime = v.currentTime; a.play().catch(() => {}) }
+    const onPause = () => a.pause()
+    const onSeeked = () => { a.currentTime = v.currentTime }
+    const onRateChange = () => { a.playbackRate = v.playbackRate }
+
+    v.addEventListener('play', onPlay)
+    v.addEventListener('pause', onPause)
+    v.addEventListener('seeked', onSeeked)
+    v.addEventListener('ratechange', onRateChange)
+    return () => {
+      v.removeEventListener('play', onPlay)
+      v.removeEventListener('pause', onPause)
+      v.removeEventListener('seeked', onSeeked)
+      v.removeEventListener('ratechange', onRateChange)
+    }
+  }, [audioSrc])
 
   function togglePlay() {
     const v = ref.current
@@ -63,13 +102,18 @@ export default function VideoPlayer({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', background: '#000', ...style }}>
+      {/* Hidden audio element for alternate track */}
+      {audioSrc && (
+        <audio ref={audioRef} src={audioSrc} preload="auto" style={{ display: 'none' }} />
+      )}
+
       {/* Video area */}
       <div style={{ position: 'relative', overflow: 'hidden' }}>
         <video
           ref={ref}
           src={src}
           preload="auto"
-          muted
+          muted={!!audioSrc || muted}  // mute video when external audio track active
           style={{ width: '100%', maxHeight, display: 'block', objectFit: 'contain', cursor: 'pointer' }}
           onTimeUpdate={handleTimeUpdate}
           onLoadedMetadata={handleMetadata}
@@ -139,15 +183,17 @@ export default function VideoPlayer({
           {[0.5, 0.75, 1, 1.25, 1.5].map(s => <option key={s} value={s}>{s}×</option>)}
         </select>
 
-        <button
-          onClick={toggleMute}
-          style={{
-            background: 'none', color: muted ? '#333' : 'var(--text2)',
-            fontSize: 12, padding: '2px 6px', border: '1px solid var(--border2)', borderRadius: 3,
-          }}
-        >
-          {muted ? '🔇' : '🔊'}
-        </button>
+        {!audioSrc && (
+          <button
+            onClick={toggleMute}
+            style={{
+              background: 'none', color: muted ? '#333' : 'var(--text2)',
+              fontSize: 12, padding: '2px 6px', border: '1px solid var(--border2)', borderRadius: 3,
+            }}
+          >
+            {muted ? '🔇' : '🔊'}
+          </button>
+        )}
       </div>
     </div>
   )

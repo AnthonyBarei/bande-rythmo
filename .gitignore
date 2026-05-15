@@ -56,6 +56,8 @@ backend/exports/
 backend/thumbnails/
 backend/memes/
 backend/clips.json
+backend/sources/*
+backend/plex_config.json
 
 # --- Tooling ---
 .claude/settings.local.json

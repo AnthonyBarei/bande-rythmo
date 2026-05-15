@@ -17,7 +17,7 @@ from services.clip_service import (
     create_clip, delete_clip, get_clip,
     list_clips, update_name, update_subtitles,
 )
-from services.ffmpeg_service import extract_segment, extract_thumbnail
+from services.ffmpeg_service import extract_segment, extract_thumbnail, probe_streams
 
 router = APIRouter()
 
@@ -51,76 +51,6 @@ class BatchLocalRequest(BaseModel):
 def _copy_upload(src, dst_path: str):
     with open(dst_path, 'wb') as dst:
         shutil.copyfileobj(src, dst)
-
-
-def _parse_streams(stdout: bytes) -> dict:
-    data = json.loads(stdout or b"{}")
-    video_streams, audio_streams = [], []
-    for s in data.get("streams", []):
-        codec_type = s.get("codec_type", "")
-        codec_name = s.get("codec_name", "unknown").upper()
-        tags = s.get("tags", {})
-        lang = tags.get("language", "")
-        title = tags.get("title", "")
-        parts = [codec_name]
-        if s.get("width"):
-            parts.append(f"{s['width']}x{s['height']}")
-        if lang:
-            parts.append(lang)
-        if title:
-            parts.append(title)
-        label = " · ".join(parts)
-        if codec_type == "video":
-            video_streams.append({"relative_index": len(video_streams), "label": label})
-        elif codec_type == "audio":
-            audio_streams.append({"relative_index": len(audio_streams), "label": label})
-    return {"video_streams": video_streams, "audio_streams": audio_streams}
-
-
-@router.post("/upload-source")
-async def upload_source(file: UploadFile = File(...)):
-    ext = os.path.splitext(file.filename or "video.mp4")[1] or ".mp4"
-    source_id = str(uuid.uuid4())
-    os.makedirs("sources", exist_ok=True)
-    dest_path = f"sources/{source_id}{ext}"
-
-    await asyncio.to_thread(_copy_upload, file.file, dest_path)
-
-    result = await asyncio.to_thread(
-        subprocess.run,
-        ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", dest_path],
-        capture_output=True,
-    )
-    streams = _parse_streams(result.stdout)
-    return {
-        "source_id": source_id,
-        "path": os.path.abspath(dest_path),
-        "filename": file.filename,
-        **streams,
-    }
-
-
-@router.post("/probe")
-async def probe_streams(file: UploadFile = File(...)):
-    ext = os.path.splitext(file.filename or "video.mp4")[1] or ".mp4"
-    tmp_path = None
-    try:
-        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
-            tmp_path = tmp.name
-        await asyncio.to_thread(_copy_upload, file.file, tmp_path)
-
-        result = await asyncio.to_thread(
-            subprocess.run,
-            ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", tmp_path],
-            capture_output=True,
-        )
-        return _parse_streams(result.stdout)
-    finally:
-        if tmp_path and os.path.exists(tmp_path):
-            try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
 
 
 @router.post("/batch")
@@ -188,19 +118,14 @@ async def create_batch(
 
 @router.post("/probe-local")
 async def probe_streams_local(req: ProbeLocalRequest):
-    if not os.path.isfile(req.path):
+    if not req.path.startswith("http") and not os.path.isfile(req.path):
         raise HTTPException(400, f"File not found: {req.path}")
-    result = await asyncio.to_thread(
-        subprocess.run,
-        ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", req.path],
-        capture_output=True,
-    )
-    return _parse_streams(result.stdout)
+    return await asyncio.to_thread(probe_streams, req.path)
 
 
 @router.post("/batch-local")
 async def create_batch_local(req: BatchLocalRequest, db: Session = Depends(get_db)):
-    if not os.path.isfile(req.path):
+    if not req.path.startswith("http") and not os.path.isfile(req.path):
         raise HTTPException(400, f"File not found: {req.path}")
     if not req.clips:
         raise HTTPException(400, "No clips provided")

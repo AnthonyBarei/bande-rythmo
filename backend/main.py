@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from database import init_db
-from routes import video, transcription, export, clips, meme
+from routes import video, transcription, export, clips, meme, files, plex
 
 
 @asynccontextmanager
@@ -34,6 +34,8 @@ app.include_router(transcription.router, prefix="/api/transcription", tags=["tra
 app.include_router(export.router, prefix="/api/export", tags=["export"])
 app.include_router(clips.router, prefix="/api/clips", tags=["clips"])
 app.include_router(meme.router, prefix="/api/meme", tags=["meme"])
+app.include_router(files.router, prefix="/api/files", tags=["files"])
+app.include_router(plex.router, prefix="/api/plex", tags=["plex"])
 
 app.mount("/segments", StaticFiles(directory="segments"), name="segments")
 app.mount("/exports", StaticFiles(directory="exports"), name="exports")

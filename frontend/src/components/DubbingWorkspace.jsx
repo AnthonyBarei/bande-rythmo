@@ -401,17 +401,14 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
           ctx.fillText(chipLabel, chipX + 4, avatarY + r)
         }
 
-        // Text stretched across block
+        // Text at natural width, clipped to block
         if (sub.text) {
           const trackH2 = H / numTracks
           const textY = yCenter + (sub.character ? 6 : 0)
           const BASE_FONT = Math.max(16, Math.round(28 * fontScaleRef.current))
           ctx.font = `bold ${BASE_FONT}px "Courier New", monospace`
           ctx.textBaseline = 'middle'
-          const naturalW = ctx.measureText(sub.text).width
-          const rawScaleX = naturalW > 0 ? blockW / naturalW : 1
-          const MIN_SCALE_X = 0.38
-          const scaleX = Math.max(MIN_SCALE_X, rawScaleX)
+          const scaleX = 1
           const scaleY = 1
 
           const baseFill = isActive ? '#fff' : 'rgba(255,255,255,0.35)'
@@ -617,9 +614,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
             const O_BASE_FONT = Math.max(10, Math.round(20 * fontScaleRef.current))
             oc.font = `bold ${O_BASE_FONT}px "Courier New", monospace`
             oc.textBaseline = 'middle'
-            const natW = oc.measureText(sub.text).width
-            const rawSx = natW > 0 ? bw / natW : 1
-            const sx = Math.max(0.35, rawSx)
+            const sx = 1
             const inactiveFill = oIsNeon ? 'rgba(220,240,255,0.55)' : 'rgba(255,255,255,0.35)'
             oc.save()
             oc.beginPath()

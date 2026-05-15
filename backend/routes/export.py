@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, File, Form, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import List, Optional
-from services.subtitle_service import export_srt, export_ass
+from services.subtitle_service import export_srt, export_ass, export_ass_karaoke, export_detx
 from services.ffmpeg_service import burn_subtitles, export_gif
 from services.br_renderer import render_br_video
 import asyncio
@@ -24,7 +24,7 @@ class Subtitle(BaseModel):
 class ExportRequest(BaseModel):
     subtitles: List[Subtitle] = []
     segment_id: str
-    format: str  # "srt" | "ass" | "mp4" | "gif" | "mp3" | "wav"
+    format: str  # "srt" | "ass" | "ass-karaoke" | "detx" | "mp4" | "gif" | "mp3" | "wav"
     in_point: float = None
     out_point: float = None
     px_per_sec: float = 180.0
@@ -60,6 +60,16 @@ async def export(req: ExportRequest):
         path = f"exports/{export_id}.ass"
         export_ass(subs, path)
         return FileResponse(path, filename="bande_rythmo.ass", media_type="text/plain")
+
+    elif req.format == "ass-karaoke":
+        path = f"exports/{export_id}.ass"
+        export_ass_karaoke(subs, path)
+        return FileResponse(path, filename="bande_rythmo_karaoke.ass", media_type="text/plain")
+
+    elif req.format == "detx":
+        path = f"exports/{export_id}.detx"
+        export_detx(subs, path)
+        return FileResponse(path, filename="bande_rythmo.detx", media_type="application/xml")
 
     elif req.format == "mp4":
         if not os.path.exists(segment):
@@ -158,7 +168,7 @@ async def export(req: ExportRequest):
         return FileResponse(output, filename=f"clip.{ext}", media_type=media)
 
     else:
-        raise HTTPException(400, "format must be srt, ass, mp4, gif, mp3, or wav")
+        raise HTTPException(400, "format must be srt, ass, ass-karaoke, detx, mp4, gif, mp3, or wav")
 
 
 @router.post("/mp4-canvas")

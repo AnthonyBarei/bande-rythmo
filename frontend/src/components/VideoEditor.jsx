@@ -23,7 +23,7 @@ const Kbd = ({ children }) => (
   }}>{children}</span>
 )
 
-export default function VideoEditor({ video, onClipsCreated, videoStream, audioStream }) {
+export default function VideoEditor({ video, onClipsCreated, videoStream, audioStream, audioSrc }) {
   const videoRef = useRef(null)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
@@ -130,6 +130,7 @@ export default function VideoEditor({ video, onClipsCreated, videoStream, audioS
       {/* Video */}
       <VideoPlayer
         src={video.url}
+        audioSrc={audioSrc}
         videoRef={videoRef}
         maxHeight={420}
         onTimeUpdate={t => setCurrentTime(t)}

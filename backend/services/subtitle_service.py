@@ -170,3 +170,138 @@ def export_ass(
 
     with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
+
+
+def export_ass_karaoke(subtitles: List[Dict], path: str):
+    """ASS with \\kf karaoke tags — compatible with ass2rythmo and karaoke renderers.
+    Duration distributed proportionally across words by character count."""
+    seen = []
+    for sub in subtitles:
+        c = sub.get("character", "")
+        if c not in seen:
+            seen.append(c)
+
+    char_style = {c: f"K_{i}" for i, c in enumerate(seen)}
+
+    styles_fmt = (
+        "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, "
+        "OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, "
+        "ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
+        "Alignment, MarginL, MarginR, MarginV, Encoding\n"
+    )
+    styles = styles_fmt
+    for i, c in enumerate(seen):
+        color = _TRACK_COLORS[i % len(_TRACK_COLORS)]
+        styles += (
+            f"Style: K_{i},Courier New,28,{color},&H000000FF,&H00000000,"
+            f"&HAA000000,0,0,0,0,100,100,2,0,1,1,0,2,10,10,10,1\n"
+        )
+
+    header = (
+        "[Script Info]\n"
+        "ScriptType: v4.00+\n"
+        "PlayResX: 1920\n"
+        "PlayResY: 1080\n\n"
+        "[V4+ Styles]\n"
+        f"{styles}\n"
+        "[Events]\n"
+        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
+    )
+    lines = [header]
+
+    for sub in subtitles:
+        t_start = sub["start"]
+        t_end = sub["end"]
+        duration_cs = max(1, int((t_end - t_start) * 100))
+        text = sub["text"].strip()
+        character = sub.get("character", "")
+        style = char_style.get(character, "K_0")
+
+        words = text.split()
+        if not words:
+            continue
+
+        total_chars = sum(len(w) for w in words)
+        if total_chars == 0:
+            total_chars = 1
+
+        tagged = ""
+        for w in words:
+            cs = max(1, int(duration_cs * len(w) / total_chars))
+            safe_w = w.replace("{", "\\{").replace("}", "\\}")
+            tagged += f"{{\\kf{cs}}}{safe_w} "
+        tagged = tagged.rstrip()
+
+        lines.append(
+            f"Dialogue: 0,{_to_ass_time(t_start)},{_to_ass_time(t_end)},"
+            f"{style},{character},0,0,0,,{tagged}"
+        )
+
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
+
+
+def _to_detx_time(s: float, fps: float = 25.0) -> str:
+    s = max(0.0, s)
+    h = int(s // 3600)
+    m = int((s % 3600) // 60)
+    sec = int(s % 60)
+    frame = int(round((s % 1) * fps))
+    frame = min(frame, int(fps) - 1)
+    return f"{h:02d}:{m:02d}:{sec:02d}:{frame:02d}"
+
+
+def export_detx(subtitles: List[Dict], path: str, fps: float = 25.0):
+    """DetX open XML format — compatible with Cappella, Phonations, Joker (French dubbing ecosystem)."""
+    import xml.etree.ElementTree as ET
+
+    seen = []
+    for sub in subtitles:
+        c = sub.get("character", "")
+        if c not in seen:
+            seen.append(c)
+    if not seen:
+        seen = [""]
+
+    char_id = {c: i for i, c in enumerate(seen)}
+
+    root = ET.Element("PhrasesModel", version="3")
+
+    config = ET.SubElement(root, "Configuration")
+    config.set("loopsDuration", "0")
+    config.set("framesPerSecond", str(int(fps)))
+
+    characters_el = ET.SubElement(root, "Characters")
+    for c in seen:
+        ce = ET.SubElement(characters_el, "Character")
+        ce.set("id", str(char_id[c]))
+        ce.set("name", c if c else "Personnage")
+        raw = _TRACK_COLORS[char_id[c] % len(_TRACK_COLORS)]  # e.g. "&H00FFFFFF&" BGR
+        bgr = raw.replace("&H00", "").replace("&", "")        # e.g. "FFFFFF"
+        # ASS colors are BGR — swap to RGB for DetX
+        color_rgb = f"#{bgr[4:6]}{bgr[2:4]}{bgr[0:2]}" if len(bgr) == 6 else "#FFFFFF"
+        ce.set("color", color_rgb)
+
+    phrases_el = ET.SubElement(root, "Phrases")
+    for i, sub in enumerate(subtitles):
+        pe = ET.SubElement(phrases_el, "Phrase")
+        pe.set("id", str(i))
+        c = sub.get("character", "")
+        pe.set("characterId", str(char_id.get(c, 0)))
+        t_start = sub["start"]
+        t_end = sub["end"]
+        pe.set("timeIn",  _to_detx_time(t_start, fps))
+        pe.set("timeOut", _to_detx_time(t_end, fps))
+        dur_frames = max(1, int(round((t_end - t_start) * fps)))
+        pos_frames = int(round(t_start * fps))
+        pe.set("position", str(pos_frames))
+        pe.set("duration", str(dur_frames))
+        pe.set("text", sub.get("text", ""))
+        pe.set("type", "0")
+        pe.set("on", "true")
+
+    tree = ET.ElementTree(root)
+    ET.indent(tree, space="  ")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write('<?xml version="1.0" encoding="UTF-8"?>\n')
+        tree.write(f, encoding="unicode", xml_declaration=False)

@@ -1,12 +1,14 @@
 import React, { useState } from 'react'
 
 const FORMATS = [
-  { id: 'srt',  label: 'SRT',     icon: '📄', desc: 'Sous-titres standard',             color: '#4488ff', needsSubs: true },
-  { id: 'ass',  label: 'ASS',     icon: '🎬', desc: 'Défilement BR intégré',            color: '#aa44ff', needsSubs: true },
-  { id: 'mp4',  label: 'MP4 + BR',icon: '🎥', desc: 'Vidéo avec bande rythmo incrustée',color: '#44bb55', needsSubs: true },
-  { id: 'gif',  label: 'GIF',     icon: '🌀', desc: 'Clip animé',                       color: '#ff6644', needsSubs: false },
-  { id: 'mp3',  label: 'MP3',     icon: '🎵', desc: 'Audio — StreamDeck, Discord…',     color: '#ff6688', needsSubs: false },
-  { id: 'wav',  label: 'WAV',     icon: '🎚️', desc: 'Audio non compressé',              color: '#aa88ff', needsSubs: false },
+  { id: 'srt',         label: 'SRT',        icon: '📄', desc: 'Sous-titres standard',                        color: '#4488ff', needsSubs: true },
+  { id: 'ass',         label: 'ASS',        icon: '🎬', desc: 'Défilement BR intégré',                       color: '#aa44ff', needsSubs: true },
+  { id: 'ass-karaoke', label: 'ASS Karaoké',icon: '🎤', desc: 'Tags \\kf par mot — compatible ass2rythmo',   color: '#cc88ff', needsSubs: true },
+  { id: 'detx',        label: 'DetX',       icon: '🎙️', desc: 'Standard FR — Cappella / Phonations / Joker', color: '#ff9944', needsSubs: true },
+  { id: 'mp4',         label: 'MP4 + BR',   icon: '🎥', desc: 'Vidéo avec bande rythmo incrustée',           color: '#44bb55', needsSubs: true },
+  { id: 'gif',         label: 'GIF',        icon: '🌀', desc: 'Clip animé',                                  color: '#ff6644', needsSubs: false },
+  { id: 'mp3',         label: 'MP3',        icon: '🎵', desc: 'Audio — StreamDeck, Discord…',                color: '#ff6688', needsSubs: false },
+  { id: 'wav',         label: 'WAV',        icon: '🎚️', desc: 'Audio non compressé',                         color: '#aa88ff', needsSubs: false },
 ]
 
 export default function ExportPanel({ segmentId, subtitles, pxPerSec = 180, brOffset = 0, canvasH = 64, getCanvasWidth }) {
@@ -43,7 +45,8 @@ export default function ExportPanel({ segmentId, subtitles, pxPerSec = 180, brOf
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `bande_rythmo.${format}`
+      const ext = format === 'ass-karaoke' ? 'ass' : format
+      a.download = `bande_rythmo${format === 'ass-karaoke' ? '_karaoke' : ''}.${ext}`
       a.click()
       URL.revokeObjectURL(url)
       setLastExport(format)
