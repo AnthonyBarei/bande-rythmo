@@ -31,17 +31,19 @@ def extract_thumbnail(video_path: str, output_path: str, time: float = 1.0):
     subprocess.run(cmd, check=True, capture_output=True)
 
 
-def export_gif(video_path: str, output_path: str, fps: int = 12, scale: int = 480):
+def export_gif(video_path: str, output_path: str, fps: int = 12, scale: int = 480,
+               start: float = 0, duration: float = None):
     palette = output_path.replace(".gif", "_palette.png")
+    seek = ["-ss", str(start)] if start > 0 else []
+    trim = ["-t", str(duration)] if duration is not None else []
     cmd1 = [
-        "ffmpeg", "-y", "-i", video_path,
+        "ffmpeg", "-y", *seek, "-i", video_path, *trim,
         "-vf", f"fps={fps},scale={scale}:-1:flags=lanczos,palettegen=stats_mode=diff",
         palette,
     ]
     subprocess.run(cmd1, check=True, capture_output=True)
     cmd2 = [
-        "ffmpeg", "-y",
-        "-i", video_path, "-i", palette,
+        "ffmpeg", "-y", *seek, "-i", video_path, *seek, "-i", palette, *trim,
         "-lavfi", f"fps={fps},scale={scale}:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer",
         output_path,
     ]

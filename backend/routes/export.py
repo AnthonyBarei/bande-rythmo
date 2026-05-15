@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 from services.subtitle_service import export_srt, export_ass
 from services.ffmpeg_service import burn_subtitles, export_gif
 import asyncio
@@ -23,6 +23,8 @@ class ExportRequest(BaseModel):
     subtitles: List[Subtitle] = []
     segment_id: str
     format: str  # "srt" | "ass" | "mp4" | "gif" | "mp3" | "wav"
+    gif_start: float = 0
+    gif_end: Optional[float] = None
 
 
 
@@ -36,7 +38,8 @@ async def export(req: ExportRequest):
         if not os.path.exists(segment):
             raise HTTPException(404, "Segment not found")
         output = f"exports/{export_id}.gif"
-        await asyncio.to_thread(export_gif, segment, output)
+        duration = (req.gif_end - req.gif_start) if req.gif_end is not None else None
+        await asyncio.to_thread(export_gif, segment, output, start=req.gif_start, duration=duration)
         return FileResponse(output, filename="clip.gif", media_type="image/gif")
 
     subs = [{"start": s.start, "end": s.end, "character": s.character, "text": s.text} for s in req.subtitles]

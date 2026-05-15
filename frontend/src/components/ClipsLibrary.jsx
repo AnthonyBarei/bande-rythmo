@@ -1,9 +1,11 @@
 import React, { useState } from 'react'
 import ClipCard from './ClipCard'
+import GifExportModal from './GifExportModal'
 
 export default function ClipsLibrary({ clips, onDub, onMeme, onRefresh, onDelete, onRename }) {
   const [exporting, setExporting] = useState(null)
   const [toast, setToast] = useState(null)
+  const [gifModalClip, setGifModalClip] = useState(null)
 
   function showToast(msg, type = 'info') {
     setToast({ msg, type })
@@ -34,7 +36,7 @@ export default function ClipsLibrary({ clips, onDub, onMeme, onRefresh, onDelete
     }
   }
 
-  const handleExportGif = clip => handleExportFormat(clip, 'gif')
+  const handleExportGif = clip => setGifModalClip(clip)
   const handleExportMp3 = clip => handleExportFormat(clip, 'mp3')
 
   async function handleDelete(clipId) {
@@ -90,6 +92,15 @@ export default function ClipsLibrary({ clips, onDub, onMeme, onRefresh, onDelete
           </div>
         )}
       </div>
+
+      {/* GIF export modal */}
+      {gifModalClip && (
+        <GifExportModal
+          clip={gifModalClip}
+          onClose={() => setGifModalClip(null)}
+          onExported={() => showToast('GIF exporté', 'success')}
+        />
+      )}
 
       {/* Toast */}
       {toast && (
