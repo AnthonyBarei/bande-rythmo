@@ -59,3 +59,10 @@ backend/clips.json
 
 # --- Tooling ---
 .claude/settings.local.json
+.claude/worktrees/*
+
+# --- DBs ---
+*.db
+*.sqlite3
+*.sqlite
+*.sqlite3
