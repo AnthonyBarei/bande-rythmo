@@ -4,6 +4,7 @@ import ImportSection from './components/ImportSection'
 import ClipsLibrary from './components/ClipsLibrary'
 import DubbingWorkspace from './components/DubbingWorkspace'
 import MemeGenerator from './components/MemeGenerator'
+import Preferences from './components/Preferences'
 
 export default function App() {
   const [section, setSection] = useState('import')
@@ -112,6 +113,7 @@ export default function App() {
         {section === 'memes' && (
           <MemeGenerator clip={null} />
         )}
+        {section === 'settings' && <Preferences />}
       </main>
     </div>
   )

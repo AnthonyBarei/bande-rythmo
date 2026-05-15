@@ -1,9 +1,10 @@
 import React from 'react'
 
 const NAV = [
-  { id: 'import', icon: '⬆', label: 'Importer' },
-  { id: 'clips',  icon: '▤',  label: 'Mes Clips' },
-  { id: 'memes',  icon: '😂', label: 'Memes' },
+  { id: 'import',   icon: '⬆', label: 'Importer' },
+  { id: 'clips',    icon: '▤',  label: 'Mes Clips' },
+  { id: 'memes',    icon: '😂', label: 'Memes' },
+  { id: 'settings', icon: '⚙', label: 'Réglages' },
 ]
 
 export default function Sidebar({ section, onNavigate, clipCount }) {
