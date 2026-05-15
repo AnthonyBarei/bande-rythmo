@@ -183,12 +183,23 @@ const ICONS = {
   eyeOff: <><path d="M17.94 17.94A10.94 10.94 0 0112 19c-7 0-11-7-11-7a18.45 18.45 0 015.06-5.94M9.9 4.24A10.93 10.93 0 0112 4c7 0 11 7 11 7a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></>,
   note:   <><path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9z"/><polyline points="14 3 14 9 20 9"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></>,
   trash:  <><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/></>,
+  goto:   <><line x1="5" y1="12" x2="19" y2="12"/><polyline points="15 8 19 12 15 16"/><line x1="5" y1="5" x2="5" y2="19"/></>,
 }
 
-function SubtitleRow({ sub, idx, active, selected, compact, charMap, charList, onChange, onDelete, onSelect, onNewCharacter }) {
+function SubtitleRow({ sub, idx, active, selected, compact, charMap, charList, onChange, onDelete, onSelect, onSeek, onNewCharacter }) {
   const textInputRef = useRef(null)
   const [showNotations, setShowNotations] = useState(false)
   const notationRef = useRef(null)
+  const mouseDownPos = useRef(null)
+
+  function handleMouseDown(e) {
+    mouseDownPos.current = { x: e.clientX, y: e.clientY }
+  }
+
+  function handleRowClick(e) {
+    mouseDownPos.current = null
+    onSelect()
+  }
 
   useEffect(() => {
     if (!showNotations) return
@@ -238,13 +249,14 @@ function SubtitleRow({ sub, idx, active, selected, compact, charMap, charList, o
     // Compact layout: stacked TCs | char dot | text+notation | del
     return (
       <div
-        onClick={onSelect}
+        onMouseDown={handleMouseDown}
+        onClick={handleRowClick}
         style={{
           display: 'flex', alignItems: 'center', gap: 0,
           background: selected ? 'rgba(245, 197, 24,0.07)' : (active ? 'rgba(255,255,255,0.02)' : 'transparent'),
           borderBottom: '1px solid #141414',
           borderLeft: `3px solid ${selected ? c.label : (active ? c.label + '88' : 'transparent')}`,
-          cursor: 'default', userSelect: 'none', minHeight: 42,
+          cursor: 'pointer', userSelect: 'none', minHeight: 42,
           transition: 'background 0.1s',
         }}
       >
@@ -287,8 +299,9 @@ function SubtitleRow({ sub, idx, active, selected, compact, charMap, charList, o
           {showNotations && <NotationPopover tags={NOTATION_TAGS} onInsert={insertNotation} />}
         </div>
 
-        {/* Actions (compact: just eye + del) */}
+        {/* Actions (compact: goto + eye + del) */}
         <div style={{ display: 'flex', alignItems: 'center', padding: '0 4px', flexShrink: 0 }}>
+          {icBtn('Aller au timecode', '#7ec0ff', () => onSeek?.(sub.start), <Ic d={ICONS.goto} />)}
           {icBtn(sub.hidden ? 'Masqué' : 'Visible', sub.hidden ? '#444' : '#6eb', () => onChange({ ...sub, hidden: !sub.hidden }), <Ic d={sub.hidden ? ICONS.eyeOff : ICONS.eye} />)}
           {icBtn('Supprimer', '#7a3535', onDelete, <Ic d={ICONS.trash} />)}
         </div>
@@ -299,13 +312,14 @@ function SubtitleRow({ sub, idx, active, selected, compact, charMap, charList, o
   // Normal layout
   return (
     <div
-      onClick={onSelect}
+      onMouseDown={handleMouseDown}
+      onClick={handleRowClick}
       style={{
         display: 'flex', alignItems: 'center', gap: 0,
         background: selected ? 'rgba(245, 197, 24,0.07)' : (active ? 'rgba(255,255,255,0.02)' : 'transparent'),
         borderBottom: '1px solid #141414',
         borderLeft: `3px solid ${selected ? c.label : (active ? c.label + '88' : 'transparent')}`,
-        cursor: 'default', userSelect: 'none', minHeight: 42,
+        cursor: 'pointer', userSelect: 'none', minHeight: 42,
         transition: 'background 0.1s',
       }}
     >
@@ -363,6 +377,7 @@ function SubtitleRow({ sub, idx, active, selected, compact, charMap, charList, o
           fontFamily: 'var(--font-mono)', fontWeight: cpsHigh ? 700 : 400,
           marginRight: 4, minWidth: 32,
         }} title={`${cps.toFixed(1)} c/s`}>{dur.toFixed(2)}s</span>
+        {icBtn('Aller au timecode', '#7ec0ff', () => onSeek?.(sub.start), <Ic d={ICONS.goto} />)}
         {icBtn(sub.hidden ? 'Masqué' : 'Visible', sub.hidden ? '#444' : '#6eb', () => onChange({ ...sub, hidden: !sub.hidden }), <Ic d={sub.hidden ? ICONS.eyeOff : ICONS.eye} />)}
         {icBtn(sub.note || 'Note', sub.note ? '#f5c518' : '#333', () => {}, <Ic d={ICONS.note} />)}
         {icBtn('Supprimer', '#7a3535', onDelete, <Ic d={ICONS.trash} />)}

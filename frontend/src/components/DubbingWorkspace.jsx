@@ -1487,18 +1487,11 @@ function BandeRythmoToolbar({
     onSubtitlesChange(subtitles.map((s, i) => i === targetIdx ? { ...s, ...patch } : s))
   }
 
-  function openDropdown(type, leftOffset) {
-    const rect = toolbarRef.current?.getBoundingClientRect()
-    if (rect) setDropdownAnchor({ bottom: window.innerHeight - rect.top + 4, left: rect.left + leftOffset })
-    if (type === 'resp') { setShowResp(s => !s); setShowReact(false) }
-    else { setShowReact(s => !s); setShowResp(false) }
-    setShowNote(false)
-  }
 
-  function insertTagSub(text) {
+  function insertTagSub(text, dur = 0.5) {
     const v = videoRef.current
     const t = v ? v.currentTime : 0
-    const newSub = { start: t, end: t + 0.5, text, character: '', reactions: [] }
+    const newSub = { start: t, end: t + dur, text, character: '', reactions: [] }
     const next = [...subtitles, newSub].sort((a, b) => a.start - b.start)
     onSubtitlesChange(next)
     setShowResp(false)
@@ -1553,9 +1546,22 @@ function BandeRythmoToolbar({
     setSelectedIdx(targetIdx + 1)
   }
 
+  function insertTagSub(text, dur = 0.5) {
+    const v = videoRef.current
+    const t = v ? v.currentTime : 0
+    const newSub = { start: t, end: t + dur, text, character: '', reactions: [] }
+    const next = [...subtitles, newSub].sort((a, b) => a.start - b.start)
+    onSubtitlesChange(next)
+    setShowResp(false)
+    setShowReact(false)
+  }
+
   function openDropdown(type, e) {
-    const r = e.currentTarget.getBoundingClientRect()
-    setDropdownAnchor({ bottom: window.innerHeight - r.top + 4, left: r.left })
+    try {
+      const el = e.currentTarget || e.nativeEvent?.currentTarget || e.target
+      const r = el.getBoundingClientRect()
+      setDropdownAnchor({ bottom: window.innerHeight - r.top + 4, left: r.left })
+    } catch {}
     if (type === 'resp') { setShowResp(s => !s); setShowReact(false) }
     else { setShowReact(s => !s); setShowResp(false) }
     setShowNote(false)
@@ -1696,13 +1702,13 @@ function BandeRythmoToolbar({
 
       {/* Respiration + reactions */}
       <div style={grp}>
-        <button onClick={() => openDropdown('resp', 0)} title="Respirations…"
+        <button onClick={e => openDropdown('resp', e)} title="Respirations…"
           style={{ ...btn(true, showResp), padding: '0 10px', fontSize: 12, fontWeight: 600, letterSpacing: 0.3 }}>
           <Ic d={ICONS.breath} size={14} />
           Respirations
         </button>
         {sep}
-        <button onClick={() => openDropdown('react', 160)} title="Réactions…"
+        <button onClick={e => openDropdown('react', e)} title="Réactions…"
           style={{ ...btn(true, showReact), padding: '0 10px', fontSize: 12, fontWeight: 600, letterSpacing: 0.3 }}>
           <Ic d={ICONS.reactions} size={14} />
           Réactions
@@ -1789,22 +1795,36 @@ function BandeRythmoToolbar({
       {showResp && (
         <div style={{
           position: 'fixed', bottom: dropdownAnchor.bottom, left: dropdownAnchor.left, zIndex: 9999,
-          background: '#0c0c0c', border: '1px solid #e54545', borderRadius: 6,
-          padding: 6, minWidth: 200, boxShadow: '0 6px 18px rgba(0,0,0,0.7)',
+          background: '#0c0c0c', border: '1px solid #7ec0ff33', borderRadius: 6,
+          padding: 10, minWidth: 260, boxShadow: '0 6px 18px rgba(0,0,0,0.7)',
         }}>
-          <div style={{ fontSize: 9, color: '#e54545', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 5, padding: '0 4px' }}>
-            Ajouter respiration au {fmt(videoRef.current?.currentTime ?? 0)}
+          <div style={{ fontSize: 9, color: '#7ec0ff', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+            Respirations — crée une réplique au temps courant
           </div>
-          {RESP_TAGS.map(r => (
-            <button key={r} onClick={() => insertTagSub(r)} style={{
-              display: 'block', width: '100%', textAlign: 'left',
-              padding: '5px 10px', background: 'none', border: 'none',
-              color: 'var(--text)', fontSize: 12, cursor: 'pointer', borderRadius: 4,
-            }}
-            onMouseEnter={e => e.currentTarget.style.background = 'rgba(229,69,69,0.12)'}
-            onMouseLeave={e => e.currentTarget.style.background = 'none'}
-            >{r}</button>
-          ))}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 8 }}>
+            {[
+              { label: '(HH)', color: '#7ec0ff', dur: 0.5, desc: 'Inspiration' },
+              { label: '(H)',  color: '#7ec0ff', dur: 0.4, desc: 'Souffle' },
+              { label: '(Hm)', color: '#7ec0ff', dur: 0.4, desc: 'Demi-souffle' },
+              { label: '*',    color: '#5599cc', dur: 0.3, desc: 'Repère BR' },
+              { label: '(…)',  color: '#888',    dur: 0.6, desc: 'Pause' },
+            ].map(r => (
+              <button key={r.label}
+                onClick={() => insertTagSub(r.label, r.dur)}
+                title={`${r.desc} — ${r.dur}s`}
+                style={{
+                  fontSize: 13, padding: '6px 12px', fontFamily: 'var(--font-mono)',
+                  background: 'rgba(126,192,255,0.06)', border: `1px solid ${r.color}44`,
+                  color: r.color, borderRadius: 4, cursor: 'pointer', transition: 'background 0.1s', fontWeight: 700,
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = `${r.color}1a`; e.currentTarget.style.borderColor = r.color }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'rgba(126,192,255,0.06)'; e.currentTarget.style.borderColor = `${r.color}44` }}
+              >{r.label}</button>
+            ))}
+          </div>
+          <div style={{ fontSize: 9, color: '#555' }}>
+            Personnage actif : <span style={{ color: cColor }}>{activeChar || '(défaut)'}</span>
+          </div>
         </div>
       )}
 
@@ -1812,22 +1832,41 @@ function BandeRythmoToolbar({
       {showReact && (
         <div style={{
           position: 'fixed', bottom: dropdownAnchor.bottom, left: dropdownAnchor.left, zIndex: 9999,
-          background: '#0c0c0c', border: '1px solid #5bf', borderRadius: 6,
-          padding: 6, minWidth: 200, boxShadow: '0 6px 18px rgba(0,0,0,0.7)',
+          background: '#0c0c0c', border: '1px solid #f5c51844', borderRadius: 6,
+          padding: 10, minWidth: 300, maxWidth: 380, boxShadow: '0 6px 18px rgba(0,0,0,0.7)',
         }}>
-          <div style={{ fontSize: 9, color: '#5bf', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 5, padding: '0 4px' }}>
-            Ajouter réaction au {fmt(videoRef.current?.currentTime ?? 0)}
+          <div style={{ fontSize: 9, color: '#f5c518', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+            Réactions — crée une réplique au temps courant
           </div>
-          {REACTION_TAGS.map(r => (
-            <button key={r} onClick={() => insertTagSub(r)} style={{
-              display: 'block', width: '100%', textAlign: 'left',
-              padding: '5px 10px', background: 'none', border: 'none',
-              color: 'var(--text)', fontSize: 12, cursor: 'pointer', borderRadius: 4,
-            }}
-            onMouseEnter={e => e.currentTarget.style.background = 'rgba(80,180,255,0.12)'}
-            onMouseLeave={e => e.currentTarget.style.background = 'none'}
-            >{r}</button>
-          ))}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 8 }}>
+            {[
+              { label: '(rires)',      color: '#f5c518', dur: 1.5 },
+              { label: '(pleurs)',     color: '#ff8888', dur: 2.0 },
+              { label: '(soupir)',     color: '#aaa',    dur: 1.0 },
+              { label: '(long soupir)',color: '#aaa',    dur: 2.0 },
+              { label: '(cri)',        color: '#ff5a5a', dur: 0.7 },
+              { label: '(chuchoté)',   color: '#88ddaa', dur: 1.2 },
+              { label: '(essoufflé)', color: '#7ec0ff', dur: 1.0 },
+              { label: '(hésitation)', color: '#bb88ff', dur: 0.5 },
+              { label: '(raclement)', color: '#cc9966', dur: 0.5 },
+              { label: '(grognement)', color: '#cc7744', dur: 0.4 },
+            ].map(r => (
+              <button key={r.label}
+                onClick={() => insertTagSub(r.label, r.dur)}
+                title={`Créer réplique "${r.label}" — ${r.dur}s`}
+                style={{
+                  fontSize: 10, padding: '5px 9px', fontFamily: 'var(--font-mono)',
+                  background: 'rgba(255,255,255,0.04)', border: `1px solid ${r.color}44`,
+                  color: r.color, borderRadius: 4, cursor: 'pointer', transition: 'background 0.1s',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = `${r.color}18`; e.currentTarget.style.borderColor = r.color }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; e.currentTarget.style.borderColor = `${r.color}44` }}
+              >{r.label} <span style={{ fontSize: 8, opacity: 0.5 }}>{r.dur}s</span></button>
+            ))}
+          </div>
+          <div style={{ fontSize: 9, color: '#555' }}>
+            Crée un bloc BR indépendant · personnage actif : <span style={{ color: cColor }}>{activeChar || '(défaut)'}</span>
+          </div>
         </div>
       )}
 

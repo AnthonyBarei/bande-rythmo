@@ -27,7 +27,7 @@ def _get_diarize_pipeline():
         from pyannote.audio import Pipeline
         _diarize_pipeline = Pipeline.from_pretrained(
             "pyannote/speaker-diarization-3.1",
-            use_auth_token=hf_token,
+            token=hf_token,
         )
         if _DEVICE == "cuda":
             _diarize_pipeline = _diarize_pipeline.to(torch.device("cuda"))
@@ -35,14 +35,17 @@ def _get_diarize_pipeline():
 
 
 def _build_diarization_map(path: str) -> Dict[tuple, str]:
-    pipeline = _get_diarize_pipeline()
-    if not pipeline:
+    try:
+        pipeline = _get_diarize_pipeline()
+        if not pipeline:
+            return {}
+        diarization = pipeline(path)
+        return {
+            (turn.start, turn.end): speaker
+            for turn, _, speaker in diarization.itertracks(yield_label=True)
+        }
+    except Exception:
         return {}
-    diarization = pipeline(path)
-    return {
-        (turn.start, turn.end): speaker
-        for turn, _, speaker in diarization.itertracks(yield_label=True)
-    }
 
 
 def _assign_speaker(start: float, end: float, diar_map: Dict[tuple, str]) -> str:
