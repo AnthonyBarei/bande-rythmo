@@ -10,22 +10,9 @@ const selectStyle = {
   fontSize: 12,
 }
 
-async function probeFile(file) {
-  try {
-    const form = new FormData()
-    form.append('file', file)
-    const res = await fetch('/api/clips/probe', { method: 'POST', body: form })
-    if (!res.ok) return null
-    const data = await res.json()
-    return (data.video_streams.length > 0 || data.audio_streams.length > 0) ? data : null
-  } catch (_) {
-    return null
-  }
-}
-
 export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
   const [error, setError] = useState(null)
-  const [probing, setProbing] = useState(false)
+  const [uploading, setUploading] = useState(false)
   const [streams, setStreams] = useState(null)
   const [videoStream, setVideoStream] = useState(null)
   const [audioStream, setAudioStream] = useState(null)
@@ -38,20 +25,38 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
     setStreams(null)
     setVideoStream(null)
     setAudioStream(null)
+
+    // Show video immediately from local blob URL while upload happens
     onVideoSet({ file, url: URL.createObjectURL(file), filename: file.name })
     e.target.value = ''
-    setProbing(true)
+
+    setUploading(true)
     try {
-      const result = await probeFile(file)
-      setStreams(result)
+      const form = new FormData()
+      form.append('file', file)
+      const res = await fetch('/api/clips/upload-source', { method: 'POST', body: form })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+
+      // Update video object with server-side path (enables batch-local, skips re-upload)
+      onVideoSet({
+        file,
+        url: URL.createObjectURL(file),
+        filename: data.filename || file.name,
+        sourcePath: data.path,
+      })
+
+      const hasStreams = data.video_streams.length > 0 || data.audio_streams.length > 0
+      setStreams(hasStreams ? data : null)
+    } catch (err) {
+      setError('Upload échoué : ' + err.message)
     } finally {
-      setProbing(false)
+      setUploading(false)
     }
   }
 
   const videoOptions = streams?.video_streams ?? []
   const audioOptions = streams?.audio_streams ?? []
-  const showPanel = video && (probing || streams !== null)
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -101,10 +106,12 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
         <div style={{ flex: 1, overflow: 'auto' }}>
           <div style={{ padding: '8px 16px', background: 'var(--surface2)', borderBottom: '1px solid var(--border)', fontSize: 12, color: 'var(--text2)', display: 'flex', gap: 12, alignItems: 'center' }}>
             <span>📄 {video.filename}</span>
-            {probing && <span style={{ color: '#f5c518' }}>⏳ Détection pistes…</span>}
+            {uploading && <span style={{ color: '#f5c518' }}>⏳ Import en cours…</span>}
+            {!uploading && video.sourcePath && <span style={{ color: 'var(--success)' }}>✓ Prêt</span>}
           </div>
 
-          {showPanel && !probing && (
+          {/* Track selector — shown once upload+probe complete */}
+          {!uploading && streams && (
             <div style={{
               padding: '10px 16px', background: 'var(--surface)', borderBottom: '1px solid var(--border)',
               display: 'flex', gap: 24, alignItems: 'center', flexWrap: 'wrap',
@@ -146,10 +153,6 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
                     ))}
                   </select>
                 </label>
-              )}
-
-              {videoOptions.length === 0 && audioOptions.length === 0 && (
-                <span style={{ fontSize: 12, color: 'var(--text3)' }}>Pistes non détectées — piste par défaut utilisée</span>
               )}
             </div>
           )}

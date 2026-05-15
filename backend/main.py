@@ -26,7 +26,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-for d in ("segments", "exports", "thumbnails", "memes"):
+for d in ("segments", "exports", "thumbnails", "memes", "sources"):
     os.makedirs(d, exist_ok=True)
 
 app.include_router(video.router, prefix="/api/video", tags=["video"])

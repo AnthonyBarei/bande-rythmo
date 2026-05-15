@@ -77,6 +77,29 @@ def _parse_streams(stdout: bytes) -> dict:
     return {"video_streams": video_streams, "audio_streams": audio_streams}
 
 
+@router.post("/upload-source")
+async def upload_source(file: UploadFile = File(...)):
+    ext = os.path.splitext(file.filename or "video.mp4")[1] or ".mp4"
+    source_id = str(uuid.uuid4())
+    os.makedirs("sources", exist_ok=True)
+    dest_path = f"sources/{source_id}{ext}"
+
+    await asyncio.to_thread(_copy_upload, file.file, dest_path)
+
+    result = await asyncio.to_thread(
+        subprocess.run,
+        ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", dest_path],
+        capture_output=True,
+    )
+    streams = _parse_streams(result.stdout)
+    return {
+        "source_id": source_id,
+        "path": os.path.abspath(dest_path),
+        "filename": file.filename,
+        **streams,
+    }
+
+
 @router.post("/probe")
 async def probe_streams(file: UploadFile = File(...)):
     ext = os.path.splitext(file.filename or "video.mp4")[1] or ".mp4"
