@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import SubtitleEditor from './SubtitleEditor'
 import ExportPanel from './ExportPanel'
+import RecorderPanel from './RecorderPanel'
+import { useSettings } from '../SettingsContext'
 
 // BR canvas — constant-speed scrolling
 // Cursor is at CURSOR_X_RATIO * W from left
@@ -98,7 +100,8 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
   const [brExporting, setBrExporting] = useState(false)
   const [brOffset, setBrOffset] = useState(0)
   const [pxPerSec, setPxPerSec] = useState(180)
-  const [rythmoStyle, setRythmoStyle] = useState('classique')
+  const { settings } = useSettings()
+  const [rythmoStyle, setRythmoStyle] = useState(settings.brStyle || 'classique')
   const [lang, setLang] = useState('fr')
 
   const [selectedIdx, setSelectedIdx] = useState(null)
@@ -113,6 +116,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
   const [ctxMenu, setCtxMenu] = useState(null)
   const [loopRegion, setLoopRegion] = useState(null)
   const [locked, setLocked] = useState(false)
+  const [showRecorder, setShowRecorder] = useState(false)
   const loopRegionRef = useRef(null)
   const lockedRef = useRef(false)
   loopRegionRef.current = loopRegion
@@ -1360,6 +1364,16 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
             style={{ background: 'none', color: muted ? '#333' : 'var(--text2)', fontSize: 11, padding: '2px 6px', border: '1px solid var(--border2)', borderRadius: 3, cursor: 'pointer', flexShrink: 0 }}>
             {muted ? '🔇' : '🔊'}
           </button>
+          <button onClick={() => setShowRecorder(s => !s)} title="Enregistrer une prise"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 4,
+              background: showRecorder ? 'var(--danger)' : 'none',
+              color: showRecorder ? '#fff' : 'var(--danger)',
+              fontSize: 11, padding: '2px 8px', border: '1px solid var(--danger)',
+              borderRadius: 3, cursor: 'pointer', flexShrink: 0,
+            }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'currentColor' }} /> Prise
+          </button>
         </div>
 
         {/* VoxDub-style BR toolbar */}
@@ -1530,6 +1544,32 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
           zIndex: 1000, boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
         }}>
           {toast.msg}
+        </div>
+      )}
+
+      {/* Recording panel — slide-in */}
+      {showRecorder && (
+        <div style={{
+          position: 'fixed', right: 16, bottom: 16, width: 320, maxHeight: '70vh', overflow: 'auto',
+          background: 'var(--surface)', border: '1px solid var(--border2)',
+          borderRadius: 'var(--radius-lg)', zIndex: 1200,
+          boxShadow: '0 8px 32px rgba(0,0,0,0.55)',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderBottom: '1px solid var(--border)' }}>
+            <span style={{ fontSize: 12, fontWeight: 600 }}>Enregistrement</span>
+            {activeSubtitle?.character && (
+              <span style={{ fontSize: 11, color: 'var(--text3)' }}>· {activeSubtitle.character}</span>
+            )}
+            <div style={{ flex: 1 }} />
+            <button onClick={() => setShowRecorder(false)}
+              style={{ background: 'none', border: '1px solid var(--border2)', color: 'var(--text2)', borderRadius: 3, fontSize: 13, padding: '1px 7px' }}>✕</button>
+          </div>
+          <RecorderPanel
+            clipId={clip.clip_id}
+            subtitles={subtitles}
+            activeCharacter={activeSubtitle?.character || ''}
+            activeIndex={selectedIdx}
+          />
         </div>
       )}
     </div>
