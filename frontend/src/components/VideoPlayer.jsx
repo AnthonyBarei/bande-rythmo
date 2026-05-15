@@ -90,7 +90,7 @@ export default function VideoPlayer({
           >
             <div style={{
               display: 'flex', alignItems: 'center', gap: 10,
-              background: 'rgba(255,153,0,0.92)', color: '#000',
+              background: 'rgba(245, 197, 24,0.92)', color: '#000',
               fontWeight: 700, fontSize: 15,
               padding: '12px 24px', borderRadius: 6,
               boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
@@ -110,9 +110,9 @@ export default function VideoPlayer({
         <button
           onClick={togglePlay}
           style={{
-            background: 'rgba(255,153,0,0.04)', color: '#f90',
+            background: 'rgba(245, 197, 24,0.04)', color: '#f5c518',
             fontSize: 14, padding: '3px 7px',
-            border: '1px solid #f904', borderRadius: 3, minWidth: 30, lineHeight: 1,
+            border: '1px solid #f5c5184', borderRadius: 3, minWidth: 30, lineHeight: 1,
           }}
         >
           {playing ? '⏸' : '▶'}
@@ -125,7 +125,7 @@ export default function VideoPlayer({
         <input
           type="range" min={0} max={duration || 1} step={0.05} value={currentTime}
           onChange={e => seekTo(parseFloat(e.target.value))}
-          style={{ flex: 1, accentColor: '#f90', cursor: 'pointer', height: 4 }}
+          style={{ flex: 1, color: '#f5c518', cursor: 'pointer', height: 4, '--pct': `${(currentTime / (duration || 1)) * 100}%` }}
         />
 
         <select

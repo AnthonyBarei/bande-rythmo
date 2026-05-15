@@ -101,10 +101,7 @@ export default function App() {
           />
         )}
         {section === 'memes' && (
-          <MemeGenerator
-            initialImageUrl={memeClip?.thumbnail_path ? `/${memeClip.thumbnail_path}` : null}
-            initialImageName={memeClip ? `${memeClip.name}.jpg` : null}
-          />
+          <MemeGenerator clip={memeClip || null} />
         )}
       </main>
     </div>

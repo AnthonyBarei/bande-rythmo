@@ -9,13 +9,22 @@ const FORMATS = [
   { id: 'wav',  label: 'WAV',     icon: '🎚️', desc: 'Audio non compressé',              color: '#aa88ff', needsSubs: false },
 ]
 
-export default function ExportPanel({ segmentId, subtitles }) {
+export default function ExportPanel({ segmentId, subtitles, onExportBR, brExporting }) {
   const [loading, setLoading] = useState(null)
   const [error, setError] = useState(null)
   const [lastExport, setLastExport] = useState(null)
 
   async function handleExport(format) {
     if (!segmentId) { setError('Aucun clip sélectionné.'); return }
+
+    // MP4+BR uses canvas capture — delegate to parent
+    if (format === 'mp4') {
+      if (!subtitles.length) { setError('Aucune réplique — ajoutez des sous-titres d\'abord.'); return }
+      await onExportBR?.()
+      setLastExport('mp4')
+      return
+    }
+
     const fmt = FORMATS.find(f => f.id === format)
     if (fmt.needsSubs && !subtitles.length) { setError('Aucune réplique — ajoutez des sous-titres d\'abord.'); return }
     setLoading(format)
@@ -57,7 +66,7 @@ export default function ExportPanel({ segmentId, subtitles }) {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12, marginBottom: 20 }}>
         {FORMATS.map(({ id, label, icon, desc, color, needsSubs }) => {
-          const isLoading = loading === id
+          const isLoading = (loading === id) || (id === 'mp4' && brExporting)
           const unavailable = needsSubs && !subtitles.length
           return (
             <div
@@ -94,7 +103,7 @@ export default function ExportPanel({ segmentId, subtitles }) {
                     opacity: isLoading ? 1 : undefined,
                   }}
                 >
-                  {isLoading ? 'Export...' : `Exporter ${label}`}
+                  {id === 'mp4' && brExporting ? '⏺ Enregistrement…' : isLoading ? 'Export...' : `Exporter ${label}`}
                 </button>
               </div>
             </div>

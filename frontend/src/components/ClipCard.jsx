@@ -6,7 +6,7 @@ const fmt = t => {
   return `${m}:${s}`
 }
 
-export default function ClipCard({ clip, onDub, onMeme, onExportGif, onExportMp3, onDelete, onRename, exporting }) {
+export default function ClipCard({ clip, onDub, onMeme, onExportMp3, onDelete, onRename, exporting }) {
   const [editingName, setEditingName] = useState(false)
   const [nameInput, setNameInput] = useState(clip.name)
   const [hover, setHover] = useState(false)
@@ -70,7 +70,7 @@ export default function ClipCard({ clip, onDub, onMeme, onExportGif, onExportMp3
         {hasSubtitles && (
           <div style={{
             position: 'absolute', top: 6, right: 6,
-            background: '#ff9900', color: '#000',
+            background: '#f5c518', color: '#000',
             fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 3,
           }}>
             BR
@@ -80,12 +80,12 @@ export default function ClipCard({ clip, onDub, onMeme, onExportGif, onExportMp3
         {hover && (
           <div style={{
             position: 'absolute', inset: 0,
-            background: 'rgba(255,153,0,0.08)',
+            background: 'rgba(245, 197, 24,0.08)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
             <div style={{
               width: 40, height: 40, borderRadius: '50%',
-              background: 'rgba(255,153,0,0.9)',
+              background: 'rgba(245, 197, 24,0.9)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               color: '#000', fontSize: 16,
             }}>
@@ -138,13 +138,6 @@ export default function ClipCard({ clip, onDub, onMeme, onExportGif, onExportMp3
           disabled={exporting === clip.clip_id + '_mp3'}
         >
           {exporting === clip.clip_id + '_mp3' ? '…' : 'MP3'}
-        </ActionBtn>
-        <ActionBtn
-          onClick={() => onExportGif(clip)}
-          title="Exporter en GIF"
-          disabled={exporting === clip.clip_id + '_gif'}
-        >
-          {exporting === clip.clip_id + '_gif' ? '…' : 'GIF'}
         </ActionBtn>
         {confirmDelete ? (
           <>
@@ -205,9 +198,9 @@ function ActionBtn({ children, onClick, accent, danger, title, flex, disabled })
         flex: flex ? 1 : undefined,
         padding: '8px 10px',
         background: hover && !disabled
-          ? (danger ? 'rgba(229,69,69,0.15)' : accent ? 'rgba(255,153,0,0.12)' : 'var(--surface3)')
+          ? (danger ? 'rgba(229,69,69,0.15)' : accent ? 'rgba(245, 197, 24,0.12)' : 'var(--surface3)')
           : 'transparent',
-        color: disabled ? 'var(--text3)' : danger ? 'var(--danger)' : accent ? '#ff9900' : 'var(--text2)',
+        color: disabled ? 'var(--text3)' : danger ? 'var(--danger)' : accent ? '#f5c518' : 'var(--text2)',
         fontSize: 11,
         fontWeight: accent ? 600 : 400,
         borderRight: '1px solid var(--border)',

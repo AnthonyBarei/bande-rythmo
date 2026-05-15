@@ -127,7 +127,7 @@ export default function VideoEditor({ video, onClipsCreated }) {
         padding: '6px 16px', background: 'var(--surface)', borderBottom: '1px solid var(--border)',
         display: 'flex', gap: 8, alignItems: 'center', fontSize: 12, color: 'var(--text2)',
       }}>
-        <span style={{ color: '#f90' }}>◎</span>
+        <span style={{ color: '#f5c518' }}>◎</span>
         <span><strong style={{ color: 'var(--text)' }}>Glissez sur la timeline</strong> pour délimiter un clip — déplacez ou redimensionnez les blocs orange ensuite.</span>
         <div style={{ flex: 1 }} />
         <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text3)' }}>
@@ -179,9 +179,9 @@ export default function VideoEditor({ video, onClipsCreated }) {
               <div key={c._id} style={{
                 display: 'flex', alignItems: 'center', gap: 10,
                 padding: '7px 10px', background: 'var(--surface)',
-                border: '1px solid #f903', borderRadius: 4,
+                border: '1px solid #f5c5183', borderRadius: 4,
               }}>
-                <span style={{ color: '#f90', fontSize: 11 }}>◎</span>
+                <span style={{ color: '#f5c518', fontSize: 11 }}>◎</span>
                 <span style={{ flex: 1, fontSize: 13 }}>{c.name}</span>
                 <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text2)' }}>
                   {fmt(c.start)} → {fmt(c.end)}
@@ -203,7 +203,7 @@ export default function VideoEditor({ video, onClipsCreated }) {
               disabled={saving}
               style={{
                 padding: '8px 16px',
-                background: saving ? '#333' : '#f90',
+                background: saving ? '#333' : '#f5c518',
                 color: saving ? '#555' : '#000',
                 fontWeight: 600, fontSize: 13, borderRadius: 4,
               }}
@@ -240,7 +240,7 @@ export default function VideoEditor({ video, onClipsCreated }) {
             ))}
           </div>
           <div style={{ marginTop: 10, fontSize: 12, color: 'var(--text2)' }}>
-            → Retrouvez vos clips dans <strong style={{ color: '#f90' }}>Mes Clips</strong>
+            → Retrouvez vos clips dans <strong style={{ color: '#f5c518' }}>Mes Clips</strong>
           </div>
         </div>
       )}

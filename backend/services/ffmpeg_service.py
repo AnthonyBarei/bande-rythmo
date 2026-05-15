@@ -32,9 +32,9 @@ def extract_thumbnail(video_path: str, output_path: str, time: float = 1.0):
 
 
 def export_gif(video_path: str, output_path: str, fps: int = 12, scale: int = 480,
-               start: float = 0, duration: float = None):
+               ss: float = None, duration: float = None):
     palette = output_path.replace(".gif", "_palette.png")
-    seek = ["-ss", str(start)] if start > 0 else []
+    seek = ["-ss", str(ss)] if ss is not None else []
     trim = ["-t", str(duration)] if duration is not None else []
     cmd1 = [
         "ffmpeg", "-y", *seek, "-i", video_path, *trim,
@@ -43,7 +43,7 @@ def export_gif(video_path: str, output_path: str, fps: int = 12, scale: int = 48
     ]
     subprocess.run(cmd1, check=True, capture_output=True)
     cmd2 = [
-        "ffmpeg", "-y", *seek, "-i", video_path, *seek, "-i", palette, *trim,
+        "ffmpeg", "-y", *seek, "-i", video_path, "-i", palette, *trim,
         "-lavfi", f"fps={fps},scale={scale}:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer",
         output_path,
     ]
@@ -56,15 +56,16 @@ def export_gif(video_path: str, output_path: str, fps: int = 12, scale: int = 48
 
 
 def burn_subtitles(video: str, ass_path: str, output: str):
-    abs_ass = os.path.abspath(ass_path).replace("\\", "/")
-    if ":" in abs_ass:
-        drive, rest = abs_ass.split(":", 1)
-        abs_ass = f"{drive}\\:{rest}"
+    # Use relative path with forward slashes — avoids Windows drive-letter colon
+    # breaking ffmpeg's filter option parser (ass=C\:/... mis-parses as separate options)
+    rel_ass = ass_path.replace("\\", "/")
     cmd = [
         "ffmpeg", "-y",
         "-i", video,
-        "-vf", f"ass={abs_ass}",
+        "-vf", f"ass={rel_ass}",
         "-c:a", "copy",
         output,
     ]
-    subprocess.run(cmd, check=True, capture_output=True)
+    result = subprocess.run(cmd, capture_output=True)
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.decode(errors="replace"))

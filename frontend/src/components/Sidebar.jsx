@@ -21,7 +21,7 @@ export default function Sidebar({ section, onNavigate, clipCount }) {
     }}>
       {/* Logo */}
       <div style={{ padding: '20px 20px 16px', borderBottom: '1px solid #1e1e1e' }}>
-        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 13, letterSpacing: 3, color: '#ff9900', fontWeight: 'bold' }}>
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 13, letterSpacing: 3, color: '#f5c518', fontWeight: 'bold' }}>
           BANDE RYTHMO
         </div>
         <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 2, letterSpacing: 1 }}>
@@ -45,8 +45,8 @@ export default function Sidebar({ section, onNavigate, clipCount }) {
                 width: '100%',
                 padding: '10px 20px',
                 background: active ? 'var(--accent-dim)' : 'transparent',
-                color: active ? '#ff9900' : 'var(--text2)',
-                borderLeft: `2px solid ${active ? '#ff9900' : 'transparent'}`,
+                color: active ? '#f5c518' : 'var(--text2)',
+                borderLeft: `2px solid ${active ? '#f5c518' : 'transparent'}`,
                 borderRadius: 0,
                 textAlign: 'left',
                 fontSize: 13,
@@ -58,7 +58,7 @@ export default function Sidebar({ section, onNavigate, clipCount }) {
               <span style={{ flex: 1 }}>{label}</span>
               {badge && (
                 <span style={{
-                  background: '#ff9900',
+                  background: '#f5c518',
                   color: '#000',
                   fontSize: 10,
                   fontWeight: 700,

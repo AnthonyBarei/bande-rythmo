@@ -164,7 +164,6 @@ async def generate(
         raise HTTPException(400, f"Unsupported format: {ext}. Use {sorted(ALLOWED_EXT)}")
 
     out_ext = "gif" if ext == "gif" else "png"
-
     uid      = str(uuid.uuid4())
     in_path  = os.path.join(MEMES_DIR, f"in_{uid}.{ext}")
     out_path = os.path.join(MEMES_DIR, f"out_{uid}.{out_ext}")

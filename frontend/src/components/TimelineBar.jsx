@@ -182,25 +182,25 @@ export default function ClipTimeline({
           <div key={c._id} title={c.name} style={{
             position: 'absolute', top: 20, bottom: 4,
             left: pct(c.start), width: `calc(${pct(c.end)} - ${pct(c.start)})`,
-            background: focused ? 'rgba(255,153,0,0.22)' : 'rgba(255,153,0,0.18)',
-            border: `1px solid ${focused ? '#f90' : 'rgba(255,153,0,0.7)'}`,
+            background: focused ? 'rgba(245, 197, 24,0.22)' : 'rgba(245, 197, 24,0.18)',
+            border: `1px solid ${focused ? '#f5c518' : 'rgba(245, 197, 24,0.7)'}`,
             borderRadius: 2, cursor: 'grab',
             display: 'flex', alignItems: 'center', paddingLeft: 7,
           }}>
-            <span style={{ fontSize: 10, color: '#f90', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', pointerEvents: 'none' }}>
+            <span style={{ fontSize: 10, color: '#f5c518', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', pointerEvents: 'none' }}>
               ◎ {c.name} · {(c.end - c.start).toFixed(1)}s
             </span>
             {/* Left edge handle */}
             <div style={{
               position: 'absolute', left: -3, top: 0, bottom: 0, width: 8,
               cursor: 'ew-resize',
-              background: 'linear-gradient(to right, #f90, transparent)',
+              background: 'linear-gradient(to right, #f5c518, transparent)',
             }} />
             {/* Right edge handle */}
             <div style={{
               position: 'absolute', right: -3, top: 0, bottom: 0, width: 8,
               cursor: 'ew-resize',
-              background: 'linear-gradient(to left, #f90, transparent)',
+              background: 'linear-gradient(to left, #f5c518, transparent)',
             }} />
           </div>
         )
@@ -211,13 +211,13 @@ export default function ClipTimeline({
         <div style={{
           position: 'absolute', top: 20, bottom: 4,
           left: pct(draft.start), width: `calc(${pct(draft.end)} - ${pct(draft.start)})`,
-          background: 'rgba(255,153,0,0.07)', border: '1px dashed #f90',
+          background: 'rgba(245, 197, 24,0.07)', border: '1px dashed #f5c518',
           borderRadius: 2, pointerEvents: 'none',
         }}>
           <div style={{
             position: 'absolute', top: '50%', left: '50%',
             transform: 'translate(-50%, -50%)',
-            fontSize: 9, color: '#f90', whiteSpace: 'nowrap',
+            fontSize: 9, color: '#f5c518', whiteSpace: 'nowrap',
             fontFamily: 'var(--font-mono)',
           }}>{(draft.end - draft.start).toFixed(1)}s</div>
         </div>

@@ -82,7 +82,6 @@ export default function ClipsLibrary({ clips, onDub, onMeme, onRefresh, onDelete
                 clip={clip}
                 onDub={onDub}
                 onMeme={onMeme}
-                onExportGif={handleExportGif}
                 onExportMp3={handleExportMp3}
                 onDelete={handleDelete}
                 onRename={onRename}

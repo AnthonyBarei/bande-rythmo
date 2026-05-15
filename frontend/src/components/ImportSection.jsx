@@ -33,7 +33,7 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
             onClick={() => fileRef.current.click()}
             style={{
               padding: '8px 20px',
-              background: video ? 'var(--surface3)' : '#ff9900',
+              background: video ? 'var(--surface3)' : '#f5c518',
               color: video ? 'var(--text)' : '#000',
               border: video ? '1px solid var(--border2)' : 'none',
               fontWeight: video ? 400 : 600,

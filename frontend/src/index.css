@@ -1,5 +1,36 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
+  overflow: visible;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: currentColor;
+  cursor: pointer;
+  margin-top: -5px;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(
+    to right,
+    currentColor var(--pct, 0%),
+    #1e1e1e var(--pct, 0%)
+  );
+}
+
 :root {
   --bg: #0c0c0c;
   --surface: #111111;
@@ -10,8 +41,8 @@
   --text: #e0e0e0;
   --text2: #808080;
   --text3: #484848;
-  --accent: #ff9900;
-  --accent-dim: rgba(255, 153, 0, 0.12);
+  --accent: #f5c518;
+  --accent-dim: rgba(245, 197, 24, 0.12);
   --danger: #e54545;
   --success: #44bb55;
   --radius: 4px;
