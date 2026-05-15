@@ -32,22 +32,45 @@ input[type="range"]::-webkit-slider-runnable-track {
 }
 
 :root {
-  --bg: #0c0c0c;
-  --surface: #111111;
-  --surface2: #161616;
-  --surface3: #1e1e1e;
-  --border: #242424;
-  --border2: #2e2e2e;
-  --text: #e0e0e0;
-  --text2: #808080;
-  --text3: #484848;
-  --accent: #f5c518;
-  --accent-dim: rgba(245, 197, 24, 0.12);
-  --danger: #e54545;
-  --success: #44bb55;
-  --radius: 4px;
-  --font-ui: system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --font-mono: 'Courier New', Courier, monospace;
+  /* Backgrounds */
+  --bg:        #0a0a0c;
+  --bg2:       #0e0e11;
+  --surface:   #131318;
+  --surface2:  #1a1a20;
+  --surface3:  #23232b;
+  --hover:     #2a2a33;
+
+  /* Strokes */
+  --border:    #26262e;
+  --border2:   #33333d;
+  --border3:   #44444f;
+
+  /* Text */
+  --text:      #ededf0;
+  --text2:     #9c9ca6;
+  --text3:     #62626c;
+  --text4:     #3e3e46;
+
+  /* Yellow accent */
+  --accent:      #f5c518;
+  --accent-soft: rgba(245,197,24,0.13);
+  --accent-dim:  rgba(245,197,24,0.06);
+  --accent-text: #ffd84a;
+
+  /* Semantic */
+  --danger:    #e85d5d;
+  --success:   #5ec27c;
+  --info:      #7ec0ff;
+  --danger-soft:  rgba(232,93,93,0.13);
+  --success-soft: rgba(94,194,124,0.13);
+  --info-soft:    rgba(126,192,255,0.13);
+
+  --radius:    6px;
+  --radius-lg: 10px;
+
+  --font-ui:   'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Courier New', monospace;
+  --font-br:   'JetBrains Mono', 'Courier New', monospace;
 }
 
 html, body, #root {

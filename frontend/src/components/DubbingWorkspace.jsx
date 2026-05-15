@@ -7,17 +7,19 @@ import ExportPanel from './ExportPanel'
 // At t=sub.start the LEFT EDGE of the text is exactly at the cursor
 // Text scrolls left at pxPerSec pixels/second as time passes
 const CURSOR_X_RATIO = 0.30
-const H_TRACK = 64
-const BR_CONTROLS_H = 32
-const FONT_BR = 'bold 20px "Courier New", monospace'
-const FONT_LABEL = 'bold 9px sans-serif'
+const H_TRACK = 68
+const BR_CONTROLS_H = 50
+const FONT_BR_BASE = 28
+const FONT_BR_MIN = 12
+const FONT_BR = 'bold 28px "JetBrains Mono", "Courier New", monospace'
+const FONT_LABEL = 'bold 10px "IBM Plex Sans", sans-serif'
 
-// Character track colors (background tint + text color)
+// Character track colors — hex for label/text/border, soft for fills, bg for legacy callers
 const TRACK_COLORS = [
-  { bg: 'rgba(245, 197, 24,0.10)',  text: '#f5c518',  label: '#f5c518' },
-  { bg: 'rgba(80,180,255,0.10)', text: '#5bf',  label: '#5bf' },
-  { bg: 'rgba(255,100,160,0.10)',text: '#f6a',  label: '#f6a' },
-  { bg: 'rgba(100,230,160,0.10)',text: '#6eb',  label: '#6eb' },
+  { bg: 'rgba(245,197,24,0.10)',  hex: '#f5c518', soft: 'rgba(245,197,24,0.10)', text: '#f5c518', label: '#f5c518' },
+  { bg: 'rgba(126,192,255,0.10)', hex: '#7ec0ff', soft: 'rgba(126,192,255,0.10)', text: '#7ec0ff', label: '#7ec0ff' },
+  { bg: 'rgba(240,138,175,0.10)', hex: '#f08aaf', soft: 'rgba(240,138,175,0.10)', text: '#f08aaf', label: '#f08aaf' },
+  { bg: 'rgba(126,212,168,0.10)', hex: '#7ed4a8', soft: 'rgba(126,212,168,0.10)', text: '#7ed4a8', label: '#7ed4a8' },
 ]
 
 const REACTION_TAGS = ['rire', 'souffle', 'cri', 'chuchoté', 'pleure', 'soupir', 'grogne', 'gémit', 'ahane', 'bégaie']
@@ -372,7 +374,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
 
         // Character avatar circle at left edge of block (only when block left is visible)
         if (sub.character && blockW > 20) {
-          const avatarX = Math.max(leftX, 0) + 6
+          const avatarX = leftX + 6
           const avatarY = yTop + 10
           const r = 8
           ctx.beginPath()
@@ -432,8 +434,21 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
           ctx.beginPath()
           ctx.rect(Math.max(0, leftX), yTop + 1, Math.min(W, rightX) - Math.max(0, leftX), trackH2 - 2)
           ctx.clip()
-          ctx.translate(Math.max(0, leftX) + PADDING, textY)
-          const segs = sub.text.split(/(\*)/)
+          ctx.translate(leftX + PADDING, textY)
+          let drawText = sub.text
+          const finalW = ctx.measureText(drawText).width
+          if (finalW > availW && availW > 0) {
+            const ellipsisW = ctx.measureText('…').width
+            const budget = Math.max(0, availW - ellipsisW)
+            let lo = 0, hi = drawText.length
+            while (lo < hi) {
+              const mid = (lo + hi + 1) >> 1
+              if (ctx.measureText(drawText.slice(0, mid)).width <= budget) lo = mid
+              else hi = mid - 1
+            }
+            drawText = drawText.slice(0, lo).trimEnd() + '…'
+          }
+          const segs = drawText.split(/(\*)/)
           let curX = 0
           for (const seg of segs) {
             if (seg === '*') {
@@ -636,8 +651,21 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
             oc.beginPath()
             oc.rect(bx, trackIdx * oTrackH + 1, bw, oTrackH - 2)
             oc.clip()
-            oc.translate(Math.max(0, leftX) + O_PAD, trackIdx * oTrackH + oTrackH / 2)
-            const segs = sub.text.split(/(\*)/)
+            oc.translate(leftX + O_PAD, trackIdx * oTrackH + oTrackH / 2)
+            let oDrawText = sub.text
+            const oFinalW = oc.measureText(oDrawText).width
+            if (oFinalW > oAvailW && oAvailW > 0) {
+              const oEllipsisW = oc.measureText('…').width
+              const oBudget = Math.max(0, oAvailW - oEllipsisW)
+              let oLo = 0, oHi = oDrawText.length
+              while (oLo < oHi) {
+                const oMid = (oLo + oHi + 1) >> 1
+                if (oc.measureText(oDrawText.slice(0, oMid)).width <= oBudget) oLo = oMid
+                else oHi = oMid - 1
+              }
+              oDrawText = oDrawText.slice(0, oLo).trimEnd() + '…'
+            }
+            const segs = oDrawText.split(/(\*)/)
             let cx2 = 0
             for (const seg of segs) {
               oc.fillStyle = seg === '*' ? (isActive ? '#7ec0ff' : 'rgba(126,192,255,0.55)') : (isActive ? '#fff' : inactiveFill)
