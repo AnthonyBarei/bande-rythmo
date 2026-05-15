@@ -10,7 +10,8 @@ router = APIRouter()
 
 class TranscribeRequest(BaseModel):
     segment_id: str
-    language: Optional[str] = "fr"  # None = auto-detect
+    language: Optional[str] = "fr"
+    diarize: bool = True
 
 
 @router.post("/transcribe")
@@ -18,5 +19,5 @@ async def transcribe(req: TranscribeRequest):
     path = f"segments/{req.segment_id}.mp4"
     if not os.path.exists(path):
         raise HTTPException(404, "Segment not found")
-    subtitles = await asyncio.to_thread(transcribe_segment, path, req.language)
+    subtitles = await asyncio.to_thread(transcribe_segment, path, req.language, req.diarize)
     return {"subtitles": subtitles}
