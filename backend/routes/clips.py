@@ -30,6 +30,76 @@ class RenameRequest(BaseModel):
     name: str
 
 
+class ProbeLocalRequest(BaseModel):
+    path: str
+
+
+class BatchLocalClip(BaseModel):
+    name: str = ""
+    start: float
+    end: float
+    video_stream: int | None = None
+    audio_stream: int | None = None
+
+
+class BatchLocalRequest(BaseModel):
+    path: str
+    source_filename: str = ""
+    clips: List[BatchLocalClip]
+
+
+def _copy_upload(src, dst_path: str):
+    with open(dst_path, 'wb') as dst:
+        shutil.copyfileobj(src, dst)
+
+
+def _parse_streams(stdout: bytes) -> dict:
+    data = json.loads(stdout or b"{}")
+    video_streams, audio_streams = [], []
+    for s in data.get("streams", []):
+        codec_type = s.get("codec_type", "")
+        codec_name = s.get("codec_name", "unknown").upper()
+        tags = s.get("tags", {})
+        lang = tags.get("language", "")
+        title = tags.get("title", "")
+        parts = [codec_name]
+        if s.get("width"):
+            parts.append(f"{s['width']}x{s['height']}")
+        if lang:
+            parts.append(lang)
+        if title:
+            parts.append(title)
+        label = " · ".join(parts)
+        if codec_type == "video":
+            video_streams.append({"relative_index": len(video_streams), "label": label})
+        elif codec_type == "audio":
+            audio_streams.append({"relative_index": len(audio_streams), "label": label})
+    return {"video_streams": video_streams, "audio_streams": audio_streams}
+
+
+@router.post("/probe")
+async def probe_streams(file: UploadFile = File(...)):
+    ext = os.path.splitext(file.filename or "video.mp4")[1] or ".mp4"
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+            tmp_path = tmp.name
+        await asyncio.to_thread(_copy_upload, file.file, tmp_path)
+
+        result = await asyncio.to_thread(
+            subprocess.run,
+            ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", tmp_path],
+            capture_output=True,
+        )
+        return _parse_streams(result.stdout)
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
+
 @router.post("/batch")
 async def create_batch(
     file: UploadFile = File(...),
@@ -54,9 +124,12 @@ async def create_batch(
             clip_id = str(uuid.uuid4())
             segment_path = f"segments/{clip_id}.mp4"
             thumb_path = f"thumbnails/{clip_id}.jpg"
+            video_stream = c.get("video_stream")
+            audio_stream = c.get("audio_stream")
 
             await asyncio.to_thread(
-                extract_segment, tmp_path, float(c["start"]), float(c["end"]), segment_path
+                extract_segment, tmp_path, float(c["start"]), float(c["end"]), segment_path,
+                video_stream, audio_stream,
             )
 
             try:
@@ -85,6 +158,63 @@ async def create_batch(
         create_clip(
             db, e["clip_id"], e["name"], source_filename,
             e["start"], e["end"], e["segment_path"], e["thumbnail_path"],
+        )
+        for e in extracted
+    ]
+
+
+@router.post("/probe-local")
+async def probe_streams_local(req: ProbeLocalRequest):
+    if not os.path.isfile(req.path):
+        raise HTTPException(400, f"File not found: {req.path}")
+    result = await asyncio.to_thread(
+        subprocess.run,
+        ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", req.path],
+        capture_output=True,
+    )
+    return _parse_streams(result.stdout)
+
+
+@router.post("/batch-local")
+async def create_batch_local(req: BatchLocalRequest, db: Session = Depends(get_db)):
+    if not os.path.isfile(req.path):
+        raise HTTPException(400, f"File not found: {req.path}")
+    if not req.clips:
+        raise HTTPException(400, "No clips provided")
+
+    source_filename = req.source_filename or os.path.basename(req.path)
+    extracted = []
+
+    for c in req.clips:
+        clip_id = str(uuid.uuid4())
+        segment_path = f"segments/{clip_id}.mp4"
+        thumb_path = f"thumbnails/{clip_id}.jpg"
+
+        await asyncio.to_thread(
+            extract_segment, req.path, c.start, c.end, segment_path,
+            c.video_stream, c.audio_stream,
+        )
+
+        try:
+            mid = (c.end - c.start) / 2
+            await asyncio.to_thread(extract_thumbnail, segment_path, thumb_path, mid)
+        except Exception:
+            thumb_path = None
+
+        extracted.append({
+            "clip_id": clip_id,
+            "name": c.name.strip() or f"Clip {clip_id[:6]}",
+            "start": c.start,
+            "end": c.end,
+            "segment_path": segment_path,
+            "thumbnail_path": thumb_path,
+        })
+
+    return [
+        create_clip(
+            db, e["clip_id"], e["name"], source_filename,
+            e["start"], e["end"], e["segment_path"], e["thumbnail_path"],
+            source_path=req.path,
         )
         for e in extracted
     ]

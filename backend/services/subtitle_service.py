@@ -1,5 +1,7 @@
 from typing import List, Dict
 
+CURSOR_X_RATIO = 0.30
+
 
 def _to_srt_time(s: float) -> str:
     h = int(s // 3600)
@@ -10,6 +12,7 @@ def _to_srt_time(s: float) -> str:
 
 
 def _to_ass_time(s: float) -> str:
+    s = max(0.0, s)
     h = int(s // 3600)
     m = int((s % 3600) // 60)
     sec = s % 60
@@ -28,7 +31,6 @@ def export_srt(subtitles: List[Dict], path: str):
         f.write("\n".join(blocks))
 
 
-# Per-character colors (BGR in ASS: &HBBGGRR&)
 _TRACK_COLORS = [
     "&H00FFFFFF&",  # white
     "&H0044FFFF&",  # yellow
@@ -38,15 +40,8 @@ _TRACK_COLORS = [
     "&H00AAAAFF&",  # salmon
 ]
 
-# BR band: bottom 22% of 1080p
-_BR_TOP = 840       # y where band starts
-_BR_HEIGHT = 240    # px tall
-_FONT_SIZE = 44
-_SCROLL_START_X = 1940   # starts just off right edge
-_SCROLL_END_X = -600     # ends past left edge
 
-
-def _build_ass_styles(characters: List[str]) -> str:
+def _build_ass_styles(characters: List[str], font_size: int) -> str:
     fmt = (
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, "
         "OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, "
@@ -54,80 +49,124 @@ def _build_ass_styles(characters: List[str]) -> str:
         "Alignment, MarginL, MarginR, MarginV, Encoding\n"
     )
     styles = fmt
-    # Background style
     styles += (
         "Style: BRBg,Arial,20,&H00000000,&H000000FF,&H00000000,&HCC000000,"
         "0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1\n"
     )
-    # One style per character
     for i, c in enumerate(characters):
         color = _TRACK_COLORS[i % len(_TRACK_COLORS)]
         name = f"BR_{i}"
         styles += (
-            f"Style: {name},Courier New,{_FONT_SIZE},{color},&H000000FF,&H00000000,"
+            f"Style: {name},Courier New,{font_size},{color},&H000000FF,&H00000000,"
             f"&HAA000000,0,0,0,0,100,100,2,0,1,1,0,7,0,0,0,1\n"
         )
     return styles
 
 
-def export_ass(subtitles: List[Dict], path: str):
-    # Collect unique characters in order
+def export_ass(
+    subtitles: List[Dict],
+    path: str,
+    pxPerSec: float = 180.0,
+    video_width: int = 1920,
+    video_height: int = 1080,
+    br_height: int = 0,     # exact BR strip height in video pixels (0 = auto)
+    br_offset: float = 0.0,
+):
     seen = []
     for sub in subtitles:
         c = sub.get("character", "")
         if c not in seen:
             seen.append(c)
     num_tracks = max(1, len(seen))
-    track_h = _BR_HEIGHT // num_tracks
-    # Y center of each track within the BR band
-    char_y = {c: _BR_TOP + int(i * track_h + track_h / 2) for i, c in enumerate(seen)}
+
+    vw = video_width
+    vh = video_height
+    cursor_x = vw * CURSOR_X_RATIO
+
+    if br_height > 0:
+        br_h = br_height
+    else:
+        # Fallback: 64px canvas track height scaled to video width at reference 1200px canvas
+        br_h = max(num_tracks * 40, int(num_tracks * 64 * vw / 1200))
+        br_h = min(br_h, int(vh * 0.35))
+
+    track_h = br_h // num_tracks
+    br_top = vh - br_h
+
+    # Font size proportional to track height — matches canvas BASE_FONT = 28px at reference scale
+    font_size = max(14, int(track_h * 0.40))
+
+    char_y = {c: br_top + int(i * track_h + track_h * 0.55) for i, c in enumerate(seen)}
     char_style = {c: f"BR_{i}" for i, c in enumerate(seen)}
 
-    # Find overall time range for background
     all_starts = [s["start"] for s in subtitles] if subtitles else [0]
     all_ends   = [s["end"]   for s in subtitles] if subtitles else [0]
-    bg_start = _to_ass_time(min(all_starts))
-    bg_end   = _to_ass_time(max(all_ends))
+    bg_start = _to_ass_time(max(0, min(all_starts) - br_offset))
+    bg_end   = _to_ass_time(max(0, max(all_ends)   - br_offset))
 
     header = (
         "[Script Info]\n"
         "ScriptType: v4.00+\n"
-        "PlayResX: 1920\n"
-        "PlayResY: 1080\n\n"
+        f"PlayResX: {vw}\n"
+        f"PlayResY: {vh}\n\n"
         "[V4+ Styles]\n"
-        f"{_build_ass_styles(seen)}\n"
+        f"{_build_ass_styles(seen, font_size)}\n"
         "[Events]\n"
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
     )
     lines = [header]
 
-    # Semi-transparent dark background band covering full clip duration
+    # Semi-transparent dark background band
     bg_rect = (
-        f"{{\\an7\\pos(0,{_BR_TOP})\\p1}}"
-        f"m 0 0 l 1920 0 1920 {_BR_HEIGHT} 0 {_BR_HEIGHT}"
+        f"{{\\an7\\pos(0,{br_top})\\p1}}"
+        f"m 0 0 l {vw} 0 {vw} {br_h} 0 {br_h}"
         "{\\p0}"
     )
     lines.append(f"Dialogue: 0,{bg_start},{bg_end},BRBg,,0,0,0,,{bg_rect}")
 
-    # Character name labels pinned on left, one per track
+    # Character name labels pinned on left
     for c in seen:
         y = char_y[c]
         label = (c[:12] if c else "—").replace("{", "\\{").replace("}", "\\}")
         style = char_style[c]
-        color = _TRACK_COLORS[seen.index(c) % len(_TRACK_COLORS)]
         tag = f"{{\\an4\\pos(8,{y})}}{label}"
         lines.append(f"Dialogue: 1,{bg_start},{bg_end},{style},,0,0,0,,{tag}")
 
-    # Scrolling subtitle lines
+    # Scrolling subtitle lines — positions match canvas exactly at given pxPerSec
     for sub in subtitles:
-        start = _to_ass_time(sub["start"])
-        end   = _to_ass_time(sub["end"])
+        # Apply br_offset: positive offset → text appears earlier on screen
+        t_start = sub["start"] - br_offset
+        t_end   = sub["end"]   - br_offset
+        if t_end <= 0:
+            continue
+
         character = sub.get("character", "")
         text = sub["text"].replace("{", "\\{").replace("}", "\\}")
-        y = char_y.get(character, _BR_TOP + _BR_HEIGHT // 2)
+        y = char_y.get(character, br_top + track_h // 2)
         style = char_style.get(character, "BR_0")
-        tagged = f"{{\\an4\\move({_SCROLL_START_X},{y},{_SCROLL_END_X},{y})}}{text}"
-        lines.append(f"Dialogue: 2,{start},{end},{style},{character},0,0,0,,{tagged}")
+
+        # Event starts when text right edge enters screen from the right.
+        # At video time t, canvas draws text left edge at: cursor_x + (t_start - t) * pxPerSec
+        # Text right edge enters (= vw) when: t = t_start - (vw - cursor_x) / pxPerSec
+        ideal_event_start = t_start - (vw - cursor_x) / pxPerSec
+        event_start = max(0.0, ideal_event_start)
+
+        # Event ends when text left edge exits screen to the left.
+        # cursor_x + (t_start - t) * pxPerSec = 0  →  t = t_start + cursor_x / pxPerSec
+        # Use t_end instead if the subtitle ends before that — text disappears on cue.
+        natural_exit = t_start + cursor_x / pxPerSec
+        event_end = max(t_end, natural_exit)
+
+        # Position at event_start (may differ from vw if clamped to 0)
+        x1 = int(cursor_x + (t_start - event_start) * pxPerSec)
+        # Position at event_end: same formula
+        x2 = int(cursor_x + (t_start - event_end) * pxPerSec)
+
+        tagged = f"{{\\an4\\move({x1},{y},{x2},{y})}}{text}"
+        lines.append(
+            f"Dialogue: 2,{_to_ass_time(event_start)},{_to_ass_time(event_end)},"
+            f"{style},{character},0,0,0,,{tagged}"
+        )
 
     with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))

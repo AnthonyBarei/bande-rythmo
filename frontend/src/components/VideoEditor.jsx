@@ -23,7 +23,7 @@ const Kbd = ({ children }) => (
   }}>{children}</span>
 )
 
-export default function VideoEditor({ video, onClipsCreated }) {
+export default function VideoEditor({ video, onClipsCreated, videoStream, audioStream }) {
   const videoRef = useRef(null)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
@@ -49,12 +49,38 @@ export default function VideoEditor({ video, onClipsCreated }) {
     setSaving(true)
     setError(null)
     try {
-      const form = new FormData()
-      form.append('file', video.file, video.filename)
-      form.append('clips_json', JSON.stringify(
-        pending.map(c => ({ name: c.name, start: c.start, end: c.end }))
-      ))
-      const res = await fetch('/api/clips/batch', { method: 'POST', body: form })
+      let res
+      const sourcePath = video?.sourcePath
+      if (sourcePath) {
+        res = await fetch('/api/clips/batch-local', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            path: sourcePath,
+            source_filename: video.filename,
+            clips: pending.map(c => ({
+              name: c.name,
+              start: c.start,
+              end: c.end,
+              ...(videoStream != null && { video_stream: videoStream }),
+              ...(audioStream != null && { audio_stream: audioStream }),
+            })),
+          }),
+        })
+      } else {
+        const form = new FormData()
+        form.append('file', video.file, video.filename)
+        form.append('clips_json', JSON.stringify(
+          pending.map(c => ({
+            name: c.name,
+            start: c.start,
+            end: c.end,
+            ...(videoStream != null && { video_stream: videoStream }),
+            ...(audioStream != null && { audio_stream: audioStream }),
+          }))
+        ))
+        res = await fetch('/api/clips/batch', { method: 'POST', body: form })
+      }
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const results = await res.json()
       setSavedClips(prev => [...results, ...prev])
@@ -65,7 +91,7 @@ export default function VideoEditor({ video, onClipsCreated }) {
     } finally {
       setSaving(false)
     }
-  }, [video?.url, video?.file, video?.filename, onClipsCreated])
+  }, [video?.url, video?.file, video?.filename, video?.sourcePath, onClipsCreated, videoStream, audioStream])
 
   useEffect(() => {
     function onKey(e) {

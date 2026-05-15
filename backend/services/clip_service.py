@@ -9,6 +9,7 @@ def _to_dict(clip: Clip) -> dict:
         "clip_id": clip.clip_id,
         "name": clip.name,
         "source_filename": clip.source_filename,
+        "source_path": clip.source_path,
         "start": clip.start,
         "end": clip.end,
         "segment_path": clip.segment_path,
@@ -21,11 +22,12 @@ def _to_dict(clip: Clip) -> dict:
     }
 
 
-def create_clip(db: Session, clip_id, name, source_filename, start, end, segment_path, thumbnail_path):
+def create_clip(db: Session, clip_id, name, source_filename, start, end, segment_path, thumbnail_path, source_path=None):
     clip = Clip(
         clip_id=clip_id,
         name=name,
         source_filename=source_filename,
+        source_path=source_path,
         start=start,
         end=end,
         segment_path=segment_path,

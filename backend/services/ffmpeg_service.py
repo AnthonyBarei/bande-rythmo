@@ -2,14 +2,24 @@ import subprocess
 import os
 
 
-def extract_segment(source: str, start: float, end: float, output: str):
+def extract_segment(source: str, start: float, end: float, output: str,
+                    video_stream: int = None, audio_stream: int = None):
     # -ss after -i = sample-accurate seek (avoids keyframe-snap 0-1s drift at clip head)
+    map_args = []
+    if video_stream is not None or audio_stream is not None:
+        map_args += ["-map", f"0:v:{video_stream if video_stream is not None else 0}"]
+        map_args += ["-map", f"0:a:{audio_stream if audio_stream is not None else 0}"]
+
     cmd = [
         "ffmpeg", "-y",
         "-i", source,
         "-ss", str(start),
         "-t", str(end - start),
+        *map_args,
         "-c:v", "libx264",
+        "-crf", "18",
+        "-preset", "fast",
+        "-pix_fmt", "yuv420p",
         "-c:a", "aac",
         "-avoid_negative_ts", "make_zero",
         "-movflags", "+faststart",
@@ -63,6 +73,11 @@ def burn_subtitles(video: str, ass_path: str, output: str):
         "ffmpeg", "-y",
         "-i", video,
         "-vf", f"ass={rel_ass}",
+        "-c:v", "libx264",
+        "-crf", "16",
+        "-preset", "slow",
+        "-pix_fmt", "yuv420p",
+        "-bf", "0",
         "-c:a", "copy",
         output,
     ]

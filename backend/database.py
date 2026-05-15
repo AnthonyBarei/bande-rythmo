@@ -22,3 +22,7 @@ def get_db():
 def init_db():
     from models import Clip, Subtitle  # noqa: F401
     Base.metadata.create_all(bind=engine)
+    with engine.connect() as conn:
+        cols = [r[1] for r in conn.execute(__import__("sqlalchemy").text("PRAGMA table_info(clips)")).fetchall()]
+        if "source_path" not in cols:
+            conn.execute(__import__("sqlalchemy").text("ALTER TABLE clips ADD COLUMN source_path TEXT"))

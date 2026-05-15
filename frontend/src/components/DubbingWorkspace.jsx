@@ -136,6 +136,10 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
   const brInPlayerRef = useRef('play')
   const playingRef = useRef(false)
   const fontScaleRef = useRef(1.0)
+  const exportingRef = useRef(false)
+  // Smooth time interpolation: video.currentTime only updates at video fps (e.g. 24fps).
+  // Between updates, we interpolate using wall clock so the canvas scrolls at 60fps.
+  const interpTimeRef = useRef({ videoTime: 0, wallMs: 0, active: false })
   subtitlesRef.current = subtitles
   brOffsetRef.current = brOffset
   pxPerSecRef.current = pxPerSec
@@ -190,13 +194,21 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
 
       const cssW = canvas.offsetWidth
       const cssH = canvas.offsetHeight
-      if (cssW > 0 && canvas.width !== cssW) canvas.width = cssW
-      if (cssH > 0 && canvas.height !== cssH) canvas.height = cssH
+      if (!exportingRef.current) {
+        if (cssW > 0 && canvas.width !== cssW) canvas.width = cssW
+        if (cssH > 0 && canvas.height !== cssH) canvas.height = cssH
+      }
 
       const ctx = canvas.getContext('2d')
       const W = canvas.width
       const H = canvas.height || canvasH
-      const t = video.currentTime + brOffsetRef.current
+      // Use interpolated time during export so each 60fps canvas frame has a distinct
+      // position — prevents bunched-then-jump artifacts from video.currentTime's 24fps steps
+      const interp = interpTimeRef.current
+      const rawTime = interp.active
+        ? interp.videoTime + (performance.now() - interp.wallMs) / 1000
+        : video.currentTime
+      const t = rawTime + brOffsetRef.current
       const pxSec = pxPerSecRef.current
       const cursor_x = W * CURSOR_X_RATIO
       const style = rythmoStyleRef.current
@@ -798,7 +810,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
     if (preferOnset) {
       const onsets = onsetsRef.current
       if (onsets && onsets.length) {
-        const win = 0.2
+        const win = 0.08
         let best = null, bestD = win
         for (const o of onsets) {
           const d = Math.abs(o - t)
@@ -807,7 +819,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
         if (best != null) return Math.max(0, best)
       }
     }
-    return Math.max(0, Math.round(t * 20) / 20)
+    return Math.max(0, Math.round(t * 100) / 100)
   }
 
   function dragCommit(subs) {
@@ -1062,10 +1074,29 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
     if (!video || !canvas) return
     setBrExporting(true)
     setToast({ msg: '⏺ Enregistrement BR en cours…', type: 'success' })
+
+    const vw = video.videoWidth || canvas.width
+    const origW = canvas.width
+    const origH = canvas.height
+    const origPxSec = pxPerSecRef.current
+    const origFontScale = fontScaleRef.current
+    const scale = vw > origW ? vw / origW : 1
+
     try {
       // Seek to start and wait
       video.currentTime = 0
       await new Promise(r => { video.onseeked = () => { video.onseeked = null; r() } })
+
+      // Scale canvas to video native width so overlay needs no upscaling
+      if (scale > 1) {
+        exportingRef.current = true
+        canvas.width = vw
+        canvas.height = Math.round(origH * scale)
+        pxPerSecRef.current = origPxSec * scale
+        fontScaleRef.current = origFontScale * scale
+        // Wait 2 RAF frames for drawing at new resolution
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+      }
 
       const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
         ? 'video/webm;codecs=vp9'
@@ -1078,13 +1109,25 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
       const chunks = []
       recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data) }
 
+      // Activate smooth time interpolation: resync anchor on each video timeupdate,
+      // interpolate with wall clock between updates so the canvas scrolls at true 60fps
+      // instead of stepping at video fps (24fps) which causes visible jumping in the export.
+      const onTimeUpdate = () => {
+        interpTimeRef.current = { videoTime: video.currentTime, wallMs: performance.now(), active: true }
+      }
+      video.addEventListener('timeupdate', onTimeUpdate)
+
       await new Promise((resolve, reject) => {
         recorder.onstop = resolve
         recorder.onerror = e => reject(e.error || new Error('MediaRecorder error'))
-        recorder.start(100)
+        recorder.start(16)
+        interpTimeRef.current = { videoTime: 0, wallMs: performance.now(), active: true }
         video.play()
         video.onended = () => { video.onended = null; recorder.stop() }
       })
+
+      video.removeEventListener('timeupdate', onTimeUpdate)
+      interpTimeRef.current.active = false
 
       const blob = new Blob(chunks, { type: 'video/webm' })
       setToast({ msg: '📤 Export MP4+BR…', type: 'success' })
@@ -1111,6 +1154,13 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
       setToast({ msg: 'Erreur export : ' + e.message, type: 'error' })
       setTimeout(() => setToast(null), 5000)
     } finally {
+      interpTimeRef.current.active = false
+      if (scale > 1) {
+        exportingRef.current = false
+        pxPerSecRef.current = origPxSec
+        fontScaleRef.current = origFontScale
+        // RAF will restore canvas.width to CSS size on next frame
+      }
       setBrExporting(false)
     }
   }
@@ -1422,7 +1472,14 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
       {/* ── Export panel ── */}
       {showExport && (
         <div style={{ borderTop: '2px solid #f5c518', background: 'var(--surface)', padding: 14, flexShrink: 0, maxHeight: 260, overflow: 'auto' }}>
-          <ExportPanel segmentId={clip.clip_id} subtitles={subtitles} onExportBR={exportBRCanvas} brExporting={brExporting} />
+          <ExportPanel
+            segmentId={clip.clip_id}
+            subtitles={subtitles}
+            pxPerSec={pxPerSec}
+            brOffset={brOffset}
+            canvasH={canvasH}
+            getCanvasWidth={() => canvasRef.current?.width || 1200}
+          />
         </div>
       )}
 

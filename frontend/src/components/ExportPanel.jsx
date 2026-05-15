@@ -9,7 +9,7 @@ const FORMATS = [
   { id: 'wav',  label: 'WAV',     icon: '🎚️', desc: 'Audio non compressé',              color: '#aa88ff', needsSubs: false },
 ]
 
-export default function ExportPanel({ segmentId, subtitles, onExportBR, brExporting }) {
+export default function ExportPanel({ segmentId, subtitles, pxPerSec = 180, brOffset = 0, canvasH = 64, getCanvasWidth }) {
   const [loading, setLoading] = useState(null)
   const [error, setError] = useState(null)
   const [lastExport, setLastExport] = useState(null)
@@ -17,23 +17,23 @@ export default function ExportPanel({ segmentId, subtitles, onExportBR, brExport
   async function handleExport(format) {
     if (!segmentId) { setError('Aucun clip sélectionné.'); return }
 
-    // MP4+BR uses canvas capture — delegate to parent
-    if (format === 'mp4') {
-      if (!subtitles.length) { setError('Aucune réplique — ajoutez des sous-titres d\'abord.'); return }
-      await onExportBR?.()
-      setLastExport('mp4')
-      return
-    }
-
     const fmt = FORMATS.find(f => f.id === format)
     if (fmt.needsSubs && !subtitles.length) { setError('Aucune réplique — ajoutez des sous-titres d\'abord.'); return }
     setLoading(format)
     setError(null)
     try {
+      const body = { subtitles: fmt.needsSubs ? subtitles : [], segment_id: segmentId, format }
+      // Pass canvas settings for frame-accurate server-side ASS rendering
+      if (format === 'mp4') {
+        body.px_per_sec = pxPerSec
+        body.br_offset = brOffset
+        body.canvas_w = getCanvasWidth?.() || 1200
+        body.canvas_h = canvasH
+      }
       const res = await fetch('/api/export/export', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ subtitles: fmt.needsSubs ? subtitles : [], segment_id: segmentId, format }),
+        body: JSON.stringify(body),
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
@@ -66,7 +66,7 @@ export default function ExportPanel({ segmentId, subtitles, onExportBR, brExport
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12, marginBottom: 20 }}>
         {FORMATS.map(({ id, label, icon, desc, color, needsSubs }) => {
-          const isLoading = (loading === id) || (id === 'mp4' && brExporting)
+          const isLoading = loading === id
           const unavailable = needsSubs && !subtitles.length
           return (
             <div
@@ -103,7 +103,7 @@ export default function ExportPanel({ segmentId, subtitles, onExportBR, brExport
                     opacity: isLoading ? 1 : undefined,
                   }}
                 >
-                  {id === 'mp4' && brExporting ? '⏺ Enregistrement…' : isLoading ? 'Export...' : `Exporter ${label}`}
+                  {isLoading ? 'Export...' : `Exporter ${label}`}
                 </button>
               </div>
             </div>
