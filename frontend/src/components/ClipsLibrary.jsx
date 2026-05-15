@@ -1,90 +1,195 @@
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 import ClipCard from './ClipCard'
 import GifExportModal from './GifExportModal'
 
-export default function ClipsLibrary({ clips, onDub, onMeme, onRefresh, onDelete, onRename }) {
+const FILTERS = [
+  { key: 'all',     label: 'Tous' },
+  { key: 'todo',    label: 'À faire' },
+  { key: 'dubbing', label: 'Doublage' },
+  { key: 'review',  label: 'À revoir' },
+  { key: 'done',    label: 'Validé' },
+]
+
+const SORTS = [
+  { key: 'recent',   label: 'Récents' },
+  { key: 'name',     label: 'Nom' },
+  { key: 'duration', label: 'Durée' },
+]
+
+export default function ClipsLibrary({ clips, onDub, onRefresh, onDelete, onRename, onStatusChange, onNewClip }) {
   const [exporting, setExporting] = useState(null)
   const [toast, setToast] = useState(null)
   const [gifModalClip, setGifModalClip] = useState(null)
+  const [filter, setFilter] = useState('all')
+  const [sort, setSort] = useState('recent')
+  const [search, setSearch] = useState('')
+  const [sortOpen, setSortOpen] = useState(false)
 
   function showToast(msg, type = 'info') {
     setToast({ msg, type })
     setTimeout(() => setToast(null), 3000)
   }
 
-  async function handleExportFormat(clip, format) {
-    setExporting(clip.clip_id + '_' + format)
+  const counts = useMemo(() => {
+    const c = { all: clips.length, todo: 0, dubbing: 0, review: 0, done: 0 }
+    for (const cl of clips) c[cl.status || 'todo'] = (c[cl.status || 'todo'] || 0) + 1
+    return c
+  }, [clips])
+
+  const visible = useMemo(() => {
+    let list = clips
+    if (filter !== 'all') list = list.filter(c => (c.status || 'todo') === filter)
+    if (search.trim()) {
+      const q = search.trim().toLowerCase()
+      list = list.filter(c => c.name.toLowerCase().includes(q))
+    }
+    list = [...list]
+    if (sort === 'name') list.sort((a, b) => a.name.localeCompare(b.name))
+    else if (sort === 'duration') list.sort((a, b) => (b.end - b.start) - (a.end - a.start))
+    else list.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
+    return list
+  }, [clips, filter, search, sort])
+
+  const totalDur = useMemo(() => clips.reduce((s, c) => s + (c.end - c.start), 0), [clips])
+
+  async function handleExportMp3(clip) {
+    setExporting(clip.clip_id + '_mp3')
     try {
       const res = await fetch('/api/export/export', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ segment_id: clip.clip_id, subtitles: [], format }),
+        body: JSON.stringify({ segment_id: clip.clip_id, subtitles: [], format: 'mp3' }),
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `${clip.name}.${format}`
+      a.download = `${clip.name}.mp3`
       a.click()
       URL.revokeObjectURL(url)
-      showToast(`${format.toUpperCase()} exporté`, 'success')
+      showToast('MP3 exporté', 'success')
     } catch (e) {
-      showToast(`Erreur export ${format.toUpperCase()} : ` + e.message, 'error')
+      showToast('Erreur export MP3 : ' + e.message, 'error')
     } finally {
       setExporting(null)
     }
   }
-
-  const handleExportGif = clip => setGifModalClip(clip)
-  const handleExportMp3 = clip => handleExportFormat(clip, 'mp3')
 
   async function handleDelete(clipId) {
     await onDelete(clipId)
     showToast('Clip supprimé')
   }
 
+  const sortLabel = SORTS.find(s => s.key === sort)?.label || 'Récents'
+
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
-      <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)', background: 'var(--surface)', display: 'flex', alignItems: 'center', gap: 16 }}>
-        <div>
-          <h1 style={{ fontSize: 16, fontWeight: 600 }}>Mes Clips</h1>
-          <p style={{ fontSize: 12, color: 'var(--text2)', marginTop: 2 }}>
-            {clips.length} clip{clips.length !== 1 ? 's' : ''} — cliquez pour doubler, GIF ou exporter
-          </p>
+      <div style={{ padding: '20px 24px 0', background: 'var(--bg)' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 16 }}>
+          <div>
+            <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: 1.5, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>
+              BIBLIOTHÈQUE
+            </div>
+            <h1 style={{ fontSize: 26, fontWeight: 600, letterSpacing: -0.4, marginTop: 2 }}>Mes clips</h1>
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text3)', fontFamily: 'var(--font-mono)', paddingBottom: 4 }}>
+            {clips.length} clip{clips.length !== 1 ? 's' : ''} · {Math.round(totalDur)}s total
+          </div>
+          <div style={{ flex: 1 }} />
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Rechercher un clip…"
+            style={{ minWidth: 240, fontFamily: 'var(--font-mono)', fontSize: 12, borderRadius: 99, background: 'var(--surface)' }}
+          />
+          <button
+            onClick={onNewClip}
+            style={{ padding: '8px 14px', background: 'var(--accent)', color: '#000', fontWeight: 600, fontSize: 12.5, borderRadius: 'var(--radius)' }}
+          >
+            + Nouveau clip
+          </button>
         </div>
-        <button
-          onClick={onRefresh}
-          style={{ marginLeft: 'auto', padding: '7px 14px', background: 'var(--surface3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 4, fontSize: 12 }}
-        >
-          ↺ Actualiser
-        </button>
+
+        {/* Filter tabs */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 2, marginTop: 14, borderBottom: '1px solid var(--border)' }}>
+          {FILTERS.map(f => {
+            const active = filter === f.key
+            return (
+              <button
+                key={f.key}
+                onClick={() => setFilter(f.key)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  padding: '8px 12px', background: 'transparent',
+                  color: active ? 'var(--accent)' : 'var(--text2)',
+                  fontWeight: active ? 600 : 400, fontSize: 12.5,
+                  borderRadius: 0,
+                  borderBottom: `2px solid ${active ? 'var(--accent)' : 'transparent'}`,
+                  marginBottom: -1,
+                }}
+              >
+                {f.label}
+                <span style={{
+                  fontSize: 10, fontFamily: 'var(--font-mono)',
+                  background: 'var(--surface2)', color: 'var(--text3)',
+                  padding: '1px 5px', borderRadius: 4,
+                }}>
+                  {counts[f.key] || 0}
+                </span>
+              </button>
+            )
+          })}
+          <div style={{ flex: 1 }} />
+          <div style={{ position: 'relative', paddingBottom: 6 }}>
+            <span style={{ fontSize: 11, color: 'var(--text3)', marginRight: 6 }}>Trier par</span>
+            <button
+              onClick={() => setSortOpen(o => !o)}
+              onBlur={() => setTimeout(() => setSortOpen(false), 120)}
+              style={{ padding: '5px 10px', background: 'var(--surface)', color: 'var(--text2)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', fontFamily: 'var(--font-mono)', fontSize: 11.5 }}
+            >
+              {sortLabel} ▾
+            </button>
+            {sortOpen && (
+              <div style={{ position: 'absolute', right: 0, top: '100%', background: 'var(--surface2)', border: '1px solid var(--border2)', borderRadius: 'var(--radius)', zIndex: 50, minWidth: 120, marginTop: 2 }}>
+                {SORTS.map(s => (
+                  <div
+                    key={s.key}
+                    onMouseDown={() => { setSort(s.key); setSortOpen(false) }}
+                    style={{ padding: '7px 12px', fontSize: 12, cursor: 'pointer', color: sort === s.key ? 'var(--accent)' : 'var(--text2)' }}
+                  >
+                    {s.label}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Grid */}
-      <div style={{ flex: 1, overflow: 'auto', padding: 20 }}>
-        {clips.length === 0 ? (
+      <div style={{ flex: 1, overflow: 'auto', padding: 24 }}>
+        {visible.length === 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60%', gap: 12, color: 'var(--text3)' }}>
             <div style={{ fontSize: 40, opacity: 0.25 }}>▤</div>
-            <div style={{ fontSize: 14, color: 'var(--text2)' }}>Aucun clip encore</div>
-            <div style={{ fontSize: 12 }}>Importez une vidéo et découpez des segments</div>
+            <div style={{ fontSize: 14, color: 'var(--text2)' }}>
+              {clips.length === 0 ? 'Aucun clip encore' : 'Aucun clip dans ce filtre'}
+            </div>
+            {clips.length === 0 && <div style={{ fontSize: 12 }}>Importez une vidéo et découpez des segments</div>}
           </div>
         ) : (
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
-            gap: 16,
-          }}>
-            {clips.map(clip => (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
+            {visible.map(clip => (
               <ClipCard
                 key={clip.clip_id}
                 clip={clip}
                 onDub={onDub}
-                onMeme={onMeme}
                 onExportMp3={handleExportMp3}
+                onExportGif={c => setGifModalClip(c)}
                 onDelete={handleDelete}
                 onRename={onRename}
+                onStatusChange={onStatusChange}
                 exporting={exporting}
               />
             ))}
@@ -92,7 +197,6 @@ export default function ClipsLibrary({ clips, onDub, onMeme, onRefresh, onDelete
         )}
       </div>
 
-      {/* GIF export modal */}
       {gifModalClip && (
         <GifExportModal
           clip={gifModalClip}
@@ -101,21 +205,12 @@ export default function ClipsLibrary({ clips, onDub, onMeme, onRefresh, onDelete
         />
       )}
 
-      {/* Toast */}
       {toast && (
         <div style={{
-          position: 'fixed',
-          bottom: 24,
-          right: 24,
-          padding: '10px 18px',
-          background: toast.type === 'error' ? '#e54545' : toast.type === 'success' ? '#44bb55' : '#333',
-          color: '#fff',
-          borderRadius: 6,
-          fontSize: 13,
-          fontWeight: 500,
-          zIndex: 1000,
-          boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
-          animation: 'fadeIn 0.2s ease',
+          position: 'fixed', bottom: 24, right: 24, padding: '10px 18px',
+          background: toast.type === 'error' ? 'var(--danger)' : toast.type === 'success' ? 'var(--success)' : 'var(--surface3)',
+          color: '#fff', borderRadius: 'var(--radius)', fontSize: 13, fontWeight: 500,
+          zIndex: 1000, boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
         }}>
           {toast.msg}
         </div>

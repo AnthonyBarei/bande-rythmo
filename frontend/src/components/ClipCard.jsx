@@ -6,13 +6,31 @@ const fmt = t => {
   return `${m}:${s}`
 }
 
-export default function ClipCard({ clip, onDub, onMeme, onExportMp3, onDelete, onRename, exporting }) {
+const STATUS = {
+  todo:    { label: 'À faire',  bg: 'rgba(255,255,255,0.04)', fg: 'var(--text2)' },
+  dubbing: { label: 'Doublage', bg: 'var(--accent-soft)',     fg: 'var(--accent)' },
+  review:  { label: 'À revoir', bg: 'var(--info-soft)',       fg: 'var(--info)' },
+  done:    { label: 'Validé',   bg: 'var(--success-soft)',    fg: 'var(--success)' },
+}
+const STATUS_CYCLE = ['todo', 'dubbing', 'review', 'done']
+
+// Stable hash → hue, for thumbnail fallback color
+function hashHue(str) {
+  let h = 0
+  for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) | 0
+  return Math.abs(h) % 360
+}
+
+const TRACK_HEX = ['#f5c518', '#7ec0ff', '#f08aaf', '#7ed4a8']
+
+export default function ClipCard({ clip, onDub, onExportMp3, onExportGif, onDelete, onRename, onStatusChange, exporting }) {
   const [editingName, setEditingName] = useState(false)
   const [nameInput, setNameInput] = useState(clip.name)
   const [hover, setHover] = useState(false)
   const [watching, setWatching] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const duration = clip.end - clip.start
+  const status = STATUS[clip.status] || STATUS.todo
 
   useEffect(() => {
     if (!watching) return
@@ -20,8 +38,17 @@ export default function ClipCard({ clip, onDub, onMeme, onExportMp3, onDelete, o
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [watching])
+
   const hasSubtitles = clip.subtitles && clip.subtitles.length > 0
   const segmentUrl = clip.segment_path ? `/${clip.segment_path}` : null
+  const thumbSrc = clip.thumbnail_path ? `/${clip.thumbnail_path}` : null
+
+  // Unique characters → stacked avatars
+  const chars = []
+  for (const s of clip.subtitles || []) {
+    const c = s.character || ''
+    if (c && !chars.includes(c)) chars.push(c)
+  }
 
   function submitRename() {
     const n = nameInput.trim()
@@ -29,7 +56,13 @@ export default function ClipCard({ clip, onDub, onMeme, onExportMp3, onDelete, o
     setEditingName(false)
   }
 
-  const thumbSrc = clip.thumbnail_path ? `/${clip.thumbnail_path}` : null
+  function cycleStatus(e) {
+    e.stopPropagation()
+    const next = STATUS_CYCLE[(STATUS_CYCLE.indexOf(clip.status || 'todo') + 1) % STATUS_CYCLE.length]
+    onStatusChange(clip.clip_id, next)
+  }
+
+  const hue = hashHue(clip.name || clip.clip_id)
 
   return (
     <div
@@ -37,147 +70,150 @@ export default function ClipCard({ clip, onDub, onMeme, onExportMp3, onDelete, o
       onMouseLeave={() => { setHover(false); setConfirmDelete(false) }}
       style={{
         background: 'var(--surface)',
-        border: `1px solid ${hover ? '#3a3a3a' : 'var(--border)'}`,
-        borderRadius: 6,
+        border: `1px solid ${hover ? 'var(--border2)' : 'var(--border)'}`,
+        borderRadius: 'var(--radius-lg)',
         overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column',
         transition: 'border-color 0.15s, transform 0.15s',
-        transform: hover ? 'translateY(-1px)' : 'none',
-        cursor: 'default',
+        transform: hover ? 'translateY(-2px)' : 'none',
+        cursor: 'pointer',
       }}
+      onClick={() => onDub(clip)}
     >
       {/* Thumbnail */}
-      <div
-        style={{ position: 'relative', aspectRatio: '16/9', background: '#080808', cursor: 'pointer' }}
-        onClick={() => onDub(clip)}
-      >
+      <div style={{ position: 'relative', aspectRatio: '16/9', background: `hsl(${hue} 32% 16%)` }}>
         {thumbSrc ? (
           <img src={thumbSrc} alt={clip.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-        ) : (
-          <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', fontSize: 28 }}>
-            ▶
-          </div>
-        )}
-        {/* Duration badge */}
+        ) : null}
+        {/* Scan-line overlay */}
         <div style={{
-          position: 'absolute', bottom: 6, right: 6,
-          background: 'rgba(0,0,0,0.75)', color: '#fff',
-          fontSize: 11, padding: '2px 6px', borderRadius: 3,
+          position: 'absolute', inset: 0,
+          background: 'repeating-linear-gradient(0deg, transparent 0 3px, rgba(0,0,0,.18) 3px 4px)',
+          pointerEvents: 'none',
+        }} />
+        {/* Status pill — click to cycle */}
+        <button
+          onClick={cycleStatus}
+          title="Changer le statut"
+          style={{
+            position: 'absolute', top: 8, left: 8,
+            background: status.bg, color: status.fg,
+            fontSize: 9, fontWeight: 700, letterSpacing: 1.2,
+            textTransform: 'uppercase', padding: '3px 7px',
+            borderRadius: 4, border: '1px solid rgba(255,255,255,0.06)',
+          }}
+        >
+          {status.label}
+        </button>
+        {/* Duration pill */}
+        <div style={{
+          position: 'absolute', bottom: 8, right: 8,
+          background: 'rgba(0,0,0,0.7)', color: '#fff',
+          fontSize: 10, fontWeight: 600, padding: '2px 6px', borderRadius: 4,
           fontFamily: 'var(--font-mono)',
         }}>
           {fmt(duration)}
         </div>
-        {/* Subtitle badge */}
-        {hasSubtitles && (
+        {/* Blurred play button */}
+        <div style={{
+          position: 'absolute', inset: 0,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          opacity: hover ? 1 : 0.85, transition: 'opacity 0.15s',
+        }}>
           <div style={{
-            position: 'absolute', top: 6, right: 6,
-            background: '#f5c518', color: '#000',
-            fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 3,
-          }}>
-            BR
-          </div>
-        )}
-        {/* Play overlay on hover */}
-        {hover && (
-          <div style={{
-            position: 'absolute', inset: 0,
-            background: 'rgba(245, 197, 24,0.08)',
+            width: 44, height: 44, borderRadius: '50%',
+            background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.2)',
+            backdropFilter: 'blur(6px)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: '#fff', fontSize: 16,
           }}>
-            <div style={{
-              width: 40, height: 40, borderRadius: '50%',
-              background: 'rgba(245, 197, 24,0.9)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: '#000', fontSize: 16,
-            }}>
-              ◉
-            </div>
+            ▶
           </div>
-        )}
+        </div>
       </div>
 
-      {/* Info */}
-      <div style={{ padding: '10px 12px' }}>
+      {/* Body */}
+      <div style={{ padding: '11px 14px', flex: 1 }}>
         {editingName ? (
           <input
             autoFocus
             value={nameInput}
+            onClick={e => e.stopPropagation()}
             onChange={e => setNameInput(e.target.value)}
             onBlur={submitRename}
-            onKeyDown={e => { if (e.key === 'Enter') submitRename(); if (e.key === 'Escape') setEditingName(false) }}
-            style={{ width: '100%', fontSize: 13, fontWeight: 600, background: 'var(--surface3)', marginBottom: 6 }}
+            onKeyDown={e => {
+              e.stopPropagation()
+              if (e.key === 'Enter') submitRename()
+              if (e.key === 'Escape') setEditingName(false)
+            }}
+            style={{ width: '100%', fontSize: 13, fontWeight: 500 }}
           />
         ) : (
           <div
-            onClick={() => { setEditingName(true); setNameInput(clip.name) }}
-            style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 4, cursor: 'text', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+            onClick={e => { e.stopPropagation(); setEditingName(true); setNameInput(clip.name) }}
+            style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', textWrap: 'pretty', marginBottom: 5 }}
             title="Cliquez pour renommer"
           >
             {clip.name}
           </div>
         )}
-        <div style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>
-          {fmt(clip.start)} → {fmt(clip.end)}
-          {hasSubtitles && <span style={{ marginLeft: 6, color: 'var(--text2)' }}>{clip.subtitles.length} répliques</span>}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 10.5, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>
+          <span>{hasSubtitles ? `${clip.subtitles.length} répl.` : 'aucune réplique'}</span>
+          {chars.length > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center' }}>
+              {chars.slice(0, 4).map((c, i) => (
+                <div key={c} title={c} style={{
+                  width: 14, height: 14, borderRadius: '50%',
+                  background: TRACK_HEX[i % TRACK_HEX.length],
+                  border: '1.5px solid var(--surface)',
+                  marginLeft: i === 0 ? 0 : -5,
+                }} />
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Actions */}
-      <div style={{ display: 'flex', borderTop: '1px solid var(--border)', background: 'var(--surface2)' }}>
-        <ActionBtn onClick={() => onDub(clip)} accent title="Doublage" flex>
-          ◉ Doubler
+      {/* Action row */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto auto', borderTop: '1px solid var(--border)' }}>
+        <ActionBtn onClick={e => { e.stopPropagation(); onDub(clip) }} accent flex title="Doublage">
+          Doubler
         </ActionBtn>
-        <ActionBtn onClick={() => setWatching(true)} title="Voir le clip">
-          ▶
-        </ActionBtn>
-        <ActionBtn onClick={() => onMeme?.(clip)} title="Créer un mème depuis ce clip">
-          Mème
-        </ActionBtn>
+        <ActionBtn onClick={e => { e.stopPropagation(); setWatching(true) }} title="Voir le clip">▶</ActionBtn>
         <ActionBtn
-          onClick={() => onExportMp3(clip)}
+          onClick={e => { e.stopPropagation(); onExportMp3(clip) }}
+          mono
           title="Exporter MP3 — audio uniquement"
           disabled={exporting === clip.clip_id + '_mp3'}
         >
           {exporting === clip.clip_id + '_mp3' ? '…' : 'MP3'}
         </ActionBtn>
+        <ActionBtn onClick={e => { e.stopPropagation(); onExportGif(clip) }} mono title="Exporter GIF">GIF</ActionBtn>
         {confirmDelete ? (
-          <>
-            <ActionBtn onClick={() => onDelete(clip.clip_id)} danger title="Confirmer la suppression">
-              Suppr ?
-            </ActionBtn>
-            <ActionBtn onClick={() => setConfirmDelete(false)} title="Annuler">
-              ✕
-            </ActionBtn>
-          </>
+          <ActionBtn onClick={e => { e.stopPropagation(); onDelete(clip.clip_id) }} danger title="Confirmer">✓✕</ActionBtn>
         ) : (
-          <ActionBtn onClick={() => setConfirmDelete(true)} danger title="Supprimer">
-            ✕
-          </ActionBtn>
+          <ActionBtn onClick={e => { e.stopPropagation(); setConfirmDelete(true) }} danger title="Supprimer" last>🗑</ActionBtn>
         )}
       </div>
 
       {/* View modal */}
       {watching && segmentUrl && (
         <div
-          onClick={e => { if (e.target === e.currentTarget) setWatching(false) }}
+          onClick={e => { e.stopPropagation(); if (e.target === e.currentTarget) setWatching(false) }}
           style={{
             position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            zIndex: 2000,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000,
           }}
         >
-          <div style={{ background: '#0e0e0e', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', maxWidth: '90vw', width: 800 }}>
+          <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden', maxWidth: '90vw', width: 800 }}>
             <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}>
               <span style={{ fontSize: 13, fontWeight: 600 }}>{clip.name}</span>
               <span style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>{fmt(duration)}</span>
               <div style={{ flex: 1 }} />
               <button onClick={() => setWatching(false)} style={{ color: 'var(--text2)', background: 'none', fontSize: 16, padding: '2px 8px', borderRadius: 3, border: '1px solid var(--border2)' }}>✕</button>
             </div>
-            <video
-              src={segmentUrl}
-              controls
-              autoPlay
-              style={{ display: 'block', width: '100%', background: '#000' }}
-            />
+            <video src={segmentUrl} controls autoPlay style={{ display: 'block', width: '100%', background: '#000' }} />
           </div>
         </div>
       )}
@@ -185,7 +221,7 @@ export default function ClipCard({ clip, onDub, onMeme, onExportMp3, onDelete, o
   )
 }
 
-function ActionBtn({ children, onClick, accent, danger, title, flex, disabled }) {
+function ActionBtn({ children, onClick, accent, danger, title, flex, disabled, mono, last }) {
   const [hover, setHover] = useState(false)
   return (
     <button
@@ -195,15 +231,15 @@ function ActionBtn({ children, onClick, accent, danger, title, flex, disabled })
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       style={{
-        flex: flex ? 1 : undefined,
-        padding: '8px 10px',
+        padding: '8px 11px',
         background: hover && !disabled
-          ? (danger ? 'rgba(229,69,69,0.15)' : accent ? 'rgba(245, 197, 24,0.12)' : 'var(--surface3)')
+          ? (danger ? 'var(--danger-soft)' : accent ? 'var(--accent-soft)' : 'var(--hover)')
           : 'transparent',
-        color: disabled ? 'var(--text3)' : danger ? 'var(--danger)' : accent ? '#f5c518' : 'var(--text2)',
-        fontSize: 11,
-        fontWeight: accent ? 600 : 400,
-        borderRight: '1px solid var(--border)',
+        color: disabled ? 'var(--text3)' : danger ? 'var(--danger)' : accent ? 'var(--accent)' : 'var(--text2)',
+        fontSize: mono ? 10 : 11.5,
+        fontWeight: accent ? 600 : mono ? 700 : 400,
+        fontFamily: mono ? 'var(--font-mono)' : 'var(--font-ui)',
+        borderRight: last ? 'none' : '1px solid var(--border)',
         borderRadius: 0,
         transition: 'background 0.1s, color 0.1s',
         cursor: disabled ? 'default' : 'pointer',

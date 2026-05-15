@@ -10,7 +10,6 @@ export default function App() {
   const [video, setVideo] = useState(null)
   const [clips, setClips] = useState([])
   const [activeClip, setActiveClip] = useState(null)
-  const [memeClip, setMemeClip] = useState(null)
 
   useEffect(() => { fetchClips() }, [])
 
@@ -36,11 +35,6 @@ export default function App() {
   function handleDub(clip) {
     setActiveClip(clip)
     setSection('dub')
-  }
-
-  function handleMeme(clip) {
-    setMemeClip(clip)
-    setSection('memes')
   }
 
   function handleClipUpdated(updated) {
@@ -72,6 +66,21 @@ export default function App() {
     }
   }
 
+  async function handleStatusChange(clipId, status) {
+    try {
+      const res = await fetch(`/api/clips/${clipId}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      })
+      if (!res.ok) return
+      const updated = await res.json()
+      setClips(prev => prev.map(c => c.clip_id === clipId ? updated : c))
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: 'var(--bg)' }}>
       <Sidebar section={section} onNavigate={setSection} clipCount={clips.length} />
@@ -87,10 +96,10 @@ export default function App() {
           <ClipsLibrary
             clips={clips}
             onDub={handleDub}
-            onMeme={handleMeme}
-            onRefresh={fetchClips}
             onDelete={handleDelete}
             onRename={handleRename}
+            onStatusChange={handleStatusChange}
+            onNewClip={() => setSection('import')}
           />
         )}
         {section === 'dub' && activeClip && (
@@ -101,7 +110,7 @@ export default function App() {
           />
         )}
         {section === 'memes' && (
-          <MemeGenerator clip={memeClip || null} />
+          <MemeGenerator clip={null} />
         )}
       </main>
     </div>

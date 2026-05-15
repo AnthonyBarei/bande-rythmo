@@ -15,6 +15,7 @@ class Clip(Base):
     end = Column(Float, nullable=False)
     segment_path = Column(String, nullable=False)
     thumbnail_path = Column(String, nullable=True)
+    status = Column(String, nullable=False, default="todo")
     created_at = Column(DateTime, default=datetime.now)
 
     subtitles = relationship(

@@ -14,6 +14,7 @@ def _to_dict(clip: Clip) -> dict:
         "end": clip.end,
         "segment_path": clip.segment_path,
         "thumbnail_path": clip.thumbnail_path,
+        "status": clip.status or "todo",
         "subtitles": [
             {"start": s.start, "end": s.end, "character": s.character, "text": s.text}
             for s in clip.subtitles
@@ -74,6 +75,21 @@ def update_name(db: Session, clip_id, name):
     if not clip:
         return None
     clip.name = name
+    db.commit()
+    db.refresh(clip)
+    return _to_dict(clip)
+
+
+VALID_STATUSES = {"todo", "dubbing", "review", "done"}
+
+
+def update_status(db: Session, clip_id, status):
+    if status not in VALID_STATUSES:
+        return None
+    clip = db.query(Clip).filter(Clip.clip_id == clip_id).first()
+    if not clip:
+        return None
+    clip.status = status
     db.commit()
     db.refresh(clip)
     return _to_dict(clip)

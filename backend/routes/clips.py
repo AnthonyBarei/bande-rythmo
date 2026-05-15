@@ -15,7 +15,7 @@ from typing import Any, Dict, List
 from database import get_db
 from services.clip_service import (
     create_clip, delete_clip, get_clip,
-    list_clips, update_name, update_subtitles,
+    list_clips, update_name, update_status, update_subtitles,
 )
 from services.ffmpeg_service import extract_segment, extract_thumbnail, probe_streams
 
@@ -28,6 +28,10 @@ class UpdateSubtitlesRequest(BaseModel):
 
 class RenameRequest(BaseModel):
     name: str
+
+
+class StatusRequest(BaseModel):
+    status: str
 
 
 class ProbeLocalRequest(BaseModel):
@@ -194,6 +198,14 @@ async def rename(clip_id: str, req: RenameRequest, db: Session = Depends(get_db)
     clip = update_name(db, clip_id, req.name)
     if not clip:
         raise HTTPException(404, "Clip not found")
+    return clip
+
+
+@router.put("/{clip_id}/status")
+async def set_status(clip_id: str, req: StatusRequest, db: Session = Depends(get_db)):
+    clip = update_status(db, clip_id, req.status)
+    if not clip:
+        raise HTTPException(404, "Clip not found or invalid status")
     return clip
 
 

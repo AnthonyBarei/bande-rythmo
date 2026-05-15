@@ -22,7 +22,15 @@ def get_db():
 def init_db():
     from models import Clip, Subtitle  # noqa: F401
     Base.metadata.create_all(bind=engine)
+    from sqlalchemy import text
     with engine.connect() as conn:
-        cols = [r[1] for r in conn.execute(__import__("sqlalchemy").text("PRAGMA table_info(clips)")).fetchall()]
+        cols = [r[1] for r in conn.execute(text("PRAGMA table_info(clips)")).fetchall()]
         if "source_path" not in cols:
-            conn.execute(__import__("sqlalchemy").text("ALTER TABLE clips ADD COLUMN source_path TEXT"))
+            conn.execute(text("ALTER TABLE clips ADD COLUMN source_path TEXT"))
+        if "status" not in cols:
+            conn.execute(text("ALTER TABLE clips ADD COLUMN status TEXT NOT NULL DEFAULT 'todo'"))
+            conn.execute(text(
+                "UPDATE clips SET status = 'dubbing' "
+                "WHERE clip_id IN (SELECT DISTINCT clip_id FROM subtitles)"
+            ))
+        conn.commit()
