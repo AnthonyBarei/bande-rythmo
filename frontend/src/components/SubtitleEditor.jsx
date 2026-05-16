@@ -1,10 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react'
 
 const TRACK_COLORS = [
-  { bg: 'rgba(245, 197, 24,0.10)',  text: '#f5c518', label: '#f5c518' },
-  { bg: 'rgba(80,180,255,0.10)', text: '#5bf', label: '#5bf' },
-  { bg: 'rgba(255,100,160,0.10)',text: '#f6a', label: '#f6a' },
-  { bg: 'rgba(100,230,160,0.10)',text: '#6eb', label: '#6eb' },
+  { bg: 'rgba(245,197,24,0.10)',  text: '#f5c518', label: '#f5c518' },
+  { bg: 'rgba(126,192,255,0.10)', text: '#7ec0ff', label: '#7ec0ff' },
+  { bg: 'rgba(240,138,175,0.10)', text: '#f08aaf', label: '#f08aaf' },
+  { bg: 'rgba(126,212,168,0.10)', text: '#7ed4a8', label: '#7ed4a8' },
 ]
 
 const NOTATION_TAGS = [
@@ -112,11 +112,13 @@ function CharSelect({ value, charMap, charList, onSelect, onCreate, compact = fa
     return (
       <div ref={ref} style={{ position: 'relative', flexShrink: 0 }}>
         <button onClick={e => { e.stopPropagation(); setOpen(o => !o) }} title={value || '(défaut)'} style={{
-          width: 26, height: 26, borderRadius: '50%', background: c.label + '22',
-          border: `2px solid ${c.label}`, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 10, fontWeight: 700, color: c.label,
+          display: 'flex', alignItems: 'center', padding: '2px 7px', borderRadius: 99,
+          background: c.label + '1e', border: `1px solid ${c.label}44`,
+          cursor: 'pointer', fontSize: 9, fontWeight: 700, color: c.label,
+          letterSpacing: 0.4, textTransform: 'uppercase', maxWidth: 78,
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
         }}>
-          {(value || '?')[0].toUpperCase()}
+          {value || 'déf'}
         </button>
         {open && (
           <div style={{
@@ -246,64 +248,81 @@ function SubtitleRow({ sub, idx, active, selected, compact, charMap, charList, o
   )
 
   if (compact) {
-    // Compact layout: stacked TCs | char dot | text+notation | del
+    // Compact layout: number badge | (meta line + text line) | hover actions
     return (
       <div
         onMouseDown={handleMouseDown}
         onClick={handleRowClick}
+        className="sub-row"
         style={{
-          display: 'flex', alignItems: 'center', gap: 0,
-          background: selected ? 'rgba(245, 197, 24,0.07)' : (active ? 'rgba(255,255,255,0.02)' : 'transparent'),
-          borderBottom: '1px solid #141414',
-          borderLeft: `3px solid ${selected ? c.label : (active ? c.label + '88' : 'transparent')}`,
-          cursor: 'pointer', userSelect: 'none', minHeight: 42,
+          display: 'flex', gap: 8, padding: '9px 10px', marginBottom: 2,
+          borderRadius: 6, position: 'relative',
+          background: (selected || active) ? c.label + '22' : 'transparent',
+          border: `1px solid ${(selected || active) ? c.label + '44' : 'transparent'}`,
+          cursor: 'pointer', userSelect: 'none',
           transition: 'background 0.1s',
         }}
       >
-        {/* Stacked timecodes */}
-        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '2px 6px', flexShrink: 0, borderRight: '1px solid #1a1a1a', gap: 1 }}>
-          <TCInput value={sub.start} color="#f5c518"
-            onCommit={t => onChange({ ...sub, start: Math.min(t, sub.end - 0.1) })} />
-          <TCInput value={sub.end} color="#666"
-            onCommit={t => onChange({ ...sub, end: Math.max(t, sub.start + 0.1) })} />
+        {(selected || active) && (
+          <div style={{ position: 'absolute', left: 0, top: 8, bottom: 8, width: 2.5, background: c.label, borderRadius: 2 }} />
+        )}
+        {/* Number badge */}
+        <div style={{
+          width: 22, height: 22, flexShrink: 0, borderRadius: 4, marginTop: 1,
+          background: c.label + '22', color: c.label,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700,
+        }}>{idx + 1}</div>
+
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {/* Meta line */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <CharSelect value={sub.character || ''} charMap={charMap} charList={charList}
+              onSelect={v => onChange({ ...sub, character: v })}
+              onCreate={onNewCharacter}
+              compact
+            />
+            <TCInput value={sub.start} color="var(--text3)"
+              onCommit={t => onChange({ ...sub, start: Math.min(t, sub.end - 0.1) })} />
+            <span style={{ color: 'var(--text4)', fontSize: 10 }}>→</span>
+            <TCInput value={sub.end} color="var(--text3)"
+              onCommit={t => onChange({ ...sub, end: Math.max(t, sub.start + 0.1) })} />
+            <div style={{ flex: 1 }} />
+            <span title={`${cps.toFixed(1)} c/s`} style={{
+              fontSize: 10, fontFamily: 'var(--font-mono)',
+              color: cpsHigh ? 'var(--danger)' : 'var(--text4)',
+              fontWeight: cpsHigh ? 700 : 400,
+            }}>{dur.toFixed(1)}s</span>
+          </div>
+
+          {/* Text line */}
+          <div ref={notationRef} style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 2 }}>
+            <input
+              ref={textInputRef}
+              value={sub.text}
+              onChange={e => onChange({ ...sub, text: e.target.value })}
+              placeholder="Texte de la réplique…"
+              onClick={e => e.stopPropagation()}
+              style={{
+                flex: 1, fontFamily: 'var(--font-ui)', fontSize: 13, lineHeight: 1.4, padding: '1px 0',
+                background: 'transparent', color: active || selected ? 'var(--text)' : 'var(--text2)',
+                border: 'none', outline: 'none', userSelect: 'text', minWidth: 0,
+              }}
+            />
+            <button onClick={e => { e.stopPropagation(); setShowNotations(n => !n) }}
+              title="Notations de doublage"
+              style={{ background: 'none', border: 'none', color: showNotations ? 'var(--accent)' : 'var(--text4)', padding: '2px 3px', cursor: 'pointer', fontSize: 12, flexShrink: 0, borderRadius: 2 }}>
+              ≈
+            </button>
+            {showNotations && <NotationPopover tags={NOTATION_TAGS} onInsert={insertNotation} />}
+          </div>
         </div>
 
-        {/* Character dot */}
-        <div style={{ padding: '0 6px', flexShrink: 0, borderRight: '1px solid #1a1a1a' }}>
-          <CharSelect value={sub.character || ''} charMap={charMap} charList={charList}
-            onSelect={v => onChange({ ...sub, character: v })}
-            onCreate={onNewCharacter}
-            compact
-          />
-        </div>
-
-        {/* Text + notation */}
-        <div ref={notationRef} style={{ flex: 1, padding: '0 4px 0 6px', borderRight: '1px solid #1a1a1a', position: 'relative', display: 'flex', alignItems: 'center', gap: 2 }}>
-          <input
-            ref={textInputRef}
-            value={sub.text}
-            onChange={e => onChange({ ...sub, text: e.target.value })}
-            placeholder="Texte…"
-            onClick={e => e.stopPropagation()}
-            style={{
-              flex: 1, fontFamily: 'var(--font-mono)', fontSize: 12, padding: '5px 0',
-              background: 'transparent', color: 'var(--text)',
-              border: 'none', outline: 'none', userSelect: 'text', minWidth: 0,
-            }}
-          />
-          <button onClick={e => { e.stopPropagation(); setShowNotations(n => !n) }}
-            title="Notations de doublage"
-            style={{ background: 'none', border: 'none', color: showNotations ? '#f5c518' : '#333', padding: '2px 3px', cursor: 'pointer', fontSize: 11, flexShrink: 0, borderRadius: 2 }}>
-            ≈
-          </button>
-          {showNotations && <NotationPopover tags={NOTATION_TAGS} onInsert={insertNotation} />}
-        </div>
-
-        {/* Actions (compact: goto + eye + del) */}
-        <div style={{ display: 'flex', alignItems: 'center', padding: '0 4px', flexShrink: 0 }}>
-          {icBtn('Aller au timecode', '#7ec0ff', () => onSeek?.(sub.start), <Ic d={ICONS.goto} />)}
-          {icBtn(sub.hidden ? 'Masqué' : 'Visible', sub.hidden ? '#444' : '#6eb', () => onChange({ ...sub, hidden: !sub.hidden }), <Ic d={sub.hidden ? ICONS.eyeOff : ICONS.eye} />)}
-          {icBtn('Supprimer', '#7a3535', onDelete, <Ic d={ICONS.trash} />)}
+        {/* Actions */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          {icBtn('Aller au timecode', 'var(--info)', () => onSeek?.(sub.start), <Ic d={ICONS.goto} size={13} />)}
+          {icBtn(sub.hidden ? 'Masqué' : 'Visible', sub.hidden ? 'var(--text4)' : 'var(--success)', () => onChange({ ...sub, hidden: !sub.hidden }), <Ic d={sub.hidden ? ICONS.eyeOff : ICONS.eye} size={13} />)}
+          {icBtn('Supprimer', 'var(--danger)', onDelete, <Ic d={ICONS.trash} size={13} />)}
         </div>
       </div>
     )
@@ -474,29 +493,31 @@ export default function SubtitleEditor({ subtitles, onChange, currentTime = 0, o
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      {/* Toolbar */}
-      <div style={{ display: 'flex', gap: 4, padding: '6px 10px', flexWrap: 'wrap', alignItems: 'center', borderBottom: '1px solid #1a1a1a', flexShrink: 0, background: '#0a0a0a' }}>
-        <button onClick={addNew} style={{ ...toolBtn, color: '#f5c518', borderColor: 'rgba(245, 197, 24,0.35)', background: 'rgba(245, 197, 24,0.06)' }}>
-          + Réplique
-        </button>
-        {!compact && <button onClick={sortByTime} style={toolBtn}>⇅ Trier</button>}
-        {!compact && <div style={{ width: 1, height: 16, background: '#222', margin: '0 2px' }} />}
-        {!compact && <span style={{ fontSize: 10, color: '#888' }}>Décaler</span>}
-        <button onClick={() => shiftAll(-1)} style={toolBtn}>−1s</button>
-        <button onClick={() => shiftAll(0.1)} style={toolBtn}>+.1</button>
-        {!compact && <button onClick={() => shiftAll(-0.1)} style={toolBtn}>−.1</button>}
-        {!compact && <button onClick={() => shiftAll(1)} style={toolBtn}>+1s</button>}
-        <div style={{ flex: 1 }} />
-        <span style={{ fontSize: 10, color: '#888', fontFamily: 'var(--font-mono)' }}>
-          {subtitles.length} répl.
-        </span>
-      </div>
+      {/* Toolbar — full editor only; compact pane adds via ⇧↵ */}
+      {!compact && (
+        <div style={{ display: 'flex', gap: 4, padding: '6px 10px', flexWrap: 'wrap', alignItems: 'center', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)' }}>
+          <button onClick={addNew} style={{ ...toolBtn, color: 'var(--accent)', borderColor: 'rgba(245,197,24,0.35)', background: 'rgba(245,197,24,0.06)' }}>
+            + Réplique
+          </button>
+          <button onClick={sortByTime} style={toolBtn}>⇅ Trier</button>
+          <div style={{ width: 1, height: 16, background: 'var(--border2)', margin: '0 2px' }} />
+          <span style={{ fontSize: 10, color: 'var(--text3)' }}>Décaler</span>
+          <button onClick={() => shiftAll(-1)} style={toolBtn}>−1s</button>
+          <button onClick={() => shiftAll(0.1)} style={toolBtn}>+.1</button>
+          <button onClick={() => shiftAll(-0.1)} style={toolBtn}>−.1</button>
+          <button onClick={() => shiftAll(1)} style={toolBtn}>+1s</button>
+          <div style={{ flex: 1 }} />
+          <span style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>
+            {subtitles.length} répl.
+          </span>
+        </div>
+      )}
 
       {/* Rows */}
-      <div style={{ flex: 1, overflow: 'auto' }}>
+      <div style={{ flex: 1, overflow: 'auto', padding: compact ? 8 : 0 }}>
         {subtitles.length === 0 ? (
-          <div style={{ padding: 24, textAlign: 'center', color: '#444', fontSize: 12 }}>
-            Aucune réplique — utilisez le bouton ci-dessus ou transcrivez avec Whisper.
+          <div style={{ padding: 24, textAlign: 'center', color: 'var(--text3)', fontSize: 12 }}>
+            Aucune réplique — transcrivez avec Whisper ou ajoutez avec ⇧↵.
           </div>
         ) : subtitles.map((sub, i) => {
           const active = currentTime >= sub.start && currentTime <= sub.end

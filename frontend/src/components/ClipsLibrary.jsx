@@ -1,6 +1,5 @@
 import React, { useState, useMemo } from 'react'
 import ClipCard from './ClipCard'
-import GifExportModal from './GifExportModal'
 
 const FILTERS = [
   { key: 'all',     label: 'Tous' },
@@ -16,10 +15,8 @@ const SORTS = [
   { key: 'duration', label: 'Durée' },
 ]
 
-export default function ClipsLibrary({ clips, onDub, onRefresh, onDelete, onRename, onStatusChange, onNewClip }) {
-  const [exporting, setExporting] = useState(null)
+export default function ClipsLibrary({ clips, onDub, onMeme, onDelete, onRename, onStatusChange, onNewClip }) {
   const [toast, setToast] = useState(null)
-  const [gifModalClip, setGifModalClip] = useState(null)
   const [filter, setFilter] = useState('all')
   const [sort, setSort] = useState('recent')
   const [search, setSearch] = useState('')
@@ -51,30 +48,6 @@ export default function ClipsLibrary({ clips, onDub, onRefresh, onDelete, onRena
   }, [clips, filter, search, sort])
 
   const totalDur = useMemo(() => clips.reduce((s, c) => s + (c.end - c.start), 0), [clips])
-
-  async function handleExportMp3(clip) {
-    setExporting(clip.clip_id + '_mp3')
-    try {
-      const res = await fetch('/api/export/export', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ segment_id: clip.clip_id, subtitles: [], format: 'mp3' }),
-      })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const blob = await res.blob()
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `${clip.name}.mp3`
-      a.click()
-      URL.revokeObjectURL(url)
-      showToast('MP3 exporté', 'success')
-    } catch (e) {
-      showToast('Erreur export MP3 : ' + e.message, 'error')
-    } finally {
-      setExporting(null)
-    }
-  }
 
   async function handleDelete(clipId) {
     await onDelete(clipId)
@@ -185,25 +158,15 @@ export default function ClipsLibrary({ clips, onDub, onRefresh, onDelete, onRena
                 key={clip.clip_id}
                 clip={clip}
                 onDub={onDub}
-                onExportMp3={handleExportMp3}
-                onExportGif={c => setGifModalClip(c)}
+                onMeme={onMeme}
                 onDelete={handleDelete}
                 onRename={onRename}
                 onStatusChange={onStatusChange}
-                exporting={exporting}
               />
             ))}
           </div>
         )}
       </div>
-
-      {gifModalClip && (
-        <GifExportModal
-          clip={gifModalClip}
-          onClose={() => setGifModalClip(null)}
-          onExported={() => showToast('GIF exporté', 'success')}
-        />
-      )}
 
       {toast && (
         <div style={{

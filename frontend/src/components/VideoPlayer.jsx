@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react'
+import { Icon, ICONS } from '../Icons'
 
 const fmt = t => {
   if (!t && t !== 0) return '00:00.00'
@@ -139,7 +140,7 @@ export default function VideoPlayer({
               padding: '12px 24px', borderRadius: 6,
               boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
             }}>
-              🔊 Cliquez pour activer le son
+              <Icon d={ICONS.volume} size={16} stroke="#000" /> Cliquez pour activer le son
             </div>
           </div>
         )}
@@ -155,11 +156,11 @@ export default function VideoPlayer({
           onClick={togglePlay}
           style={{
             background: 'rgba(245, 197, 24,0.04)', color: '#f5c518',
-            fontSize: 14, padding: '3px 7px',
-            border: '1px solid #f5c5184', borderRadius: 3, minWidth: 30, lineHeight: 1,
+            padding: '5px 8px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            border: '1px solid rgba(245,197,24,0.27)', borderRadius: 3, minWidth: 30,
           }}
         >
-          {playing ? '⏸' : '▶'}
+          <Icon d={playing ? ICONS.pause : ICONS.play} size={14} />
         </button>
 
         <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text2)', minWidth: 108, flexShrink: 0 }}>
@@ -187,11 +188,12 @@ export default function VideoPlayer({
           <button
             onClick={toggleMute}
             style={{
-              background: 'none', color: muted ? '#333' : 'var(--text2)',
-              fontSize: 12, padding: '2px 6px', border: '1px solid var(--border2)', borderRadius: 3,
+              background: 'none', color: muted ? 'var(--text4)' : 'var(--text2)',
+              padding: '4px 6px', display: 'flex', alignItems: 'center',
+              border: '1px solid var(--border2)', borderRadius: 3,
             }}
           >
-            {muted ? '🔇' : '🔊'}
+            <Icon d={muted ? ICONS.mute : ICONS.volume} size={13} />
           </button>
         )}
       </div>

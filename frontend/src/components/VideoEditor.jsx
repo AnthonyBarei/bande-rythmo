@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import TimelineBar from './TimelineBar'
 import VideoPlayer from './VideoPlayer'
+import { Icon, ICONS } from '../Icons'
 
 let _pendingId = 0
 const newId = () => ++_pendingId
@@ -245,10 +246,10 @@ export default function VideoEditor({ video, onClipsCreated, videoStream, audioS
                 <button
                   onClick={() => handleRemove(c._id)}
                   title="Retirer"
-                  style={{ color: 'var(--text3)', background: 'none', fontSize: 12, padding: '2px 5px', borderRadius: 3, border: 'none' }}
+                  style={{ color: 'var(--text3)', background: 'none', padding: '3px 5px', borderRadius: 3, border: 'none', display: 'flex', alignItems: 'center' }}
                   onMouseEnter={e => e.currentTarget.style.color = 'var(--danger)'}
                   onMouseLeave={e => e.currentTarget.style.color = 'var(--text3)'}
-                >🗑</button>
+                ><Icon d={ICONS.trash} size={13} /></button>
               </div>
             ))}
           </div>

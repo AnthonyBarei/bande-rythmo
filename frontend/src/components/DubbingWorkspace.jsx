@@ -8,12 +8,12 @@ import { useSettings } from '../SettingsContext'
 // Cursor is at CURSOR_X_RATIO * W from left
 // At t=sub.start the LEFT EDGE of the text is exactly at the cursor
 // Text scrolls left at pxPerSec pixels/second as time passes
-const CURSOR_X_RATIO = 0.30
-const H_TRACK = 68
+const CURSOR_X_RATIO = 0.32
+const H_TRACK = 76
 const BR_CONTROLS_H = 50
-const FONT_BR_BASE = 28
-const FONT_BR_MIN = 12
-const FONT_BR = 'bold 28px "JetBrains Mono", "Courier New", monospace'
+const FONT_BR_BASE = 22
+const FONT_BR_MIN = 11
+const FONT_BR = 'bold 22px "JetBrains Mono", "Courier New", monospace'
 const FONT_LABEL = 'bold 10px "IBM Plex Sans", sans-serif'
 
 // Character track colors — hex for label/text/border, soft for fills, bg for legacy callers
@@ -23,6 +23,14 @@ const TRACK_COLORS = [
   { bg: 'rgba(240,138,175,0.10)', hex: '#f08aaf', soft: 'rgba(240,138,175,0.10)', text: '#f08aaf', label: '#f08aaf' },
   { bg: 'rgba(126,212,168,0.10)', hex: '#7ed4a8', soft: 'rgba(126,212,168,0.10)', text: '#7ed4a8', label: '#7ed4a8' },
 ]
+
+// hex (#rrggbb) + opacity (0..1) → 8-digit hex string accepted by canvas fillStyle
+const withAlpha = (hex, a) => hex + Math.round(Math.max(0, Math.min(1, a)) * 255).toString(16).padStart(2, '0')
+
+// Keyboard-hint chip shown inside toolbar buttons
+const Hint = ({ children }) => (
+  <span style={{ fontSize: 9, color: 'var(--text4)', fontFamily: 'var(--font-mono)', padding: '0 4px', borderRadius: 2, background: 'var(--surface3)' }}>{children}</span>
+)
 
 const REACTION_TAGS = ['rire', 'souffle', 'cri', 'chuchoté', 'pleure', 'soupir', 'grogne', 'gémit', 'ahane', 'bégaie']
 const RESP_TAGS = ['inspire', 'expire', 'soupire', 'halète', 'souffle', 'retient son souffle', 'respire fort']
@@ -55,6 +63,8 @@ const ICONS = {
   chevron:  'M6 9l6 6 6-6',
   zoomIn:   <><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></>,
   zoomOut:  <><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/></>,
+  volume:   <><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></>,
+  mute:     <><path d="M11 5L6 9H2v6h4l5 4V5z"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></>,
 }
 
 const fmt = t => {
@@ -117,6 +127,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
   const [loopRegion, setLoopRegion] = useState(null)
   const [locked, setLocked] = useState(false)
   const [showRecorder, setShowRecorder] = useState(false)
+  const [rightTab, setRightTab] = useState('repliques')
   const loopRegionRef = useRef(null)
   const lockedRef = useRef(false)
   loopRegionRef.current = loopRegion
@@ -167,7 +178,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
   }, [subtitles])
 
   const numTracks = Math.max(1, Object.keys(charMap).length)
-  const canvasH = Math.min(numTracks * H_TRACK, 200)
+  const canvasH = Math.min(numTracks * H_TRACK, 240)
   const charList = useMemo(() => Object.keys(charMap), [charMap])
   charMapRef.current = charMap
   numTracksRef.current = numTracks
@@ -223,17 +234,42 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
 
       // Background
       ctx.shadowBlur = 0
-      ctx.fillStyle = isNeon ? '#020203' : '#050505'
+      ctx.fillStyle = isNeon ? '#06060a' : isMinimal ? '#0d0d10' : '#0a0a0c'
       ctx.fillRect(0, 0, W, H)
 
-      // Track separators + background tint
-      for (let track = 0; track < numTracks; track++) {
+      // Scan lines (classique only)
+      if (!isNeon && !isMinimal) {
+        ctx.fillStyle = 'rgba(255,255,255,0.012)'
+        for (let sy = 0; sy < H; sy += 3) ctx.fillRect(0, sy, W, 1)
+      }
+
+      // Track separators
+      for (let track = 1; track < numTracks; track++) {
         const trackH = H / numTracks
-        if (track > 0) {
-          ctx.strokeStyle = isMinimal ? '#141414' : '#1a1a1a'
-          ctx.lineWidth = 1
-          ctx.setLineDash([])
-          ctx.beginPath(); ctx.moveTo(0, track * trackH); ctx.lineTo(W, track * trackH); ctx.stroke()
+        ctx.strokeStyle = 'rgba(255,255,255,0.05)'
+        ctx.lineWidth = 1
+        ctx.setLineDash([])
+        ctx.beginPath(); ctx.moveTo(0, track * trackH); ctx.lineTo(W, track * trackH); ctx.stroke()
+      }
+
+      // Time grid — vertical 1s lines, major every 5s (skipped in minimal)
+      if (!isMinimal) {
+        const gStart = t - cursor_x / pxSec
+        const gEnd = t + (W - cursor_x) / pxSec
+        ctx.setLineDash([])
+        ctx.lineWidth = 1
+        for (let tick = Math.ceil(gStart); tick <= Math.floor(gEnd); tick++) {
+          if (tick < 0) continue
+          const gx = cursor_x + (tick - t) * pxSec
+          const major = tick % 5 === 0
+          ctx.strokeStyle = major ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.04)'
+          ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, H); ctx.stroke()
+          if (major) {
+            ctx.fillStyle = 'rgba(156,156,166,0.22)'
+            ctx.font = '10px "JetBrains Mono", monospace'
+            ctx.textBaseline = 'top'
+            ctx.fillText(fmt(tick), gx + 3, 3)
+          }
         }
       }
 
@@ -329,116 +365,60 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
         }
       }
 
-      // Subtitle background blocks (duration rectangles)
+      // Subtitle blocks + text — single pass, prototype-faithful insets
       for (const sub of subtitlesRef.current) {
         const trackIdx = charMap[sub.character || ''] ?? 0
         const trackH = H / numTracks
         const yTop = trackIdx * trackH
-        const blockLeft = cursor_x + (sub.start - t) * pxSec
-        const blockRight = cursor_x + (sub.end - t) * pxSec
-        if (blockRight < 0 || blockLeft > W) continue
         const color = TRACK_COLORS[trackIdx % TRACK_COLORS.length]
-        const bx = Math.max(0, blockLeft)
-        const bw = Math.min(W, blockRight) - bx
-
-        if (isMinimal) {
-          // 2px underline only
-          ctx.fillStyle = color.label.replace(')', ',0.55)').replace('rgb', 'rgba')
-          ctx.fillRect(bx, yTop + trackH - 2, bw, 2)
-        } else if (isNeon) {
-          // Stroke rect outline
-          ctx.strokeStyle = color.label.replace(')', ',0.5)').replace('rgb', 'rgba')
-          ctx.lineWidth = 1
-          ctx.setLineDash([])
-          ctx.shadowColor = color.label
-          ctx.shadowBlur = 4
-          ctx.strokeRect(bx + 0.5, yTop + 1.5, bw - 1, trackH - 3)
-          ctx.shadowBlur = 0
-        } else {
-          // Classique: fill block
-          ctx.fillStyle = color.bg
-          ctx.fillRect(bx, yTop + 1, bw, trackH - 2)
-        }
-      }
-
-      // Subtitle text + character chips per block
-      for (const sub of subtitlesRef.current) {
-        const trackIdx = charMap[sub.character || ''] ?? 0
-        const trackH = H / numTracks
-        const yTop = trackIdx * trackH
-        const yCenter = yTop + trackH / 2
-        const color = TRACK_COLORS[trackIdx % TRACK_COLORS.length]
-        const isActive = t >= sub.start && t <= sub.end
-
         const leftX = cursor_x + (sub.start - t) * pxSec
         const rightX = cursor_x + (sub.end - t) * pxSec
+        if (rightX < -10 || leftX > W + 10) continue
         const blockW = rightX - leftX
+        const isActive = t >= sub.start && t <= sub.end
+        const bx = Math.max(0, leftX)
+        const bw = Math.min(W, rightX) - bx
 
-        if (rightX < 0 || leftX > W) continue
-
-        // Character avatar circle at left edge of block (only when block left is visible)
-        if (sub.character && blockW > 20) {
-          const avatarX = leftX + 6
-          const avatarY = yTop + 10
-          const r = 8
-          ctx.beginPath()
-          ctx.arc(avatarX + r, avatarY + r, r, 0, Math.PI * 2)
-          ctx.fillStyle = isActive ? color.label : color.label.replace(')', ',0.6)').replace('rgb', 'rgba')
-          ctx.fill()
-          ctx.font = 'bold 9px sans-serif'
-          ctx.fillStyle = '#000'
-          ctx.textBaseline = 'middle'
-          ctx.textAlign = 'center'
-          ctx.fillText(sub.character[0].toUpperCase(), avatarX + r, avatarY + r)
-          ctx.textAlign = 'left'
-
-          // Character name chip next to avatar
-          const chipX = avatarX + r * 2 + 4
-          const chipLabel = sub.character.length > 10 ? sub.character.slice(0, 10) + '…' : sub.character
-          ctx.font = 'bold 8px sans-serif'
-          ctx.textBaseline = 'middle'
-          const chipW = ctx.measureText(chipLabel).width + 8
-          ctx.fillStyle = isActive ? color.bg.replace('0.10', '0.45') : color.bg.replace('0.10', '0.25')
-          ctx.beginPath()
-          const chipH2 = 10
-          ctx.roundRect(chipX, avatarY + r - chipH2 / 2, chipW, chipH2, 3)
-          ctx.fill()
-          ctx.fillStyle = isActive ? color.label : color.label.replace(')', ',0.7)').replace('rgb', 'rgba')
-          ctx.fillText(chipLabel, chipX + 4, avatarY + r)
+        // Block fill
+        if (isMinimal) {
+          ctx.fillStyle = withAlpha(color.hex, isActive ? 1 : 0.4)
+          ctx.fillRect(bx, yTop + trackH - 3, bw, 2)
+        } else if (isNeon) {
+          ctx.strokeStyle = withAlpha(color.hex, 0.53)
+          ctx.lineWidth = 1.1
+          ctx.setLineDash([])
+          ctx.shadowColor = color.hex
+          ctx.shadowBlur = isActive ? 14 : 4
+          ctx.strokeRect(bx + 0.5, yTop + 4.5, bw - 1, trackH - 9)
+          ctx.shadowBlur = 0
+        } else {
+          ctx.fillStyle = withAlpha(color.hex, isActive ? 0.28 : 0.14)
+          ctx.fillRect(bx, yTop + 3, bw, trackH - 6)
+          if (leftX > -1 && leftX < W) {
+            ctx.fillStyle = withAlpha(color.hex, isActive ? 1 : 0.67)
+            ctx.fillRect(leftX, yTop + 3, 2, trackH - 6)
+          }
         }
 
-        // Text: auto-fit font size to block width, min floor
+        // Text — scale-to-fit then ellipsis-truncate
         if (sub.text) {
-          const trackH2 = H / numTracks
-          const textY = yCenter + (sub.character ? 6 : 0)
-          const BASE_FONT = Math.max(16, Math.round(28 * fontScaleRef.current))
-          const MIN_FONT = Math.max(10, Math.round(12 * fontScaleRef.current))
-          const PADDING = sub.character ? 30 : 6 // leave room for avatar chip
-
-          // Fit font size so text fills block but never shrinks below MIN_FONT
+          const PADDING = 12
+          const isReact = sub.text.startsWith('(')
+          const BASE_FONT = Math.max(13, Math.round(FONT_BR_BASE * fontScaleRef.current))
+          const MIN_FONT = Math.max(9, Math.round(FONT_BR_MIN * fontScaleRef.current))
+          const fontStr = sz => isReact
+            ? `italic 600 ${sz}px "IBM Plex Sans", sans-serif`
+            : `bold ${sz}px "JetBrains Mono", "Courier New", monospace`
           let fontSize = BASE_FONT
-          ctx.font = `bold ${fontSize}px "Courier New", monospace`
+          ctx.font = fontStr(fontSize)
           const naturalW = ctx.measureText(sub.text).width
-          const availW = blockW - PADDING
+          const availW = blockW - PADDING * 2
           if (naturalW > availW && availW > 0) {
             fontSize = Math.max(MIN_FONT, Math.floor(BASE_FONT * availW / naturalW))
-            ctx.font = `bold ${fontSize}px "Courier New", monospace`
+            ctx.font = fontStr(fontSize)
           }
           ctx.textBaseline = 'middle'
 
-          const baseFill = isActive ? '#fff' : 'rgba(255,255,255,0.35)'
-          if (isNeon) {
-            ctx.shadowColor = color.label
-            ctx.shadowBlur = isActive ? 8 : 3
-          } else {
-            ctx.shadowBlur = 0
-          }
-
-          ctx.save()
-          ctx.beginPath()
-          ctx.rect(Math.max(0, leftX), yTop + 1, Math.min(W, rightX) - Math.max(0, leftX), trackH2 - 2)
-          ctx.clip()
-          ctx.translate(leftX + PADDING, textY)
           let drawText = sub.text
           const finalW = ctx.measureText(drawText).width
           if (finalW > availW && availW > 0) {
@@ -452,6 +432,18 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
             }
             drawText = drawText.slice(0, lo).trimEnd() + '…'
           }
+
+          if (isNeon) { ctx.shadowColor = color.hex; ctx.shadowBlur = isActive ? 6 : 2 }
+          else ctx.shadowBlur = 0
+
+          ctx.save()
+          ctx.beginPath()
+          ctx.rect(bx, yTop, bw, trackH)
+          ctx.clip()
+          ctx.translate(leftX + PADDING, yTop + trackH / 2)
+          const baseFill = isReact
+            ? (isActive ? color.hex : withAlpha(color.hex, 0.67))
+            : (isActive ? '#fff' : 'rgba(255,255,255,0.42)')
           const segs = drawText.split(/(\*)/)
           let curX = 0
           for (const seg of segs) {
@@ -469,32 +461,21 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
         }
       }
 
-      // Fixed track labels (left edge, always on top)
+      // Sticky track labels — black chip + 3px colored left edge
       for (let tr = 0; tr < numTracks; tr++) {
         const char = Object.entries(charMap).find(([, i]) => i === tr)?.[0] || ''
         const color = TRACK_COLORS[tr % TRACK_COLORS.length]
         const trackH = H / numTracks
-        ctx.font = 'bold 10px sans-serif'
-        ctx.fillStyle = color.label
-        ctx.textBaseline = 'top'
-        ctx.fillText(char.toUpperCase() || '(DEF)', 6, tr * trackH + 5)
-      }
-
-      // Timeline tick marks (every 1s)
-      ctx.setLineDash([])
-      ctx.lineWidth = 1
-      const tStart = t - cursor_x / pxSec
-      const tEnd = t + (W - cursor_x) / pxSec
-      for (let tick = Math.ceil(tStart); tick <= Math.floor(tEnd); tick++) {
-        const tx = cursor_x + (tick - t) * pxSec
-        ctx.strokeStyle = tick < 0 ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.06)'
-        ctx.beginPath(); ctx.moveTo(tx, 0); ctx.lineTo(tx, H); ctx.stroke()
-        if (tick >= 0) {
-          ctx.fillStyle = 'rgba(255,255,255,0.2)'
-          ctx.font = '9px monospace'
-          ctx.textBaseline = 'bottom'
-          ctx.fillText(fmt(tick), tx + 2, H)
-        }
+        const label = char.toUpperCase() || '(DEF)'
+        ctx.font = 'bold 10px "IBM Plex Sans", sans-serif'
+        const lw = ctx.measureText(label).width
+        const ly = tr * trackH + 4
+        ctx.fillStyle = 'rgba(8,8,10,0.85)'
+        ctx.fillRect(0, ly, lw + 14, 16)
+        ctx.fillStyle = color.hex
+        ctx.fillRect(0, ly, 3, 16)
+        ctx.textBaseline = 'middle'
+        ctx.fillText(label, 8, ly + 8)
       }
 
       // Loop region overlay + enforcement
@@ -644,7 +625,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
             let oFontSize = O_BASE_FONT
             oc.font = `bold ${oFontSize}px "Courier New", monospace`
             const oNatW = oc.measureText(sub.text).width
-            const oAvailW = bw - O_PAD
+            const oAvailW = (rightX - leftX) - O_PAD
             if (oNatW > oAvailW && oAvailW > 0) {
               oFontSize = Math.max(O_MIN_FONT, Math.floor(O_BASE_FONT * oAvailW / oNatW))
               oc.font = `bold ${oFontSize}px "Courier New", monospace`
@@ -735,6 +716,12 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
         case 'Delete': case 'Backspace':
           if (activeI >= 0) { e.preventDefault(); handleSubtitlesChange(subs.filter((_, i) => i !== activeI)) }
           break
+        case 'Enter':
+          if (e.shiftKey) {
+            e.preventDefault()
+            handleSubtitlesChange([...subs, { start: t, end: t + 1.5, character: '', text: '', reactions: [] }].sort((a, b) => a.start - b.start))
+          }
+          break
         case 'Escape': if (loopRegionRef.current) { setLoopRegion(null); e.preventDefault() } break
         case 'j': v.playbackRate = 0.5; setSpeed(0.5); break
         case 'l': v.playbackRate = 1.5; setSpeed(1.5); break
@@ -766,6 +753,22 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
   function toggleMute() { const v = videoRef.current; if (!v) return; v.muted = !v.muted; setMuted(v.muted) }
   function changeSpeed(s) { const v = videoRef.current; if (v) v.playbackRate = +s; setSpeed(+s) }
   function seekTo(t) { const v = videoRef.current; if (v) v.currentTime = t }
+
+  function gotoPrevSub() {
+    const v = videoRef.current; if (!v) return
+    const t = v.currentTime
+    const subs = subtitlesRef.current
+    const i = subs.findIndex(s => s.start > t - 0.01)
+    const ti = i <= 0 ? 0 : i - 1
+    if (subs[ti]) { v.currentTime = subs[ti].start; setSelectedIdx(ti) }
+  }
+  function gotoNextSub() {
+    const v = videoRef.current; if (!v) return
+    const t = v.currentTime
+    const subs = subtitlesRef.current
+    const i = subs.findIndex(s => s.start > t + 0.01)
+    if (i >= 0) { v.currentTime = subs[i].start; setSelectedIdx(i) }
+  }
 
   const doSave = useCallback(async (subs) => {
     setSaveStatus('saving')
@@ -1208,128 +1211,294 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
   }
 
   const st = STATUS[saveStatus]
+  const Kbd = ({ children }) => (
+    <span style={{ display: 'inline-flex', alignItems: 'center', padding: '1px 5px', border: '1px solid var(--border2)', background: 'var(--surface2)', borderRadius: 3, fontFamily: 'var(--font-mono)', fontSize: 9.5, color: 'var(--text3)' }}>{children}</span>
+  )
+  const tBtn = { background: 'none', border: '1px solid var(--border2)', color: 'var(--text2)', borderRadius: 3, padding: '3px 7px', cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
-      {/* ── Header ── */}
-      <div style={{ padding: '7px 14px', borderBottom: '1px solid var(--border)', background: 'var(--surface)', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, flexWrap: 'wrap' }}>
-        <button onClick={onBack} style={{ padding: '4px 10px', background: 'var(--surface3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 4, fontSize: 11 }}>
-          ← Mes Clips
+      {/* ── Clip header ── */}
+      <div style={{ padding: '0 14px', height: 56, flexShrink: 0, borderBottom: '1px solid var(--border)', background: 'var(--bg)', display: 'flex', alignItems: 'center', gap: 10, overflow: 'hidden' }}>
+        <button onClick={onBack} style={{ padding: '4px 10px', background: 'none', color: 'var(--text2)', border: 'none', fontSize: 13, fontWeight: 500, cursor: 'pointer', flexShrink: 0 }}>
+          ← Mes clips
         </button>
-        <span style={{ fontSize: 13, fontWeight: 700 }}>{clip.name}</span>
-        <span style={{ fontSize: 11, color: '#888', fontFamily: 'var(--font-mono)' }}>
-          {(clip.end - clip.start).toFixed(1)}s · {subtitles.length} réplique{subtitles.length !== 1 ? 's' : ''}
-        </span>
-        <span style={{ fontSize: 11, color: st.color }}>{st.text}</span>
-        <div style={{ flex: 1 }} />
+        <div style={{ width: 1, height: 20, background: 'var(--border2)', flexShrink: 0 }} />
+        <div style={{ flexShrink: 0 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, letterSpacing: -0.1 }}>{clip.name}</div>
+          <div style={{ fontSize: 10.5, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>
+            {(clip.end - clip.start).toFixed(1)}s · {subtitles.length} réplique{subtitles.length !== 1 ? 's' : ''}{charList.filter(c => c).length > 0 ? ` · ${charList.filter(c => c).length} personnage${charList.filter(c => c).length !== 1 ? 's' : ''}` : ''}
+          </div>
+        </div>
+        {/* Character chips */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flex: 1, overflow: 'hidden', minWidth: 0 }}>
+          {charList.filter(c => c).map(char => {
+            const color = TRACK_COLORS[(charMap[char] ?? 0) % TRACK_COLORS.length]
+            return (
+              <span key={char} style={{ padding: '3px 9px 3px 5px', borderRadius: 99, background: color.hex + '22', border: `1px solid ${color.hex}33`, color: color.hex, fontSize: 11, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                <span style={{ width: 18, height: 18, borderRadius: '50%', background: color.hex + '22', border: `1px solid ${color.hex}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 700 }}>
+                  {char[0].toUpperCase()}
+                </span>
+                {char}
+              </span>
+            )
+          })}
+        </div>
+        <span style={{ fontSize: 11, color: st.color, flexShrink: 0 }}>{st.text}</span>
         <select value={lang} onChange={e => setLang(e.target.value)} disabled={transcribing}
-          style={{ background: 'var(--surface3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 4, padding: '3px 5px', fontSize: 11 }}>
+          style={{ background: 'var(--surface3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 4, padding: '3px 5px', fontSize: 11, flexShrink: 0 }}>
           {LANGS.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
         </select>
-        <button onClick={transcribe} disabled={transcribing} style={{
-          padding: '4px 12px', background: 'var(--surface3)',
-          color: subtitles.length > 0 ? 'var(--text2)' : '#f5c518',
-          border: `1px solid ${subtitles.length > 0 ? 'var(--border2)' : 'rgba(245, 197, 24,0.4)'}`,
-          borderRadius: 4, fontSize: 11,
-        }}>
+        <button onClick={transcribe} disabled={transcribing} style={{ padding: '4px 12px', background: 'var(--surface3)', color: subtitles.length > 0 ? 'var(--text2)' : '#f5c518', border: `1px solid ${subtitles.length > 0 ? 'var(--border2)' : 'rgba(245,197,24,0.4)'}`, borderRadius: 4, fontSize: 11, flexShrink: 0 }}>
           {transcribing ? '◉ ...' : '◉ Whisper'}
         </button>
-        <button onClick={() => setShowExport(v => !v)} style={{
-          padding: '4px 12px',
-          background: showExport ? '#f5c518' : 'var(--surface3)',
-          color: showExport ? '#000' : 'var(--text2)',
-          border: `1px solid ${showExport ? '#f5c518' : 'var(--border2)'}`,
-          borderRadius: 4, fontSize: 11, fontWeight: showExport ? 700 : 400,
-        }}>
+        <button onClick={() => setShowExport(v => !v)} style={{ padding: '5px 14px', background: showExport ? 'var(--accent)' : 'var(--accent)', color: '#000', fontWeight: 700, border: 'none', borderRadius: 4, fontSize: 13, flexShrink: 0 }}>
           ↗ Exporter
         </button>
       </div>
 
-      {/* ── Main panels ── */}
+      {/* ── Body (video stage + right pane) ── */}
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
 
-        {/* Left: subtitle list */}
-        <div style={{ width: sidebarWidth, flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRight: '1px solid #1a1a1a' }}>
-          {subtitles.length === 0 && !transcribing ? (
-            <div style={{ padding: 24, textAlign: 'center' }}>
-              <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 10 }}>Aucune réplique. Transcrivez ou ajoutez manuellement.</div>
-              <button onClick={transcribe} style={{ padding: '6px 16px', background: '#f5c518', color: '#000', fontWeight: 600, borderRadius: 4, fontSize: 12 }}>◉ Transcrire</button>
-            </div>
-          ) : (
-            <SubtitleEditor subtitles={subtitles} onChange={handleSubtitlesChange} currentTime={currentTime} onSeek={seekTo} selectedIdx={selectedIdx} setSelectedIdx={setSelectedIdx} compact={sidebarWidth < 460} />
-          )}
-        </div>
-
-        {/* Resize handle */}
-        <div
-          onMouseDown={e => {
-            e.preventDefault()
-            const startX = e.clientX
-            const startW = sidebarWidth
-            const onMove = ev => setSidebarWidth(Math.max(240, Math.min(700, startW + ev.clientX - startX)))
-            const onUp = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
-            window.addEventListener('mousemove', onMove)
-            window.addEventListener('mouseup', onUp)
-          }}
-          style={{ width: 5, flexShrink: 0, cursor: 'col-resize', background: 'transparent', transition: 'background 0.15s' }}
-          onMouseEnter={e => { e.currentTarget.style.background = '#f5c5184' }}
-          onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
-        />
-
-        {/* Right: video + mini BR strip + transport */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
+        {/* Video stage */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0, background: '#000' }}>
           {/* Video */}
-          <div style={{ background: '#000', position: 'relative', flex: 1, minHeight: 0 }}>
+          <div style={{ flex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 0 }}>
             <video
               ref={videoRef}
               src={segmentUrl}
               preload="metadata"
               crossOrigin="anonymous"
-              style={{ width: '100%', height: '100%', display: 'block', objectFit: 'contain', cursor: 'pointer' }}
-              onTimeUpdate={e => setCurrentTime(e.target.currentTime)}
+              style={{ width: '88%', maxHeight: '100%', display: 'block', objectFit: 'contain', cursor: 'pointer', aspectRatio: '16/9' }}
+              onTimeUpdate={e => {
+                const ct = e.target.currentTime
+                setCurrentTime(ct)
+                if (!e.target.paused) interpTimeRef.current = { videoTime: ct, wallMs: performance.now(), active: true }
+              }}
               onLoadedMetadata={e => setDuration(e.target.duration)}
-              onPlay={() => setPlaying(true)}
-              onPause={() => setPlaying(false)}
+              onPlay={() => { setPlaying(true); interpTimeRef.current = { videoTime: videoRef.current?.currentTime || 0, wallMs: performance.now(), active: true } }}
+              onPause={() => { setPlaying(false); interpTimeRef.current = { ...interpTimeRef.current, active: false } }}
               onClick={togglePlay}
             />
-            {subtitles.length === 0 && (
-              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
-                <span style={{ fontSize: 11, color: '#2a2a2a', letterSpacing: 2, textTransform: 'uppercase', fontWeight: 700 }}>Aperçu Clip</span>
-              </div>
-            )}
+            {/* Timecode overlay */}
+            <div style={{ position: 'absolute', top: 8, left: '6%', padding: '3px 8px', background: 'rgba(0,0,0,0.55)', border: '1px solid var(--border)', borderRadius: 4, fontFamily: 'var(--font-mono)', fontSize: 10.5, color: 'var(--text2)', pointerEvents: 'none' }}>
+              <span style={{ color: 'var(--accent)' }}>●</span> {fmt(currentTime)} / {fmt(duration)} · {speed}×
+            </div>
+            {/* Subtitle burn-in */}
             {activeSubtitle && brInPlayer !== 'never' && (brInPlayer === 'always' || playing) && (
               <div style={{
-                position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)',
-                background: 'rgba(0,0,0,0.82)', color: '#fff', padding: '5px 18px',
-                borderRadius: 3, fontSize: 15, maxWidth: '90%', textAlign: 'center',
+                position: 'absolute', bottom: 22, left: '50%', transform: 'translateX(-50%)',
+                background: 'rgba(0,0,0,0.78)', color: '#fff', padding: '6px 16px',
+                borderRadius: 3, fontSize: 14, maxWidth: '88%', textAlign: 'center',
                 fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                 borderTop: `2px solid ${TRACK_COLORS[(charMap[activeSubtitle.character || ''] ?? 0) % TRACK_COLORS.length].label}`,
                 pointerEvents: 'none',
               }}>
                 {activeSubtitle.character && (
-                  <div style={{ color: TRACK_COLORS[(charMap[activeSubtitle.character || ''] ?? 0) % TRACK_COLORS.length].label, fontSize: 9, marginBottom: 2, letterSpacing: 1, fontWeight: 700 }}>
+                  <div style={{ color: TRACK_COLORS[(charMap[activeSubtitle.character || ''] ?? 0) % TRACK_COLORS.length].label, fontSize: 9, marginBottom: 2, letterSpacing: 2.5, fontWeight: 700 }}>
                     {activeSubtitle.character.toUpperCase()}
                   </div>
                 )}
                 {activeSubtitle.text}
               </div>
             )}
+            {subtitles.length === 0 && (
+              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+                <span style={{ fontSize: 11, color: '#2a2a2a', letterSpacing: 2, textTransform: 'uppercase', fontWeight: 700 }}>Aperçu Clip</span>
+              </div>
+            )}
           </div>
 
-          {/* Mini BR strip — same scrolling content as main BR, below video */}
-          <canvas
-            ref={canvasOverlayRef}
-            width={800}
-            height={numTracks * 55}
-            style={{ display: 'block', width: '100%', height: numTracks * 55, flexShrink: 0, background: '#030303' }}
-          />
+          {/* Mini transport */}
+          <div style={{ flexShrink: 0, height: 44, background: 'var(--bg2)', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', padding: '0 12px', gap: 6 }}>
+            <button onClick={() => seekTo(0)} style={tBtn}><Ic d={ICONS.start} size={14} /></button>
+            <button onClick={gotoPrevSub} style={tBtn}><Ic d={ICONS.prev} size={14} /></button>
+            <button onClick={togglePlay} style={{ ...tBtn, background: 'var(--accent)', color: '#000', border: 'none', width: 32, height: 28, borderRadius: 3 }}>
+              <Ic d={playing ? ICONS.pause : ICONS.play} size={14} fill="#000" />
+            </button>
+            <button onClick={gotoNextSub} style={tBtn}><Ic d={ICONS.next} size={14} /></button>
+            <button onClick={() => { const v = videoRef.current; if (v) v.currentTime = v.duration }} style={tBtn}><Ic d={ICONS.end} size={14} /></button>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, color: 'var(--text2)', flexShrink: 0, marginLeft: 4 }}>
+              {fmt(currentTime)} / {fmt(duration)}
+            </span>
+            <input type="range" min={0} max={duration || 1} step={0.05} value={currentTime}
+              onChange={e => seekTo(parseFloat(e.target.value))}
+              style={{ flex: 1, color: '#f5c518', cursor: 'pointer', height: 3, '--pct': `${(currentTime / (duration || 1)) * 100}%` }} />
+            <select value={speed} onChange={e => changeSpeed(e.target.value)}
+              style={{ background: 'var(--surface3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 3, padding: '2px 4px', fontSize: 10, flexShrink: 0 }}>
+              {[0.5, 0.75, 1, 1.25, 1.5].map(s => <option key={s} value={s}>{s}×</option>)}
+            </select>
+            <button onClick={toggleMute} title={muted ? 'Activer le son' : 'Couper le son'} style={{ ...tBtn, color: muted ? 'var(--text4)' : 'var(--text2)' }}>
+              <Ic d={muted ? ICONS.mute : ICONS.volume} size={14} />
+            </button>
+            <div style={{ width: 1, height: 18, background: 'var(--border)', flexShrink: 0, margin: '0 2px' }} />
+            {/* Subtitle display mode — cycles play → always → never */}
+            <button
+              onClick={() => setBrInPlayer(m => m === 'play' ? 'always' : m === 'always' ? 'never' : 'play')}
+              title="Sous-titres sur la vidéo"
+              style={{ ...tBtn, fontSize: 10, padding: '3px 8px', gap: 4,
+                color: brInPlayer === 'never' ? 'var(--text4)' : 'var(--accent)',
+                borderColor: brInPlayer === 'never' ? 'var(--border2)' : 'var(--accent)' }}>
+              ST · {brInPlayer === 'play' ? 'lecture' : brInPlayer === 'always' ? 'toujours' : 'jamais'}
+            </button>
+            {/* BR text size */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0 }}>
+              <button onClick={() => setFontScale(f => Math.max(0.3, +(f - 0.15).toFixed(2)))} title="Texte BR −" style={{ ...tBtn, padding: '3px 6px' }}>A−</button>
+              <span style={{ fontSize: 9.5, fontFamily: 'var(--font-mono)', color: fontScale !== 1 ? 'var(--accent)' : 'var(--text3)', minWidth: 32, textAlign: 'center' }}>{Math.round(fontScale * 100)}%</span>
+              <button onClick={() => setFontScale(f => Math.min(3, +(f + 0.15).toFixed(2)))} title="Texte BR +" style={{ ...tBtn, padding: '3px 6px' }}>A+</button>
+            </div>
+          </div>
+        </div>
 
+        {/* Right pane (400px) */}
+        <div style={{ width: 400, flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', borderLeft: '1px solid var(--border)', background: 'var(--bg)' }}>
+
+          {/* Active character card */}
+          {activeSubtitle && (() => {
+            const trackIdx = charMap[activeSubtitle.character || ''] ?? 0
+            const color = TRACK_COLORS[trackIdx % TRACK_COLORS.length]
+            const subIdx = subtitles.indexOf(activeSubtitle)
+            return (
+              <div style={{ flexShrink: 0, padding: '10px 14px', background: color.hex + '14', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ width: 36, height: 36, borderRadius: '50%', flexShrink: 0, border: `2px solid ${color.hex}`, background: color.hex + '22', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 700, color: color.hex }}>
+                  {(activeSubtitle.character || '?')[0].toUpperCase()}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: color.hex }}>{activeSubtitle.character || '(défaut)'}</span>
+                    <span style={{ fontSize: 9.5, fontWeight: 600, color: 'var(--text3)' }}>· ACTIF</span>
+                  </div>
+                  <div style={{ fontSize: 10.5, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>
+                    réplique {subIdx + 1} / {subtitles.length} · {(activeSubtitle.end - activeSubtitle.start).toFixed(1)}s
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowRecorder(s => !s)}
+                  title="Enregistrer (R)"
+                  style={{ width: 34, height: 34, borderRadius: 4, flexShrink: 0, background: showRecorder ? '#c0392b' : 'var(--danger)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <Ic d={ICONS.rec} size={12} fill="#fff" />
+                </button>
+              </div>
+            )
+          })()}
+
+          {/* Tabs */}
+          <div style={{ flexShrink: 0, height: 36, borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'stretch' }}>
+            {[['repliques', `Répliques (${subtitles.length})`], ['personnage', 'Personnage'], ['distribution', 'Distribution']].map(([id, label]) => (
+              <button key={id} onClick={() => setRightTab(id)} style={{ flex: 1, background: 'none', border: 'none', borderBottom: rightTab === id ? '2px solid var(--accent)' : '2px solid transparent', color: rightTab === id ? 'var(--text)' : 'var(--text3)', fontSize: 12, fontWeight: rightTab === id ? 600 : 400, cursor: 'pointer', padding: '0 4px', marginBottom: -1, transition: 'color 0.15s' }}>
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {/* Tab content */}
+          <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+            {rightTab === 'repliques' && (
+              <>
+                <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+                  {subtitles.length === 0 && !transcribing ? (
+                    <div style={{ padding: 24, textAlign: 'center' }}>
+                      <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 10 }}>Aucune réplique. Transcrivez ou ajoutez manuellement.</div>
+                      <button onClick={transcribe} style={{ padding: '6px 16px', background: '#f5c518', color: '#000', fontWeight: 600, borderRadius: 4, fontSize: 12 }}>◉ Transcrire</button>
+                    </div>
+                  ) : (
+                    <SubtitleEditor subtitles={subtitles} onChange={handleSubtitlesChange} currentTime={currentTime} onSeek={seekTo} selectedIdx={selectedIdx} setSelectedIdx={setSelectedIdx} compact={true} />
+                  )}
+                </div>
+                {showRecorder && (
+                  <div style={{ flexShrink: 0, borderTop: '1px solid var(--border)', maxHeight: 300, overflow: 'auto' }}>
+                    <RecorderPanel
+                      clipId={clip.clip_id}
+                      subtitles={subtitles}
+                      activeCharacter={activeSubtitle?.character || ''}
+                      activeIndex={selectedIdx}
+                      videoRef={videoRef}
+                    />
+                  </div>
+                )}
+              </>
+            )}
+            {rightTab === 'personnage' && (
+              <div style={{ padding: 16, overflow: 'auto', flex: 1 }}>
+                {charList.filter(c => c).length === 0 ? (
+                  <p style={{ color: 'var(--text3)', fontSize: 13 }}>Aucun personnage défini.</p>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    {charList.filter(c => c).map(char => {
+                      const trackIdx = charMap[char] ?? 0
+                      const color = TRACK_COLORS[trackIdx % TRACK_COLORS.length]
+                      const charSubs = subtitles.filter(s => s.character === char)
+                      const totalDur = charSubs.reduce((sum, s) => sum + s.end - s.start, 0)
+                      return (
+                        <div key={char} style={{ padding: 12, background: 'var(--surface)', border: `1px solid ${color.hex}33`, borderRadius: 8 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                            <div style={{ width: 30, height: 30, borderRadius: '50%', background: color.hex + '22', border: `2px solid ${color.hex}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: color.hex }}>
+                              {char[0].toUpperCase()}
+                            </div>
+                            <span style={{ fontSize: 14, fontWeight: 700, color: color.hex }}>{char}</span>
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                            {[['Répliques', charSubs.length], ['Durée', totalDur.toFixed(1) + 's']].map(([k, v]) => (
+                              <div key={k} style={{ padding: '6px 8px', background: 'var(--surface2)', borderRadius: 4 }}>
+                                <div style={{ fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>{k}</div>
+                                <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)', fontFamily: 'var(--font-mono)' }}>{v}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+            {rightTab === 'distribution' && (
+              <div style={{ padding: 16, overflow: 'auto', flex: 1 }}>
+                {charList.length === 0 ? (
+                  <p style={{ color: 'var(--text3)', fontSize: 13 }}>Aucune réplique.</p>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {charList.map(char => {
+                      const trackIdx = charMap[char] ?? 0
+                      const color = TRACK_COLORS[trackIdx % TRACK_COLORS.length]
+                      const charSubs = subtitles.filter(s => (s.character || '') === char)
+                      const totalDur = charSubs.reduce((sum, s) => sum + s.end - s.start, 0)
+                      const clipDur = clip.end - clip.start
+                      const pct = Math.min(100, clipDur > 0 ? (totalDur / clipDur) * 100 : 0)
+                      return (
+                        <div key={char || '_default'}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 5 }}>
+                            <span style={{ color: color.hex, fontWeight: 600 }}>{char || '(défaut)'}</span>
+                            <span style={{ color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>{pct.toFixed(0)}%</span>
+                          </div>
+                          <div style={{ height: 8, background: 'var(--surface2)', borderRadius: 4, overflow: 'hidden' }}>
+                            <div style={{ height: '100%', width: `${pct}%`, background: color.hex, opacity: 0.8, borderRadius: 4, transition: 'width 0.3s' }} />
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Footer hints */}
+          <div style={{ flexShrink: 0, padding: '6px 12px', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: 11, color: 'var(--text3)', display: 'flex', alignItems: 'center', gap: 5 }}>
+              <Kbd>⇧↵</Kbd> nouvelle réplique
+            </span>
+            <span style={{ fontSize: 11, color: 'var(--text3)', display: 'flex', alignItems: 'center', gap: 5 }}>
+              <Kbd>K</Kbd> pause · <Kbd>I/O</Kbd> in/out
+            </span>
+          </div>
         </div>
       </div>
 
       {/* ── Bande Rythmo — full width ── */}
-      <div style={{ flexShrink: 0, borderTop: '2px solid #1a1a1a', background: '#050505', height: brPanelHeight, display: 'flex', flexDirection: 'column', overflow: 'visible', position: 'relative' }}>
+      <div style={{ flexShrink: 0, borderTop: '2px solid var(--border2)', background: '#050505', height: brPanelHeight, display: 'flex', flexDirection: 'column', overflow: 'visible', position: 'relative' }}>
         {/* Vertical resize handle */}
         <div
           onMouseDown={e => {
@@ -1342,40 +1511,9 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
             window.addEventListener('mouseup', onUp)
           }}
           style={{ height: 5, flexShrink: 0, cursor: 'row-resize', background: 'transparent', transition: 'background 0.15s' }}
-          onMouseEnter={e => { e.currentTarget.style.background = '#f5c5184' }}
+          onMouseEnter={e => { e.currentTarget.style.background = '#f5c51844' }}
           onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
         />
-        {/* Full-width seekbar + transport */}
-        <div style={{ flexShrink: 0, background: '#080808', borderBottom: '1px solid #1a1a1a', display: 'flex', alignItems: 'center', padding: '0 10px', gap: 8, height: 32 }}>
-          <button onClick={togglePlay} style={{ background: 'none', color: '#f5c518', padding: '2px 6px', border: '1px solid #f5c51844', borderRadius: 3, minWidth: 26, lineHeight: 1, fontSize: 12, cursor: 'pointer', flexShrink: 0 }}>
-            {playing ? '⏸' : '▶'}
-          </button>
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text2)', flexShrink: 0 }}>
-            {fmt(currentTime)} / {fmt(duration)}
-          </span>
-          <input type="range" min={0} max={duration || 1} step={0.05} value={currentTime}
-            onChange={e => seekTo(parseFloat(e.target.value))}
-            style={{ flex: 1, color: '#f5c518', cursor: 'pointer', height: 3, '--pct': `${(currentTime / (duration || 1)) * 100}%` }} />
-          <select value={speed} onChange={e => changeSpeed(e.target.value)}
-            style={{ background: 'var(--surface3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 3, padding: '2px 4px', fontSize: 10, flexShrink: 0 }}>
-            {[0.5, 0.75, 1, 1.25, 1.5].map(s => <option key={s} value={s}>{s}×</option>)}
-          </select>
-          <button onClick={toggleMute}
-            style={{ background: 'none', color: muted ? '#333' : 'var(--text2)', fontSize: 11, padding: '2px 6px', border: '1px solid var(--border2)', borderRadius: 3, cursor: 'pointer', flexShrink: 0 }}>
-            {muted ? '🔇' : '🔊'}
-          </button>
-          <button onClick={() => setShowRecorder(s => !s)} title="Enregistrer une prise"
-            style={{
-              display: 'flex', alignItems: 'center', gap: 4,
-              background: showRecorder ? 'var(--danger)' : 'none',
-              color: showRecorder ? '#fff' : 'var(--danger)',
-              fontSize: 11, padding: '2px 8px', border: '1px solid var(--danger)',
-              borderRadius: 3, cursor: 'pointer', flexShrink: 0,
-            }}>
-            <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'currentColor' }} /> Prise
-          </button>
-        </div>
-
         {/* VoxDub-style BR toolbar */}
         <BandeRythmoToolbar
           subtitles={subtitles}
@@ -1400,26 +1538,6 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
           locked={locked}
           setLocked={setLocked}
         />
-        {/* BR track legend bar */}
-        <div style={{ height: BR_CONTROLS_H, display: 'flex', alignItems: 'center', gap: 10, padding: '0 10px', borderBottom: '1px solid #111' }}>
-          <span style={{ fontSize: 10, color: '#666', textTransform: 'uppercase', letterSpacing: 1, flexShrink: 0, fontWeight: 700 }}>
-            Bande Rythmo
-          </span>
-          {Object.entries(charMap).map(([char, idx]) => (
-            <span key={char} style={{ fontSize: 11, color: TRACK_COLORS[idx % TRACK_COLORS.length].label, fontWeight: 600 }}>
-              ▪ {char || '(défaut)'}
-            </span>
-          ))}
-          <div style={{ flex: 1 }} />
-          {loopRegion && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '2px 8px', background: 'rgba(245, 197, 24,0.08)', border: '1px solid rgba(245, 197, 24,0.3)', borderRadius: 3 }}>
-              <span style={{ fontSize: 11, color: '#f5c518', fontFamily: 'var(--font-mono)' }}>
-                ⟲ {fmt(loopRegion.start)}–{fmt(loopRegion.end)}
-              </span>
-              <button onClick={() => setLoopRegion(null)} style={{ fontSize: 11, color: '#f5c518', background: 'none', border: 'none', cursor: 'pointer' }}>✕</button>
-            </div>
-          )}
-        </div>
         {/* Canvas */}
         <div style={{ position: 'relative', flex: 1, minHeight: 0, overflow: 'hidden' }}>
           <canvas
@@ -1435,6 +1553,14 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
             onWheel={onCanvasWheel}
             onContextMenu={onCanvasContextMenu}
           />
+          {loopRegion && (
+            <div style={{ position: 'absolute', top: 6, right: 8, display: 'flex', alignItems: 'center', gap: 4, padding: '2px 8px', background: 'rgba(245,197,24,0.12)', border: '1px solid rgba(245,197,24,0.4)', borderRadius: 4, zIndex: 5 }}>
+              <span style={{ fontSize: 11, color: 'var(--accent)', fontFamily: 'var(--font-mono)' }}>
+                ⟲ {fmt(loopRegion.start)}–{fmt(loopRegion.end)}
+              </span>
+              <button onClick={() => setLoopRegion(null)} style={{ fontSize: 11, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer' }}>✕</button>
+            </div>
+          )}
           {editingIdx != null && (() => {
             const sub = subtitles[editingIdx]
             const canvas = canvasRef.current
@@ -1471,12 +1597,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
             )
           })()}
           {hoverHint && !editingIdx && (
-            <div style={{
-              position: 'absolute', bottom: 4, right: 8,
-              fontSize: 9, color: 'var(--text3)', fontFamily: 'var(--font-mono)',
-              background: 'rgba(0,0,0,0.6)', padding: '2px 6px', borderRadius: 2,
-              pointerEvents: 'none',
-            }}>{hoverHint}</div>
+            <div style={{ position: 'absolute', bottom: 4, right: 8, fontSize: 9, color: 'var(--text3)', fontFamily: 'var(--font-mono)', background: 'rgba(0,0,0,0.6)', padding: '2px 6px', borderRadius: 2, pointerEvents: 'none' }}>{hoverHint}</div>
           )}
           {ctxMenu && (() => {
             const sub = subtitles[ctxMenu.subIdx]
@@ -1484,21 +1605,9 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
             const canSplit = ctxMenu.time > sub.start && ctxMenu.time < sub.end
             return (
               <>
-                <div
-                  onClick={() => setCtxMenu(null)}
-                  onContextMenu={e => { e.preventDefault(); setCtxMenu(null) }}
-                  style={{ position: 'fixed', inset: 0, zIndex: 20 }}
-                />
-                <div style={{
-                  position: 'absolute', left: ctxMenu.x, top: ctxMenu.y,
-                  background: '#0c0c0c', border: '1px solid #2a2a2a',
-                  borderRadius: 4, padding: 4, zIndex: 21,
-                  fontSize: 12, minWidth: 180,
-                  boxShadow: '0 4px 16px rgba(0,0,0,0.6)',
-                }}>
-                  <div style={menuHeader}>
-                    {sub.character || '(défaut)'} · {sub.text.slice(0, 30) || '∅'}
-                  </div>
+                <div onClick={() => setCtxMenu(null)} onContextMenu={e => { e.preventDefault(); setCtxMenu(null) }} style={{ position: 'fixed', inset: 0, zIndex: 20 }} />
+                <div style={{ position: 'absolute', left: ctxMenu.x, top: ctxMenu.y, background: '#0c0c0c', border: '1px solid #2a2a2a', borderRadius: 4, padding: 4, zIndex: 21, fontSize: 12, minWidth: 180, boxShadow: '0 4px 16px rgba(0,0,0,0.6)' }}>
+                  <div style={menuHeader}>{sub.character || '(défaut)'} · {sub.text.slice(0, 30) || '∅'}</div>
                   <MenuBtn onClick={() => ctxAction('edit')}>✎ Éditer texte</MenuBtn>
                   {canSplit && <MenuBtn onClick={() => ctxAction('split')}>✂ Couper ici ({fmt(ctxMenu.time)})</MenuBtn>}
                   <MenuBtn onClick={() => ctxAction('duplicate')}>⎘ Dupliquer après</MenuBtn>
@@ -1523,7 +1632,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
 
       {/* ── Export panel ── */}
       {showExport && (
-        <div style={{ borderTop: '2px solid #f5c518', background: 'var(--surface)', padding: 14, flexShrink: 0, maxHeight: 260, overflow: 'auto' }}>
+        <div style={{ borderTop: '2px solid var(--accent)', background: 'var(--surface)', padding: 14, flexShrink: 0, maxHeight: 260, overflow: 'auto' }}>
           <ExportPanel
             segmentId={clip.clip_id}
             subtitles={subtitles}
@@ -1537,39 +1646,8 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
 
       {/* ── Toast ── */}
       {toast && (
-        <div style={{
-          position: 'fixed', bottom: 24, right: 24, padding: '10px 18px',
-          background: toast.type === 'error' ? '#e54545' : '#44bb55',
-          color: '#fff', borderRadius: 6, fontSize: 13, fontWeight: 500,
-          zIndex: 1000, boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
-        }}>
+        <div style={{ position: 'fixed', bottom: 24, right: 24, padding: '10px 18px', background: toast.type === 'error' ? '#e54545' : '#44bb55', color: '#fff', borderRadius: 6, fontSize: 13, fontWeight: 500, zIndex: 1000, boxShadow: '0 4px 16px rgba(0,0,0,0.4)' }}>
           {toast.msg}
-        </div>
-      )}
-
-      {/* Recording panel — slide-in */}
-      {showRecorder && (
-        <div style={{
-          position: 'fixed', right: 16, bottom: 16, width: 320, maxHeight: '70vh', overflow: 'auto',
-          background: 'var(--surface)', border: '1px solid var(--border2)',
-          borderRadius: 'var(--radius-lg)', zIndex: 1200,
-          boxShadow: '0 8px 32px rgba(0,0,0,0.55)',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderBottom: '1px solid var(--border)' }}>
-            <span style={{ fontSize: 12, fontWeight: 600 }}>Enregistrement</span>
-            {activeSubtitle?.character && (
-              <span style={{ fontSize: 11, color: 'var(--text3)' }}>· {activeSubtitle.character}</span>
-            )}
-            <div style={{ flex: 1 }} />
-            <button onClick={() => setShowRecorder(false)}
-              style={{ background: 'none', border: '1px solid var(--border2)', color: 'var(--text2)', borderRadius: 3, fontSize: 13, padding: '1px 7px' }}>✕</button>
-          </div>
-          <RecorderPanel
-            clipId={clip.clip_id}
-            subtitles={subtitles}
-            activeCharacter={activeSubtitle?.character || ''}
-            activeIndex={selectedIdx}
-          />
         </div>
       )}
     </div>
@@ -1723,21 +1801,21 @@ function BandeRythmoToolbar({
   }
   const btn = (enabled = true, on = false, danger = false) => ({
     ...btnBase,
-    color: !enabled ? '#3a3a3a' : (danger ? '#ff5a5a' : (on ? '#f5c518' : 'var(--text)')),
-    background: on ? 'rgba(245, 197, 24,0.13)' : 'transparent',
+    color: !enabled ? 'var(--text4)' : (danger ? 'var(--danger)' : (on ? 'var(--accent)' : 'var(--text)')),
+    background: on ? 'var(--accent-soft)' : 'transparent',
     cursor: enabled ? 'pointer' : 'not-allowed',
   })
   const grp = {
     display: 'inline-flex', alignItems: 'center', gap: 1,
-    background: '#161616', border: '1px solid #232323', borderRadius: 8, padding: 2,
+    background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 2,
   }
-  const sep = <div style={{ width: 1, alignSelf: 'stretch', background: '#1f1f1f', margin: '2px 4px' }} />
+  const sep = <div style={{ width: 1, alignSelf: 'stretch', background: 'var(--border)', margin: '2px 4px' }} />
 
   return (
     <div ref={toolbarRef} style={{
-      position: 'relative', background: 'linear-gradient(to bottom, #0e0e0e, #0a0a0a)',
-      borderBottom: '1px solid #1c1c1c', padding: '8px 12px',
-      display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+      position: 'relative', background: 'var(--bg2)',
+      borderBottom: '1px solid var(--border)', padding: '0 12px', height: 52, flexShrink: 0,
+      display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'nowrap', overflowX: 'auto',
     }}>
       {/* Active character pill — click to reassign */}
       <div ref={charPickerRef} style={{ position: 'relative', flexShrink: 0 }}>
@@ -1746,8 +1824,8 @@ function BandeRythmoToolbar({
           title={target ? 'Changer le personnage de cette réplique' : 'Sélectionnez une réplique'}
           style={{
             ...btnBase, height: 34, minWidth: 140, padding: '0 10px',
-            background: '#1a1a1a', border: `1px solid ${target ? cColor + '55' : '#2a2a2a'}`,
-            color: target ? cColor : '#3a3a3a', fontSize: 12, fontWeight: 600, borderRadius: 8,
+            background: 'var(--surface2)', border: `1px solid ${target ? cColor + '55' : 'var(--border2)'}`,
+            color: target ? cColor : 'var(--text4)', fontSize: 12, fontWeight: 600, borderRadius: 8,
             cursor: target ? 'pointer' : 'default',
           }}>
           <span style={{
@@ -1803,102 +1881,65 @@ function BandeRythmoToolbar({
         title={target?.take ? 'Marquer comme enregistrée' : 'Marquer comme prise à enregistrer'}
         style={{
           ...btnBase, height: 34, width: 34, minWidth: 34, padding: 0,
-          background: target?.take ? '#e54545' : '#1a1a1a',
-          border: `1px solid ${target?.take ? '#ff7575' : '#e5454555'}`,
-          color: target?.take ? '#fff' : (target ? '#e54545' : '#3a3a3a'), borderRadius: 8,
+          background: target?.take ? 'var(--danger)' : 'var(--surface2)',
+          border: `1px solid ${target?.take ? '#ff7575' : 'var(--danger)55'}`,
+          color: target?.take ? '#fff' : (target ? 'var(--danger)' : 'var(--text4)'), borderRadius: 8,
           cursor: target ? 'pointer' : 'default',
         }}>
         <Ic d={ICONS.mic} />
       </button>
 
-      {/* Transport */}
+      {/* IN / OUT / Couper */}
       <div style={grp}>
-        <select value={speed} onChange={e => onSpeedChange(parseFloat(e.target.value))}
-          style={{ ...btnBase, padding: '0 8px', background: 'transparent', color: 'var(--text2)', fontFamily: 'var(--font-mono)', fontSize: 11, border: 'none', cursor: 'pointer' }}>
-          {[0.5, 0.75, 1, 1.25, 1.5].map(s => <option key={s} value={s} style={{ background: '#1a1a1a' }}>{s}×</option>)}
-        </select>
-        {sep}
-        <button onClick={gotoStart}  title="Début"               style={btn(true)}><Ic d={ICONS.start} /></button>
-        <button onClick={gotoPrev}   title="Réplique précédente" style={btn(true)}><Ic d={ICONS.prev} /></button>
-        <button onClick={togglePlay} title={playing ? 'Pause' : 'Lecture'}
-          style={{ ...btn(true), background: '#f5c518', color: '#000', minWidth: 40, height: 30, margin: '0 2px' }}>
-          <Ic d={playing ? ICONS.pause : ICONS.play} size={14} />
+        <button onClick={setIN}  title="Définir IN au temps courant" style={{ ...btn(target != null), padding: '0 9px', gap: 5, fontSize: 11.5 }}>
+          <Ic d={ICONS.in} size={14} />IN<Hint>I</Hint>
         </button>
-        <button onClick={gotoNext}   title="Réplique suivante"   style={btn(true)}><Ic d={ICONS.next} /></button>
-        <button onClick={gotoEnd}    title="Fin"                  style={btn(true)}><Ic d={ICONS.end} /></button>
+        <button onClick={setOUT} title="Définir OUT au temps courant" style={{ ...btn(target != null), padding: '0 9px', gap: 5, fontSize: 11.5 }}>
+          <Ic d={ICONS.out} size={14} />OUT<Hint>O</Hint>
+        </button>
+        <button onClick={splitAtCurrentTime} title="Couper la réplique au temps courant" style={{ ...btn(target != null), padding: '0 9px', gap: 5, fontSize: 11.5 }}>
+          <Ic d={ICONS.scissors} size={14} />Couper<Hint>S</Hint>
+        </button>
       </div>
 
-      {/* IN / OUT / cut */}
-      <div style={grp}>
-        <button onClick={setIN}  title="Définir IN au temps courant"  style={btn(target != null)}><Ic d={ICONS.in} /></button>
-        <button onClick={setOUT} title="Définir OUT au temps courant" style={btn(target != null)}><Ic d={ICONS.out} /></button>
-        <button onClick={splitAtCurrentTime} title="Couper la réplique au temps courant" style={btn(target != null)}><Ic d={ICONS.scissors} /></button>
-      </div>
-
-      {/* Respiration + reactions */}
+      {/* Resp / Réact / Note */}
       <div style={grp}>
         <button onClick={e => openDropdown('resp', e)} title="Respirations…"
-          style={{ ...btn(true, showResp), padding: '0 10px', fontSize: 12, fontWeight: 600, letterSpacing: 0.3 }}>
-          <Ic d={ICONS.breath} size={14} />
-          Respirations
+          style={{ ...btn(true, showResp), padding: '0 9px', gap: 5, fontSize: 11.5 }}>
+          <Ic d={ICONS.breath} size={14} />Resp.
         </button>
-        {sep}
         <button onClick={e => openDropdown('react', e)} title="Réactions…"
-          style={{ ...btn(true, showReact), padding: '0 10px', fontSize: 12, fontWeight: 600, letterSpacing: 0.3 }}>
-          <Ic d={ICONS.reactions} size={14} />
-          Réactions
+          style={{ ...btn(true, showReact), padding: '0 9px', gap: 5, fontSize: 11.5 }}>
+          <Ic d={ICONS.reactions} size={14} />Réact.
+        </button>
+        <button onClick={() => setShowNote(s => !s)} title="Note de direction"
+          style={{ ...btn(target != null, showNote || !!target?.note), padding: '0 9px', gap: 5, fontSize: 11.5 }}>
+          <Ic d={ICONS.note} size={14} />Note
         </button>
       </div>
 
-      {/* Note / loop / lock / delete */}
+      {/* Boucle / Lock */}
       <div style={grp}>
-        <button onClick={() => setShowNote(s => !s)} title="Note de direction"
-          style={btn(target != null, showNote || !!target?.note)}><Ic d={ICONS.note} /></button>
         <button onClick={() => setLoop(l => !l)} title="Boucler sur la réplique active"
-          style={btn(target != null, loop)}><Ic d={ICONS.loop} /></button>
-        <button onClick={() => setLocked(l => !l)} title={locked ? 'Déverrouiller la BR (édition bloquée)' : 'Verrouiller la BR (empêche les éditions accidentelles)'}
-          style={btn(true, locked)}><Ic d={locked ? ICONS.lock : ICONS.lockOpen} /></button>
-        <button onClick={deleteTarget} title="Supprimer la réplique"
-          style={btn(target != null, false, true)}><Ic d={ICONS.trash} /></button>
+          style={{ ...btn(target != null, loop), padding: '0 9px', gap: 5, fontSize: 11.5 }}>
+          <Ic d={ICONS.loop} size={14} />Boucle<Hint>L</Hint>
+        </button>
+        <button onClick={() => setLocked(l => !l)} title={locked ? 'Déverrouiller la BR' : 'Verrouiller la BR (empêche les éditions accidentelles)'}
+          style={btn(true, locked)}><Ic d={locked ? ICONS.lock : ICONS.lockOpen} size={14} /></button>
       </div>
 
       <div style={{ flex: 1, minWidth: 8 }} />
 
-      {/* BR-in-player mode */}
-      <div style={{ ...grp, padding: '4px 6px', gap: 2 }}>
-        <span style={{ fontSize: 10, color: '#888', marginRight: 4 }}>BR</span>
-        {[{ id: 'play', label: 'lecture' }, { id: 'always', label: 'toujours' }, { id: 'never', label: 'jamais' }].map(o => (
-          <button key={o.id} onClick={() => setBrInPlayer(o.id)} style={{
-            ...btnBase, height: 24, padding: '0 8px', fontSize: 11,
-            background: brInPlayer === o.id ? 'rgba(245, 197, 24,0.16)' : 'transparent',
-            color: brInPlayer === o.id ? '#f5c518' : '#888', borderRadius: 4,
-          }}>{o.label}</button>
-        ))}
-      </div>
-
-      {/* Rythmo style */}
-      <div style={{ ...grp, padding: '4px 6px', gap: 2 }}>
+      {/* BR style segmented */}
+      <div style={{ display: 'flex', alignItems: 'center', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, padding: 2 }}>
         {['classique', 'neon', 'minimal'].map(s => (
           <button key={s} onClick={() => setRythmoStyle(s)} style={{
-            ...btnBase, height: 24, padding: '0 8px', fontSize: 11, borderRadius: 4,
-            background: rythmoStyle === s ? 'rgba(245, 197, 24,0.16)' : 'transparent',
-            color: rythmoStyle === s ? '#f5c518' : '#888',
+            ...btnBase, height: 26, padding: '0 11px', fontSize: 10.5, borderRadius: 4,
+            background: rythmoStyle === s ? 'var(--accent)' : 'transparent',
+            color: rythmoStyle === s ? '#000' : 'var(--text2)',
+            fontWeight: 600, textTransform: 'capitalize',
           }}>{s}</button>
         ))}
-      </div>
-
-      {/* Decalage */}
-      <div style={{ ...grp, padding: '4px 8px', gap: 6 }}>
-        <span style={{ fontSize: 11, color: '#888' }}>Décalage</span>
-        <input type="range" min={-2} max={2} step={0.05} value={brOffset}
-          onChange={e => setBrOffset(parseFloat(e.target.value))}
-          style={{ width: 80, color: '#f5c518', '--pct': `${((brOffset + 2) / 4) * 100}%` }} />
-        <span style={{ fontSize: 11, color: brOffset !== 0 ? '#f5c518' : '#888', fontFamily: 'var(--font-mono)', minWidth: 38, textAlign: 'right' }}>
-          {brOffset >= 0 ? '+' : ''}{brOffset.toFixed(2)}s
-        </span>
-        {brOffset !== 0 && (
-          <button onClick={() => setBrOffset(0)} style={{ ...btnBase, height: 20, width: 20, minWidth: 20, padding: 0, fontSize: 11, color: '#f5c518' }}>✕</button>
-        )}
       </div>
 
       {/* Zoom */}
@@ -1906,23 +1947,23 @@ function BandeRythmoToolbar({
         <button onClick={() => setPxPerSec(p => Math.max(40, p - 20))} title="Zoom −" style={btn(true)}>
           <Ic d={ICONS.zoomOut} />
         </button>
-        <span style={{ fontSize: 11, color: '#888', fontFamily: 'var(--font-mono)', minWidth: 44, textAlign: 'center' }}>{pxPerSec}px/s</span>
+        <span style={{ fontSize: 10.5, color: 'var(--text2)', fontFamily: 'var(--font-mono)', padding: '0 4px', minWidth: 52, textAlign: 'center' }}>{pxPerSec}px/s</span>
         <button onClick={() => setPxPerSec(p => Math.min(400, p + 20))} title="Zoom +" style={btn(true)}>
           <Ic d={ICONS.zoomIn} />
         </button>
       </div>
 
-      {/* Font size */}
-      <div style={grp}>
-        <button onClick={() => setFontScale(f => Math.max(0.3, +(f - 0.15).toFixed(2)))} title="Texte −" style={btn(true)}>
-          <span style={{ fontSize: 13, fontFamily: 'var(--font-mono)', lineHeight: 1 }}>A−</span>
-        </button>
-        <span style={{ fontSize: 11, color: fontScale !== 1 ? '#f5c518' : '#888', fontFamily: 'var(--font-mono)', minWidth: 38, textAlign: 'center' }}>{Math.round(fontScale * 100)}%</span>
-        <button onClick={() => setFontScale(f => Math.min(3, +(f + 0.15).toFixed(2)))} title="Texte +" style={btn(true)}>
-          <span style={{ fontSize: 13, fontFamily: 'var(--font-mono)', lineHeight: 1 }}>A+</span>
-        </button>
-        {fontScale !== 1 && (
-          <button onClick={() => setFontScale(1)} title="Réinitialiser taille" style={{ ...btn(true), minWidth: 20, width: 20, padding: 0, fontSize: 11, color: '#f5c518' }}>✕</button>
+      {/* Décalage */}
+      <div style={{ ...grp, padding: '4px 8px', gap: 6 }}>
+        <span style={{ fontSize: 10.5, color: 'var(--text3)' }}>Décalage</span>
+        <input type="range" min={-2} max={2} step={0.05} value={brOffset}
+          onChange={e => setBrOffset(parseFloat(e.target.value))}
+          style={{ width: 64, color: '#f5c518', '--pct': `${((brOffset + 2) / 4) * 100}%` }} />
+        <span style={{ fontSize: 10.5, color: brOffset !== 0 ? 'var(--accent)' : 'var(--text2)', fontFamily: 'var(--font-mono)', minWidth: 40, textAlign: 'right' }}>
+          {brOffset >= 0 ? '+' : ''}{brOffset.toFixed(2)}s
+        </span>
+        {brOffset !== 0 && (
+          <button onClick={() => setBrOffset(0)} title="Réinitialiser le décalage" style={{ ...btnBase, height: 20, width: 20, minWidth: 20, padding: 0, fontSize: 11, color: 'var(--accent)' }}>✕</button>
         )}
       </div>
 

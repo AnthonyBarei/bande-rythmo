@@ -1,4 +1,6 @@
 import os
+import subprocess
+import tempfile
 import torch
 from faster_whisper import WhisperModel
 from typing import List, Dict, Optional
@@ -60,16 +62,42 @@ def _assign_speaker(start: float, end: float, diar_map: Dict[tuple, str]) -> str
 
 
 def transcribe_segment(path: str, language: str = "fr", diarize: bool = True) -> List[Dict]:
-    model = _get_model()
-    segments_iter, _ = model.transcribe(
-        path,
-        language=language,
-        word_timestamps=True,
-        vad_filter=True,
-        no_speech_threshold=0.6,
-        log_prob_threshold=-1.0,
-    )
-    segments = list(segments_iter)
+    # Extract audio as WAV to avoid AAC pre-roll timestamp drift.
+    # MP4 segments cut from the middle of a video can have up to ~1s of audio
+    # before the nominal start (AAC keyframe alignment). Whisper would include
+    # that pre-roll in its timestamps, shifting all subtitles forward by ~1s.
+    # Extracting with pcm_s16le + first_pts=0 gives Whisper a clean 0-anchored stream.
+    tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+    tmp.close()
+    wav_path = tmp.name
+
+    try:
+        subprocess.run(
+            [
+                "ffmpeg", "-y", "-i", path,
+                "-vn", "-c:a", "pcm_s16le", "-ar", "16000", "-ac", "1",
+                "-af", "aresample=first_pts=0",
+                wav_path,
+            ],
+            check=True,
+            capture_output=True,
+        )
+
+        model = _get_model()
+        segments_iter, _ = model.transcribe(
+            wav_path,
+            language=language,
+            word_timestamps=True,
+            vad_filter=True,
+            no_speech_threshold=0.6,
+            log_prob_threshold=-1.0,
+        )
+        segments = list(segments_iter)
+    finally:
+        try:
+            os.remove(wav_path)
+        except OSError:
+            pass
 
     diar_map = _build_diarization_map(path) if diarize else {}
 

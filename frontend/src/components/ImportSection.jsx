@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import VideoEditor from './VideoEditor'
 import PlexBrowser from './PlexBrowser'
+import { Icon, ICONS } from '../Icons'
 
 const selectStyle = {
   background: 'var(--surface2)',
@@ -159,53 +160,56 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
-      <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 16, background: 'var(--surface)' }}>
-        <div>
-          <h1 style={{ fontSize: 16, fontWeight: 600, color: 'var(--text)' }}>Importer une vidéo</h1>
-          <p style={{ fontSize: 12, color: 'var(--text2)', marginTop: 2 }}>
-            Fichier local ou bibliothèque Plex
-          </p>
+      <div style={{ padding: '20px 28px 0', flexShrink: 0 }}>
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text3)', letterSpacing: 1.5, marginBottom: 4 }}>
+          IMPORTER{tab === TAB.PLEX ? ' · SOURCE PLEX' : ''}
         </div>
-
-        {/* Source tabs */}
-        <div style={{ display: 'flex', gap: 4, marginLeft: 16 }}>
-          {[{ id: TAB.LOCAL, label: '💻 Fichier' }, { id: TAB.PLEX, label: '▶ Plex' }, { id: TAB.URL, label: '🔗 URL' }].map(t => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              style={{
-                padding: '5px 14px', fontSize: 12, borderRadius: 4, cursor: 'pointer',
-                background: tab === t.id ? '#f5c518' : 'var(--surface2)',
-                color: tab === t.id ? '#000' : 'var(--text2)',
-                border: tab === t.id ? 'none' : '1px solid var(--border2)',
-                fontWeight: tab === t.id ? 600 : 400,
-              }}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Local pick button */}
-        {tab === TAB.LOCAL && (
-          <div style={{ marginLeft: 'auto' }}>
-            <button
-              onClick={handleLocalPick}
-              disabled={picking || remuxing}
-              style={{
-                padding: '8px 20px',
-                background: (picking || remuxing) ? '#333' : video ? 'var(--surface3)' : '#f5c518',
-                color: (picking || remuxing) ? '#555' : video ? 'var(--text)' : '#000',
-                border: video && !picking && !remuxing ? '1px solid var(--border2)' : 'none',
-                fontWeight: video ? 400 : 600,
-                fontSize: 13, borderRadius: 4,
-                cursor: (picking || remuxing) ? 'wait' : 'pointer',
-              }}
-            >
-              {picking ? '⏳ Ouverture…' : remuxing ? '⏳ Changement piste…' : video ? '↺ Changer vidéo' : '⬆ Parcourir…'}
-            </button>
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 16 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <h1 style={{ fontSize: 24, fontWeight: 600, letterSpacing: -0.4, color: 'var(--text)' }}>
+              {video ? video.filename : tab === TAB.PLEX ? 'Choisir un fichier dans Plex' : 'Importer une vidéo'}
+            </h1>
+            <p style={{ fontSize: 12, color: 'var(--text3)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {video ? video.sourcePath : 'Fichier local, bibliothèque Plex ou URL directe'}
+            </p>
           </div>
-        )}
+          {(picking || remuxing) && (
+            <span style={{ fontSize: 12, color: 'var(--accent)' }}>
+              {picking ? '⏳ Ouverture…' : '⏳ Changement piste…'}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Source switcher */}
+      <div style={{ padding: '14px 28px', flexShrink: 0 }}>
+        <div style={{ display: 'inline-flex', gap: 4, padding: 4, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)' }}>
+          {[
+            { id: TAB.LOCAL, icon: ICONS.upload, label: 'Fichier local', hint: 'Glisser un .mp4 ou choisir' },
+            { id: TAB.PLEX,  icon: ICONS.film,   label: 'Plex',          hint: 'Bibliothèque locale' },
+            { id: TAB.URL,   icon: ICONS.link,   label: 'URL',           hint: 'https://…' },
+          ].map(s => {
+            const active = tab === s.id
+            return (
+              <button
+                key={s.id}
+                onClick={() => setTab(s.id)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 9, padding: '7px 14px', borderRadius: 6,
+                  background: active ? 'var(--bg2)' : 'transparent',
+                  borderBottom: `2px solid ${active ? 'var(--accent)' : 'transparent'}`,
+                  color: active ? 'var(--text)' : 'var(--text3)', cursor: 'pointer',
+                }}
+              >
+                <Icon d={s.icon} size={16} style={{ color: active ? 'var(--accent)' : 'inherit' }} />
+                <span style={{ textAlign: 'left' }}>
+                  <span style={{ display: 'block', fontSize: 12.5, fontWeight: active ? 600 : 500 }}>{s.label}</span>
+                  <span style={{ display: 'block', fontSize: 10, color: 'var(--text4)' }}>{s.hint}</span>
+                </span>
+              </button>
+            )
+          })}
+        </div>
       </div>
 
       {error && (
@@ -227,7 +231,7 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
           style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, color: 'var(--text3)', cursor: 'pointer' }}
           onClick={handleLocalPick}
         >
-          <div style={{ fontSize: 48, opacity: 0.3 }}>💻</div>
+          <Icon d={ICONS.upload} size={44} sw={1.4} style={{ opacity: 0.3 }} />
           <div style={{ fontSize: 14, color: 'var(--text2)' }}>Cliquez pour choisir un fichier local</div>
           <div style={{ fontSize: 12 }}>MP4, MOV, MKV, AVI — lu directement, aucun upload</div>
         </div>
@@ -236,7 +240,7 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
       {/* URL source panel */}
       {tab === TAB.URL && !video && (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, padding: 24 }}>
-          <div style={{ fontSize: 40, opacity: 0.3 }}>🔗</div>
+          <Icon d={ICONS.link} size={40} sw={1.4} style={{ opacity: 0.3 }} />
           <div style={{ fontSize: 14, color: 'var(--text2)' }}>Coller l’URL d’une vidéo</div>
           <div style={{ display: 'flex', gap: 8, width: '100%', maxWidth: 540 }}>
             <input

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { Icon, ICONS } from '../Icons'
 
 const fmt = t => {
   const m = Math.floor(t / 60)
@@ -23,7 +24,7 @@ function hashHue(str) {
 
 const TRACK_HEX = ['#f5c518', '#7ec0ff', '#f08aaf', '#7ed4a8']
 
-export default function ClipCard({ clip, onDub, onExportMp3, onExportGif, onDelete, onRename, onStatusChange, exporting }) {
+export default function ClipCard({ clip, onDub, onMeme, onDelete, onRename, onStatusChange }) {
   const [editingName, setEditingName] = useState(false)
   const [nameInput, setNameInput] = useState(clip.name)
   const [hover, setHover] = useState(false)
@@ -126,9 +127,9 @@ export default function ClipCard({ clip, onDub, onExportMp3, onExportGif, onDele
             background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.2)',
             backdropFilter: 'blur(6px)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: '#fff', fontSize: 16,
+            color: '#fff', paddingLeft: 3,
           }}>
-            ▶
+            <Icon d={ICONS.play} size={18} fill="#fff" />
           </div>
         </div>
       </div>
@@ -176,24 +177,24 @@ export default function ClipCard({ clip, onDub, onExportMp3, onExportGif, onDele
       </div>
 
       {/* Action row */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto auto', borderTop: '1px solid var(--border)' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto', borderTop: '1px solid var(--border)' }}>
         <ActionBtn onClick={e => { e.stopPropagation(); onDub(clip) }} accent flex title="Doublage">
           Doubler
         </ActionBtn>
-        <ActionBtn onClick={e => { e.stopPropagation(); setWatching(true) }} title="Voir le clip">▶</ActionBtn>
-        <ActionBtn
-          onClick={e => { e.stopPropagation(); onExportMp3(clip) }}
-          mono
-          title="Exporter MP3 — audio uniquement"
-          disabled={exporting === clip.clip_id + '_mp3'}
-        >
-          {exporting === clip.clip_id + '_mp3' ? '…' : 'MP3'}
+        <ActionBtn onClick={e => { e.stopPropagation(); setWatching(true) }} title="Voir le clip">
+          <Icon d={ICONS.play} size={13} />
         </ActionBtn>
-        <ActionBtn onClick={e => { e.stopPropagation(); onExportGif(clip) }} mono title="Exporter GIF">GIF</ActionBtn>
+        <ActionBtn onClick={e => { e.stopPropagation(); onMeme(clip) }} title="Créer un mème — image, GIF ou audio">
+          Mème
+        </ActionBtn>
         {confirmDelete ? (
-          <ActionBtn onClick={e => { e.stopPropagation(); onDelete(clip.clip_id) }} danger title="Confirmer">✓✕</ActionBtn>
+          <ActionBtn onClick={e => { e.stopPropagation(); onDelete(clip.clip_id) }} danger title="Confirmer la suppression" last>
+            <Icon d={ICONS.check} size={13} />
+          </ActionBtn>
         ) : (
-          <ActionBtn onClick={e => { e.stopPropagation(); setConfirmDelete(true) }} danger title="Supprimer" last>🗑</ActionBtn>
+          <ActionBtn onClick={e => { e.stopPropagation(); setConfirmDelete(true) }} danger title="Supprimer" last>
+            <Icon d={ICONS.trash} size={13} />
+          </ActionBtn>
         )}
       </div>
 

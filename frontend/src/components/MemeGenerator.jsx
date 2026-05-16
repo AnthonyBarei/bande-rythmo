@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
+import { Icon, ICONS } from '../Icons'
 
 const FONTS = [
   { id: 'impact',   label: 'Impact',  css: 'Impact, "Arial Black", sans-serif' },
@@ -36,7 +37,7 @@ const fmtTime = t => {
   return `${m}:${s}`
 }
 
-export default function MemeGenerator({ clip = null }) {
+export default function MemeGenerator({ clip = null, onBack = null }) {
   const segmentUrl = clip?.segment_path ? `/${clip.segment_path}` : null
 
   // 'image' = capture frame, 'video' = select range → gif
@@ -426,6 +427,9 @@ export default function MemeGenerator({ clip = null }) {
 
         {/* Header */}
         <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
+          {onBack && (
+            <button onClick={onBack} style={BTN_GHOST}>← Mes clips</button>
+          )}
           <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0, color: 'var(--text)' }}>Mème</h1>
           {clip && <span style={{ fontSize: 10, color: '#888', background: 'var(--surface3)', padding: '2px 7px', borderRadius: 3, border: '1px solid var(--border2)' }}>{clip.name}</span>}
           <div style={{ flex: 1 }} />
@@ -441,15 +445,16 @@ export default function MemeGenerator({ clip = null }) {
             {/* Tab switcher — only when clip provided */}
             {clip && (
               <div style={{ display: 'flex', gap: 0, marginBottom: 16, border: '1px solid var(--border)', borderRadius: 6, overflow: 'hidden', width: 'fit-content' }}>
-                {[['image', '📷 Image'], ['video', '▶ GIF'], ['audio', '🔊 Audio']].map(([tab, label], i, arr) => (
+                {[['image', ICONS.film, 'Image'], ['video', ICONS.gif, 'GIF'], ['audio', ICONS.audio, 'Audio']].map(([tab, icon, label], i, arr) => (
                   <button key={tab} onClick={() => setSourceTab(tab)} style={{
+                    display: 'flex', alignItems: 'center', gap: 6,
                     padding: '7px 18px', fontSize: 12, fontWeight: 600,
-                    background: sourceTab === tab ? 'rgba(245, 197, 24,0.1)' : 'var(--surface2)',
-                    color: sourceTab === tab ? '#f5c518' : 'var(--text2)',
+                    background: sourceTab === tab ? 'var(--accent-soft)' : 'var(--surface2)',
+                    color: sourceTab === tab ? 'var(--accent)' : 'var(--text2)',
                     border: 'none',
                     borderRight: i < arr.length - 1 ? '1px solid var(--border)' : 'none',
                     cursor: 'pointer',
-                  }}>{label}</button>
+                  }}><Icon d={icon} size={14} />{label}</button>
                 ))}
               </div>
             )}
@@ -505,7 +510,7 @@ export default function MemeGenerator({ clip = null }) {
                 onDrop={e => { e.preventDefault(); dropRef.current.style.borderColor = ''; handleFile(e.dataTransfer.files?.[0]) }}
                 style={{ border: '2px dashed var(--border2)', borderRadius: 8, padding: 60, textAlign: 'center', background: 'var(--surface)', cursor: 'pointer', transition: 'border-color 0.2s' }}
               >
-                <div style={{ fontSize: 40, marginBottom: 10 }}>🖼️</div>
+                <div style={{ marginBottom: 10, display: 'flex', justifyContent: 'center', color: 'var(--text3)' }}><Icon d={ICONS.upload} size={38} sw={1.4} /></div>
                 <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4, color: 'var(--text)' }}>Glissez une image ou un GIF</div>
                 <div style={{ fontSize: 12, color: '#888' }}>PNG · JPG · WEBP · GIF animé</div>
               </div>
@@ -528,9 +533,9 @@ export default function MemeGenerator({ clip = null }) {
                     <div style={{
                       position: 'absolute', top: 8, left: 8,
                       background: 'rgba(0,0,0,0.55)', borderRadius: 4,
-                      padding: '3px 8px', fontSize: 12, color: '#fff', pointerEvents: 'none',
+                      padding: '5px', color: '#fff', pointerEvents: 'none',
                     }}>
-                      {playing ? '⏸' : '▶'}
+                      <Icon d={playing ? ICONS.pause : ICONS.play} size={12} />
                     </div>
                   </div>
                   <div style={{ padding: '12px 14px', borderTop: '1px solid #1a1a1a', display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -565,7 +570,7 @@ export default function MemeGenerator({ clip = null }) {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'center' }}>
                       <button onClick={() => seekRelative(-1)} style={SEEK_BTN} title="−1s (Shift+←)">«</button>
                       <button onClick={() => seekRelative(-0.1)} style={SEEK_BTN} title="−0.1s (←)">‹</button>
-                      <button onClick={togglePlay} style={{ ...SEEK_BTN, padding: '4px 12px' }} title="Play/Pause (Space)">{playing ? '⏸' : '▶'}</button>
+                      <button onClick={togglePlay} style={{ ...SEEK_BTN, padding: '5px 14px', display: 'inline-flex', alignItems: 'center' }} title="Play/Pause (Space)"><Icon d={playing ? ICONS.pause : ICONS.play} size={12} /></button>
                       <button onClick={() => seekRelative(0.1)} style={SEEK_BTN} title="+0.1s (→)">›</button>
                       <button onClick={() => seekRelative(1)} style={SEEK_BTN} title="+1s (Shift+→)">»</button>
                     </div>
@@ -602,12 +607,12 @@ export default function MemeGenerator({ clip = null }) {
                       onClick={() => createAudio('mp3')}
                       disabled={audioLoading || !videoReady || outPoint <= inPoint}
                       style={{ padding: '11px', fontWeight: 700, borderRadius: 4, fontSize: 13, background: audioLoading || !videoReady || outPoint <= inPoint ? 'var(--surface3)' : '#f5c518', color: audioLoading || !videoReady || outPoint <= inPoint ? '#888' : '#000', border: 'none', cursor: audioLoading || !videoReady ? 'default' : 'pointer' }}
-                    >{audioLoading ? '◉ Export…' : '📥 Télécharger MP3'}</button>
+                    >{audioLoading ? '◉ Export…' : 'Télécharger MP3'}</button>
                     <button
                       onClick={() => createAudio('wav')}
                       disabled={audioLoading || !videoReady || outPoint <= inPoint}
                       style={{ padding: '11px', fontWeight: 700, borderRadius: 4, fontSize: 13, background: 'var(--surface2)', color: audioLoading || !videoReady || outPoint <= inPoint ? '#888' : 'var(--text)', border: '1px solid var(--border2)', cursor: audioLoading || !videoReady ? 'default' : 'pointer' }}
-                    >📥 Télécharger WAV</button>
+                    >Télécharger WAV</button>
                     <p style={{ fontSize: 11, color: 'var(--text3)', lineHeight: 1.6, margin: 0 }}>Réglez IN/OUT puis exportez l'audio de la sélection. MP3 = compact, WAV = lossless.</p>
                   </div>
                 </div>

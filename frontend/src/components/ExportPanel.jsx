@@ -1,14 +1,15 @@
 import React, { useState } from 'react'
+import { Icon, ICONS } from '../Icons'
 
 const FORMATS = [
-  { id: 'srt',         label: 'SRT',        icon: '📄', desc: 'Sous-titres standard',                        color: '#4488ff', needsSubs: true },
-  { id: 'ass',         label: 'ASS',        icon: '🎬', desc: 'Défilement BR intégré',                       color: '#aa44ff', needsSubs: true },
-  { id: 'ass-karaoke', label: 'ASS Karaoké',icon: '🎤', desc: 'Tags \\kf par mot — compatible ass2rythmo',   color: '#cc88ff', needsSubs: true },
-  { id: 'detx',        label: 'DetX',       icon: '🎙️', desc: 'Standard FR — Cappella / Phonations / Joker', color: '#ff9944', needsSubs: true },
-  { id: 'mp4',         label: 'MP4 + BR',   icon: '🎥', desc: 'Vidéo avec bande rythmo incrustée',           color: '#44bb55', needsSubs: true },
-  { id: 'gif',         label: 'GIF',        icon: '🌀', desc: 'Clip animé',                                  color: '#ff6644', needsSubs: false },
-  { id: 'mp3',         label: 'MP3',        icon: '🎵', desc: 'Audio — StreamDeck, Discord…',                color: '#ff6688', needsSubs: false },
-  { id: 'wav',         label: 'WAV',        icon: '🎚️', desc: 'Audio non compressé',                         color: '#aa88ff', needsSubs: false },
+  { id: 'srt',         label: 'SRT',        icon: ICONS.note,  desc: 'Sous-titres standard',                        color: '#4488ff', needsSubs: true },
+  { id: 'ass',         label: 'ASS',        icon: ICONS.film,  desc: 'Défilement BR intégré',                       color: '#aa44ff', needsSubs: true },
+  { id: 'ass-karaoke', label: 'ASS Karaoké',icon: ICONS.mic,   desc: 'Tags \\kf par mot — compatible ass2rythmo',   color: '#cc88ff', needsSubs: true },
+  { id: 'detx',        label: 'DetX',       icon: ICONS.edit,  desc: 'Standard FR — Cappella / Phonations / Joker', color: '#ff9944', needsSubs: true },
+  { id: 'mp4',         label: 'MP4 + BR',   icon: ICONS.film,  desc: 'Vidéo avec bande rythmo incrustée',           color: '#44bb55', needsSubs: true },
+  { id: 'gif',         label: 'GIF',        icon: ICONS.gif,   desc: 'Clip animé',                                  color: '#ff6644', needsSubs: false },
+  { id: 'mp3',         label: 'MP3',        icon: ICONS.audio, desc: 'Audio — StreamDeck, Discord…',                color: '#ff6688', needsSubs: false },
+  { id: 'wav',         label: 'WAV',        icon: ICONS.audio, desc: 'Audio non compressé',                         color: '#aa88ff', needsSubs: false },
 ]
 
 export default function ExportPanel({ segmentId, subtitles, pxPerSec = 180, brOffset = 0, canvasH = 64, getCanvasWidth }) {
@@ -84,7 +85,7 @@ export default function ExportPanel({ segmentId, subtitles, pxPerSec = 180, brOf
               }}
             >
               <div style={{ padding: '16px 16px 12px', borderBottom: '1px solid var(--border)' }}>
-                <div style={{ fontSize: 22, marginBottom: 6 }}>{icon}</div>
+                <div style={{ marginBottom: 6, color }}><Icon d={icon} size={22} sw={1.6} /></div>
                 <div style={{ fontSize: 15, fontWeight: 700, color, marginBottom: 4 }}>.{label}</div>
                 <div style={{ fontSize: 12, color: 'var(--text2)' }}>{desc}</div>
                 {needsSubs && !subtitles.length && (
