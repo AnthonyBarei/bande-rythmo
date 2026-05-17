@@ -31,6 +31,7 @@ class ExportRequest(BaseModel):
     br_offset: float = 0.0
     canvas_w: int = 1200   # canvas coordinate width (CSS px) — used to scale pxPerSec to video px
     canvas_h: int = 64     # canvas coordinate height = numTracks * H_TRACK
+    br_font: str = "atkinson"  # BR font picker id — keeps export WYSIWYG with preview
 
 
 
@@ -68,7 +69,7 @@ async def export(req: ExportRequest):
 
     elif req.format == "detx":
         path = f"exports/{export_id}.detx"
-        export_detx(subs, path)
+        export_detx(subs, path, video_path=segment)
         return FileResponse(path, filename="bande_rythmo.detx", media_type="application/xml")
 
     elif req.format == "mp4":
@@ -105,6 +106,11 @@ async def export(req: ExportRequest):
         if duration_s <= 0:
             duration_s = 60.0
 
+        # Export at 60fps — matches standard 60Hz displays, so the scrolling BR
+        # has no display-cadence judder on playback. Source picture frames are
+        # resampled up by ffmpeg (-r); the BR strip is rendered natively at 60.
+        export_fps = 60.0 if fps <= 60 else fps
+
         # Scale canvas units → video pixels
         scale = vw / max(req.canvas_w, 1)
         px_per_sec_video = req.px_per_sec * scale
@@ -113,31 +119,40 @@ async def export(req: ExportRequest):
         if br_h_video % 2 != 0:
             br_h_video += 1
 
-        strip_path = f"exports/{export_id}_strip.mp4"
+        strip_path = f"exports/{export_id}_strip.mkv"
         output = f"exports/{export_id}_rythmo.mp4"
 
         try:
             await asyncio.to_thread(
                 render_br_video,
                 subs, vw, br_h_video,
-                px_per_sec_video, fps, duration_s,
+                px_per_sec_video, export_fps, duration_s,
                 strip_path,
                 req.br_offset,
+                br_font=req.br_font,
             )
         except Exception as e:
             raise HTTPException(500, f"br_renderer error: {str(e)}")
 
-        # Overlay strip at bottom of video
+        # Overlay strip at bottom of video.
+        # Both inputs are forced onto an identical export_fps grid BEFORE the
+        # overlay. Without this, overlay's framesync mispairs the two streams
+        # (different timebases) and ~1/3 of the 60fps BR frames come out as
+        # duplicates → the scroll judders even though the strip is true 60fps.
+        # -bf 0 disables B-frames — prevents ghosting/smear on scrolling text.
         cmd = [
             "ffmpeg", "-y",
             "-i", segment,
             "-i", strip_path,
-            "-filter_complex", "[0:v][1:v]overlay=0:H-h:shortest=1",
+            "-filter_complex",
+            f"[0:v]fps={export_fps}[bg];[1:v]fps={export_fps}[s];"
+            f"[bg][s]overlay=0:H-h:shortest=1",
             "-c:v", "libx264",
-            "-crf", "16",
+            "-crf", "14",
             "-preset", "slow",
             "-pix_fmt", "yuv420p",
             "-bf", "0",
+            "-r", str(export_fps),
             "-c:a", "copy",
             output,
         ]

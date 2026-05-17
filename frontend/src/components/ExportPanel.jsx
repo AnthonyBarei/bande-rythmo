@@ -12,7 +12,7 @@ const FORMATS = [
   { id: 'wav',         label: 'WAV',        icon: ICONS.audio, desc: 'Audio non compressé',                         color: '#aa88ff', needsSubs: false },
 ]
 
-export default function ExportPanel({ segmentId, subtitles, pxPerSec = 180, brOffset = 0, canvasH = 64, getCanvasWidth }) {
+export default function ExportPanel({ segmentId, subtitles, pxPerSec = 180, brOffset = 0, canvasH = 64, getCanvasWidth, brFont = 'atkinson' }) {
   const [loading, setLoading] = useState(null)
   const [error, setError] = useState(null)
   const [lastExport, setLastExport] = useState(null)
@@ -32,6 +32,7 @@ export default function ExportPanel({ segmentId, subtitles, pxPerSec = 180, brOf
         body.br_offset = brOffset
         body.canvas_w = getCanvasWidth?.() || 1200
         body.canvas_h = canvasH
+        body.br_font = brFont
       }
       const res = await fetch('/api/export/export', {
         method: 'POST',
@@ -60,15 +61,12 @@ export default function ExportPanel({ segmentId, subtitles, pxPerSec = 180, brOf
 
   return (
     <div>
-      <div style={{ marginBottom: 20 }}>
-        <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>Exporter le clip</h2>
-        <p style={{ fontSize: 13, color: 'var(--text2)' }}>
-          Choisissez le format selon votre usage.
-          {subtitles.length > 0 && ` ${subtitles.length} réplique${subtitles.length !== 1 ? 's' : ''} incluses.`}
-        </p>
-      </div>
+      <p style={{ fontSize: 12.5, color: 'var(--text3)', marginBottom: 16 }}>
+        Choisissez le format selon votre usage.
+        {subtitles.length > 0 && ` ${subtitles.length} réplique${subtitles.length !== 1 ? 's' : ''} incluse${subtitles.length !== 1 ? 's' : ''}.`}
+      </p>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12, marginBottom: 20 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12, marginBottom: 16 }}>
         {FORMATS.map(({ id, label, icon, desc, color, needsSubs }) => {
           const isLoading = loading === id
           const unavailable = needsSubs && !subtitles.length
@@ -103,7 +101,8 @@ export default function ExportPanel({ segmentId, subtitles, pxPerSec = 180, brOf
                     color: isLoading ? 'var(--text3)' : '#fff',
                     fontWeight: 600,
                     fontSize: 13,
-                    borderRadius: 4,
+                    borderRadius: 6,
+                    cursor: !!loading || unavailable ? 'default' : 'pointer',
                     opacity: isLoading ? 1 : undefined,
                   }}
                 >

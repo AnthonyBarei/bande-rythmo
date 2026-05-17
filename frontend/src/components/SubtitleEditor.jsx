@@ -181,11 +181,11 @@ const Ic = ({ d, size = 14 }) => (
 )
 
 const ICONS = {
-  eye:    <><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></>,
-  eyeOff: <><path d="M17.94 17.94A10.94 10.94 0 0112 19c-7 0-11-7-11-7a18.45 18.45 0 015.06-5.94M9.9 4.24A10.93 10.93 0 0112 4c7 0 11 7 11 7a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></>,
-  note:   <><path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9z"/><polyline points="14 3 14 9 20 9"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></>,
-  trash:  <><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/></>,
-  goto:   <><line x1="5" y1="12" x2="19" y2="12"/><polyline points="15 8 19 12 15 16"/><line x1="5" y1="5" x2="5" y2="19"/></>,
+  eye:    <><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></>,
+  eyeOff: <><path d="M9.9 4.24A9.1 9.1 0 0 1 12 4c6.4 0 10 7 10 7a16.8 16.8 0 0 1-3.06 3.88M6.6 6.6A16.9 16.9 0 0 0 2 12s3.6 7 10 7a9.1 9.1 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/><line x1="3" y1="3" x2="21" y2="21"/></>,
+  note:   <><path d="M21 14a2 2 0 0 1-2 2H8l-4 4V5a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2z"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="12.5" x2="13" y2="12.5"/></>,
+  trash:  <><polyline points="3 6 21 6"/><path d="M19 6v13a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="16"/><line x1="14" y1="11" x2="14" y2="16"/></>,
+  goto:   <><polygon points="7 4 20 12 7 20 7 4"/></>,
 }
 
 function SubtitleRow({ sub, idx, active, selected, compact, charMap, charList, onChange, onDelete, onSelect, onSeek, onNewCharacter }) {
@@ -238,12 +238,13 @@ function SubtitleRow({ sub, idx, active, selected, compact, charMap, charList, o
 
   const icBtn = (title, color, onClick, children) => (
     <button title={title} onClick={e => { e.stopPropagation(); onClick() }} style={{
-      background: 'transparent', border: 'none', color, padding: '3px', borderRadius: 3,
-      cursor: 'pointer', display: 'inline-flex', alignItems: 'center', opacity: 0.7,
-      transition: 'opacity 0.12s, color 0.12s',
+      background: 'transparent', border: '1px solid transparent', color,
+      width: 24, height: 24, borderRadius: 6,
+      cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+      opacity: 0.55, transition: 'opacity 0.12s, background 0.12s, border-color 0.12s',
     }}
-    onMouseEnter={e => { e.currentTarget.style.opacity = '1' }}
-    onMouseLeave={e => { e.currentTarget.style.opacity = '0.7' }}
+    onMouseEnter={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.background = 'var(--surface2)'; e.currentTarget.style.borderColor = 'var(--border2)' }}
+    onMouseLeave={e => { e.currentTarget.style.opacity = '0.55'; e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'transparent' }}
     >{children}</button>
   )
 
@@ -311,7 +312,16 @@ function SubtitleRow({ sub, idx, active, selected, compact, charMap, charList, o
             />
             <button onClick={e => { e.stopPropagation(); setShowNotations(n => !n) }}
               title="Notations de doublage"
-              style={{ background: 'none', border: 'none', color: showNotations ? 'var(--accent)' : 'var(--text4)', padding: '2px 3px', cursor: 'pointer', fontSize: 12, flexShrink: 0, borderRadius: 2 }}>
+              style={{
+                width: 22, height: 22, flexShrink: 0, borderRadius: 6, cursor: 'pointer', fontSize: 12,
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                background: showNotations ? 'var(--accent-soft)' : 'transparent',
+                color: showNotations ? 'var(--accent)' : 'var(--text4)',
+                border: `1px solid ${showNotations ? 'rgba(245,197,24,0.4)' : 'transparent'}`,
+                transition: 'background 0.12s, color 0.12s, border-color 0.12s',
+              }}
+              onMouseEnter={e => { if (!showNotations) { e.currentTarget.style.background = 'var(--surface2)'; e.currentTarget.style.borderColor = 'var(--border2)' } }}
+              onMouseLeave={e => { if (!showNotations) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'transparent' } }}>
               ≈
             </button>
             {showNotations && <NotationPopover tags={NOTATION_TAGS} onInsert={insertNotation} />}

@@ -5,6 +5,7 @@ import httpx
 
 CONFIG_PATH = "plex_config.json"
 DEFAULT_URL = "http://localhost:32400"
+PROBE_URLS = ["http://127.0.0.1:32400", "http://localhost:32400"]
 
 
 def load_config() -> dict:
@@ -48,6 +49,22 @@ async def plex_get(path: str, params: dict | None = None) -> dict:
         )
         res.raise_for_status()
         return res.json()
+
+
+async def probe_local() -> str | None:
+    # Plex's /identity endpoint needs no token — used to detect a local server.
+    async with httpx.AsyncClient(timeout=2) as client:
+        for url in PROBE_URLS:
+            try:
+                res = await client.get(
+                    f"{url}/identity",
+                    headers={"Accept": "application/json"},
+                )
+                if res.status_code == 200:
+                    return url
+            except Exception:
+                continue
+    return None
 
 
 async def test_connection(url: str, token: str) -> str:

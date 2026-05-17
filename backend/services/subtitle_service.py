@@ -1,6 +1,10 @@
+import xml.etree.ElementTree as ET
 from typing import List, Dict
 
 CURSOR_X_RATIO = 0.30
+
+# RGB hex per track — matches br_renderer.TRACK_COLORS
+_DETX_COLORS = ["#F5C518", "#50B4FF", "#FF64A0", "#64E6A0"]
 
 
 def _to_srt_time(s: float) -> str:
@@ -251,10 +255,18 @@ def _to_detx_time(s: float, fps: float = 25.0) -> str:
     return f"{h:02d}:{m:02d}:{sec:02d}:{frame:02d}"
 
 
-def export_detx(subtitles: List[Dict], path: str, fps: float = 25.0):
-    """DetX open XML format — compatible with Cappella, Phonations, Joker (French dubbing ecosystem)."""
-    import xml.etree.ElementTree as ET
+def export_detx(
+    subtitles: List[Dict],
+    path: str,
+    fps: float = 25.0,
+    title: str = "Bande Rythmo",
+    video_path: str = "",
+):
+    """DetX open XML format — compatible with Cappella, Phonations, Joker (French dubbing ecosystem).
 
+    Spec: https://github.com/MartinDelille/Joker/blob/master/DetX.md
+    Structure: <detx> → <header>, <roles>, <body> with <line>/<lipsync>/<text>.
+    """
     seen = []
     for sub in subtitles:
         c = sub.get("character", "")
@@ -263,45 +275,47 @@ def export_detx(subtitles: List[Dict], path: str, fps: float = 25.0):
     if not seen:
         seen = [""]
 
-    char_id = {c: i for i, c in enumerate(seen)}
+    # Stable role id per character; track = vertical position 0-3
+    role_id = {c: f"role{i}" for i, c in enumerate(seen)}
+    role_track = {c: i % 4 for i, c in enumerate(seen)}
 
-    root = ET.Element("PhrasesModel", version="3")
+    root = ET.Element("detx")
 
-    config = ET.SubElement(root, "Configuration")
-    config.set("loopsDuration", "0")
-    config.set("framesPerSecond", str(int(fps)))
+    header = ET.SubElement(root, "header")
+    ET.SubElement(header, "cappella", copyright="Bande Rythmo", version="1")
+    ET.SubElement(header, "title").text = title
+    if video_path:
+        ET.SubElement(header, "videofile").text = video_path
 
-    characters_el = ET.SubElement(root, "Characters")
+    roles = ET.SubElement(root, "roles")
     for c in seen:
-        ce = ET.SubElement(characters_el, "Character")
-        ce.set("id", str(char_id[c]))
-        ce.set("name", c if c else "Personnage")
-        raw = _TRACK_COLORS[char_id[c] % len(_TRACK_COLORS)]  # e.g. "&H00FFFFFF&" BGR
-        bgr = raw.replace("&H00", "").replace("&", "")        # e.g. "FFFFFF"
-        # ASS colors are BGR — swap to RGB for DetX
-        color_rgb = f"#{bgr[4:6]}{bgr[2:4]}{bgr[0:2]}" if len(bgr) == 6 else "#FFFFFF"
-        ce.set("color", color_rgb)
+        ET.SubElement(
+            roles, "role",
+            id=role_id[c],
+            name=c if c else "Personnage",
+            color=_DETX_COLORS[role_track[c] % len(_DETX_COLORS)],
+        )
 
-    phrases_el = ET.SubElement(root, "Phrases")
-    for i, sub in enumerate(subtitles):
-        pe = ET.SubElement(phrases_el, "Phrase")
-        pe.set("id", str(i))
+    body = ET.SubElement(root, "body")
+    for sub in sorted(subtitles, key=lambda s: s["start"]):
         c = sub.get("character", "")
-        pe.set("characterId", str(char_id.get(c, 0)))
-        t_start = sub["start"]
-        t_end = sub["end"]
-        pe.set("timeIn",  _to_detx_time(t_start, fps))
-        pe.set("timeOut", _to_detx_time(t_end, fps))
-        dur_frames = max(1, int(round((t_end - t_start) * fps)))
-        pos_frames = int(round(t_start * fps))
-        pe.set("position", str(pos_frames))
-        pe.set("duration", str(dur_frames))
-        pe.set("text", sub.get("text", ""))
-        pe.set("type", "0")
-        pe.set("on", "true")
+        text = sub.get("text", "")
+        is_reac = text.strip().startswith("(")
+        line = ET.SubElement(
+            body, "line",
+            role=role_id.get(c, "role0"),
+            track=str(role_track.get(c, 0)),
+        )
+        if is_reac:
+            line.set("type", "reac")
+        ET.SubElement(line, "lipsync",
+                      timecode=_to_detx_time(sub["start"], fps), type="in_open")
+        ET.SubElement(line, "text").text = text
+        ET.SubElement(line, "lipsync",
+                      timecode=_to_detx_time(sub["end"], fps), type="out_open")
 
     tree = ET.ElementTree(root)
     ET.indent(tree, space="  ")
     with open(path, "w", encoding="utf-8") as f:
-        f.write('<?xml version="1.0" encoding="UTF-8"?>\n')
+        f.write('<?xml version="1.0" encoding="UTF-8" standalone="no" ?>\n')
         tree.write(f, encoding="unicode", xml_declaration=False)

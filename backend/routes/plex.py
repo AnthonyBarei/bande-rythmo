@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from services.plex_service import (
-    load_config, save_config, test_connection,
+    load_config, save_config, test_connection, probe_local,
     plex_get, stream_url, thumb_url,
 )
 
@@ -12,6 +12,12 @@ router = APIRouter()
 class ConnectRequest(BaseModel):
     url: str
     token: str
+
+
+@router.get("/probe")
+async def probe():
+    url = await probe_local()
+    return {"found": url is not None, "url": url}
 
 
 @router.get("/status")

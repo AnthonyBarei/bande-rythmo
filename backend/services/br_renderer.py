@@ -3,10 +3,20 @@ import os
 import subprocess
 from typing import Dict, List, Optional
 
+import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 CURSOR_X_RATIO = 0.30
 BG = (5, 5, 5)
+
+# Bundled BR fonts — keyed by the id sent from the frontend font picker.
+_FONTS_DIR = os.path.join(os.path.dirname(__file__), "..", "fonts")
+_ATKINSON_BOLD = os.path.join(_FONTS_DIR, "AtkinsonHyperlegible-Bold.ttf")
+_BR_FONT_FILES = {
+    "atkinson":  os.path.join(_FONTS_DIR, "AtkinsonHyperlegible-Bold.ttf"),
+    "inter":     os.path.join(_FONTS_DIR, "Inter.ttf"),
+    "jetbrains": os.path.join(_FONTS_DIR, "JetBrainsMono-Bold.ttf"),
+}
 
 TRACK_COLORS = [
     {"bg": (245, 197, 24),  "bg_a": 26,  "label": (245, 197, 24)},
@@ -22,14 +32,21 @@ def _blend(fg, alpha, bg=BG):
 
 
 BLOCK_FILLS = [_blend(c["bg"], c["bg_a"]) for c in TRACK_COLORS]
-WAVE_FILLS  = [_blend(c["bg"], 56) for c in TRACK_COLORS]  # 0.22 alpha
 
 
 def _load_font(candidates: list, size: int) -> ImageFont.FreeTypeFont:
     for path in candidates:
         if os.path.exists(path):
             try:
-                return ImageFont.truetype(path, size)
+                font = ImageFont.truetype(path, size)
+                # Variable fonts (e.g. Inter) — pin the Bold weight axis.
+                try:
+                    if b"Bold" in (font.get_variation_names() or []) \
+                       or "Bold" in (font.get_variation_names() or []):
+                        font.set_variation_by_name("Bold")
+                except Exception:
+                    pass
+                return font
             except Exception:
                 continue
     try:
@@ -38,23 +55,20 @@ def _load_font(candidates: list, size: int) -> ImageFont.FreeTypeFont:
         return ImageFont.load_default()
 
 
-def _get_fonts(font_size: int):
-    courier = [
-        "C:/Windows/Fonts/courbd.ttf",
-        "/usr/share/fonts/truetype/courier-prime/CourierPrime-Bold.ttf",
-        "/usr/share/fonts/truetype/freefont/FreeMonoBold.ttf",
-        "/usr/share/fonts/truetype/freefont/FreeMono.ttf",
-    ]
-    sans = [
+def _get_fonts(font_size: int, label_size: int = 10, avatar_size: int = 9,
+               br_font: str = "atkinson"):
+    fallback = [
+        _ATKINSON_BOLD,
         "C:/Windows/Fonts/arialbd.ttf",
-        "C:/Windows/Fonts/arial.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
     ]
+    chosen = _BR_FONT_FILES.get(br_font, _ATKINSON_BOLD)
+    candidates = [chosen] + fallback
     return (
-        _load_font(courier, font_size),
-        _load_font(sans, 10),   # track labels
-        _load_font(sans, 9),    # avatar initials
+        _load_font(candidates, font_size),     # BR dialogue text
+        _load_font(candidates, label_size),    # track labels
+        _load_font(candidates, avatar_size),   # avatar initials
     )
 
 
@@ -85,21 +99,6 @@ def _render_frame(
     for tr in range(1, num_tracks):
         y = tr * track_h
         draw.line([(0, y), (W, y)], fill=(26, 26, 26), width=1)
-
-    # Synthetic waveform bars (matches canvas fallback sine)
-    for tr in range(num_tracks):
-        y_mid = tr * track_h + track_h // 2
-        max_amp = track_h * 0.38
-        fill = WAVE_FILLS[tr % len(WAVE_FILLS)]
-        for px in range(0, W, 2):
-            st = (px - cursor_x) / px_per_sec + t
-            v = abs(
-                math.sin(st * 7  + tr * 1.3) * 0.6 +
-                math.sin(st * 23 + tr * 0.7) * 0.3 +
-                math.sin(st * 3)             * 0.1
-            )
-            amp = max(1, int(v * max_amp))
-            draw.rectangle([px, y_mid - amp, px + 1, y_mid + amp], fill=fill)
 
     # Subtitle background blocks
     for sub in subtitles:
@@ -134,9 +133,10 @@ def _render_frame(
 
         # Avatar circle
         if char and block_w > 20:
-            ax = max(bl, 0) + 6
-            ay = y_top + 10
-            r = 8
+            r = max(8, int(track_h * 0.13))
+            pad = max(5, int(track_h * 0.09))
+            ax = max(bl, 0) + pad
+            ay = y_top + pad
             cx, cy = int(ax + r), int(ay + r)
             lc = color["label"] if is_active else tuple(int(c * 0.6) for c in color["label"])
             draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=lc)
@@ -157,28 +157,36 @@ def _render_frame(
         text_y_center = y_mid + (6 if char else 0)
         text_rgb = _text_rgb(is_active)
 
+        # Thin black stroke around glyphs — definition against motion blur and
+        # h264 compression, without a thick halo that reads as softness.
+        stroke_w = max(1, round(font_size / 18))
+
         try:
-            bb = font_main.getbbox(raw_text)
+            bb = font_main.getbbox(raw_text, stroke_width=stroke_w)
             natural_w = max(1, bb[2] - bb[0])
         except Exception:
             natural_w = max(1, len(raw_text) * font_size // 2)
 
-        scale_x = max(0.38, block_w / natural_w) if block_w > 0 else 0.38
+        # Near-zero floor: text always squeezes to exactly fit its block — never
+        # overflows / clips at the block edge. Extreme squeeze = too-short cue.
+        scale_x = max(0.05, block_w / natural_w) if block_w > 0 else 0.05
 
         # Render text to RGBA temp image, then resize
-        tmp_w = natural_w + 4
+        tmp_w = natural_w + stroke_w * 2 + 4
         try:
-            bb = font_main.getbbox(raw_text)
+            bb = font_main.getbbox(raw_text, stroke_width=stroke_w)
             text_h = bb[3] - bb[1]
             tmp = Image.new("RGBA", (tmp_w, track_h), (0, 0, 0, 0))
             tdraw = ImageDraw.Draw(tmp)
             ty = text_y_center - y_top - text_h // 2 - bb[1]
-            tdraw.text((-bb[0], ty), raw_text, font=font_main, fill=(*text_rgb, 255))
+            tdraw.text((-bb[0], ty), raw_text, font=font_main, fill=(*text_rgb, 255),
+                       stroke_width=stroke_w, stroke_fill=(0, 0, 0, 235))
         except Exception:
             tmp = Image.new("RGBA", (tmp_w, track_h), (0, 0, 0, 0))
             tdraw = ImageDraw.Draw(tmp)
             tdraw.text((0, text_y_center - y_top - font_size // 2),
-                       raw_text, font=font_main, fill=(*text_rgb, 255))
+                       raw_text, font=font_main, fill=(*text_rgb, 255),
+                       stroke_width=stroke_w, stroke_fill=(0, 0, 0, 235))
 
         # Horizontal scale
         if abs(scale_x - 1.0) > 0.01:
@@ -203,11 +211,12 @@ def _render_frame(
         draw = ImageDraw.Draw(img)
 
     # Track labels (fixed left, always on top)
+    label_pad = max(5, int(track_h * 0.07))
     for tr in range(num_tracks):
         char = next((c for c, i in char_map.items() if i == tr), "")
         color = TRACK_COLORS[tr % len(TRACK_COLORS)]
         label = (char.upper() or "(DEF)")[:12]
-        draw.text((6, tr * track_h + 5), label, font=font_label, fill=color["label"])
+        draw.text((label_pad, tr * track_h + label_pad), label, font=font_label, fill=color["label"])
 
     # Timeline 1-second ticks
     t0 = t - cursor_x / px_per_sec
@@ -219,8 +228,10 @@ def _render_frame(
 
     # Cursor line + triangle
     cx = int(cursor_x)
-    draw.line([(cx, 0), (cx, H)], fill=(245, 197, 24), width=2)
-    draw.polygon([(cx - 7, 0), (cx + 7, 0), (cx, 10)], fill=(245, 197, 24))
+    cw = max(2, round(track_h * 0.03))
+    tw = max(7, int(track_h * 0.10))
+    draw.line([(cx, 0), (cx, H)], fill=(245, 197, 24), width=cw)
+    draw.polygon([(cx - tw, 0), (cx + tw, 0), (cx, tw + 3)], fill=(245, 197, 24))
 
     return img
 
@@ -235,8 +246,20 @@ def render_br_video(
     output_path: str,
     br_offset: float = 0.0,
     font_scale: float = 1.0,
+    br_font: str = "atkinson",
+    supersample: int = 4,
+    shutter: float = 0.4,
 ):
-    """Render BR strip frames to a lossless video file at exact video fps."""
+    """Render BR strip frames to a lossless video file at exact video fps.
+
+    Each output frame is the average of `supersample` sub-frames — synthetic
+    motion blur that makes the constant horizontal scroll read as smooth
+    instead of stepping (VoxDub's "240Hz").
+
+    `shutter` (0..1) is the fraction of the frame interval the sub-frames span
+    — the camera shutter-angle analogue. 1.0 = full smear, 0.5 = cinema 180°,
+    lower = crisper text but slightly less motion smoothing.
+    """
     num_tracks = max(1, len({s.get("character", "") for s in subtitles}))
     char_map: Dict[str, int] = {}
     for s in subtitles:
@@ -246,12 +269,22 @@ def render_br_video(
 
     W = strip_width
     H = strip_height
+    ss = max(1, int(supersample))
 
-    font_size = max(16, round(28 * font_scale))
-    font_main, font_label, font_avatar = _get_fonts(font_size)
+    # Scale fonts to track height so BR text stays readable at any export
+    # resolution. Text fills most of the track height (VoxDub-style) — large
+    # glyphs are far easier to read while scrolling.
+    track_h = H // max(1, num_tracks)
+    font_size = max(14, round(track_h * 0.58 * font_scale))
+    label_size = max(9, round(track_h * 0.13))
+    avatar_size = max(8, round(track_h * 0.13))
+    font_main, font_label, font_avatar = _get_fonts(
+        font_size, label_size, avatar_size, br_font)
 
     num_frames = max(1, round(duration * fps))
 
+    # FFV1 lossless RGB intermediate — no chroma subsampling on text edges,
+    # so the only lossy pass is the final overlay encode.
     cmd = [
         "ffmpeg", "-y",
         "-f", "rawvideo", "-vcodec", "rawvideo",
@@ -259,25 +292,34 @@ def render_br_video(
         "-pix_fmt", "rgb24",
         "-r", str(fps),
         "-i", "pipe:0",
-        "-c:v", "libx264",
-        "-crf", "1",
-        "-preset", "ultrafast",
-        "-pix_fmt", "yuv420p",
+        "-c:v", "ffv1",
+        "-level", "3",
+        "-pix_fmt", "rgb24",
         output_path,
     ]
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.DEVNULL)
 
+    def _frame_rgb(t: float) -> np.ndarray:
+        img = _render_frame(
+            t, subtitles, char_map, num_tracks,
+            W, H, px_per_sec,
+            font_main, font_label, font_avatar, font_size,
+        ).convert("RGB")
+        return np.asarray(img, dtype=np.float32)
+
     try:
         for frame_idx in range(num_frames):
-            frame_time = frame_idx / fps
-            t = frame_time + br_offset
-            frame_img = _render_frame(
-                t, subtitles, char_map, num_tracks,
-                W, H, px_per_sec,
-                font_main, font_label, font_avatar, font_size,
-            )
-            rgb_img = frame_img.convert("RGB")
-            proc.stdin.write(rgb_img.tobytes())
+            if ss == 1:
+                t = frame_idx / fps + br_offset
+                out = _frame_rgb(t).astype(np.uint8)
+            else:
+                acc = None
+                for s in range(ss):
+                    t = (frame_idx + (s / ss) * shutter) / fps + br_offset
+                    sub = _frame_rgb(t)
+                    acc = sub if acc is None else acc + sub
+                out = (acc / ss).round().clip(0, 255).astype(np.uint8)
+            proc.stdin.write(out.tobytes())
         proc.stdin.close()
         proc.wait()
     except Exception:

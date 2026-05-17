@@ -11,8 +11,7 @@ import { useSettings } from '../SettingsContext'
 const CURSOR_X_RATIO = 0.32
 const H_TRACK = 76
 const BR_CONTROLS_H = 50
-const FONT_BR_BASE = 22
-const FONT_BR_MIN = 11
+const FONT_BR_BASE = 44
 const FONT_BR = 'bold 22px "JetBrains Mono", "Courier New", monospace'
 const FONT_LABEL = 'bold 10px "IBM Plex Sans", sans-serif'
 
@@ -61,6 +60,10 @@ const ICONS = {
   loop:     <><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/></>,
   reactions:<><circle cx="12" cy="12" r="9"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></>,
   chevron:  'M6 9l6 6 6-6',
+  plus:     'M12 5v14M5 12h14',
+  close:    'M18 6L6 18M6 6l12 12',
+  caption:  <><rect x="3" y="5" width="18" height="14" rx="2"/><line x1="7" y1="14" x2="11" y2="14"/><line x1="14" y1="14" x2="17" y2="14"/></>,
+  download: <><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></>,
   zoomIn:   <><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></>,
   zoomOut:  <><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/></>,
   volume:   <><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></>,
@@ -89,14 +92,14 @@ const LANGS = [
   { code: 'auto', label: '🔍 Auto-détect' },
 ]
 
-const STATUS = {
-  saved:   { text: '✓ Sauvegardé', color: 'var(--success)' },
-  saving:  { text: '… Sauvegarde', color: 'var(--text2)' },
-  unsaved: { text: '● Non sauvegardé', color: '#f5c518' },
-  error:   { text: '✕ Erreur', color: 'var(--danger)' },
-}
+const BR_FONTS = [
+  { id: 'atkinson',  label: 'Atkinson Hyperlegible', stack: "'Atkinson Hyperlegible', sans-serif" },
+  { id: 'inter',     label: 'Inter',                 stack: "'Inter', sans-serif" },
+  { id: 'jetbrains', label: 'JetBrains Mono',        stack: "'JetBrains Mono', 'Courier New', monospace" },
+]
+const brFontStack = id => (BR_FONTS.find(f => f.id === id) || BR_FONTS[0]).stack
 
-export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
+export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus, exportOpen, onToggleExport }) {
   const [subtitles, setSubtitles] = useState(clip.subtitles || [])
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
@@ -106,18 +109,20 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
   const [transcribing, setTranscribing] = useState(false)
   const [saveStatus, setSaveStatus] = useState('saved')
   const [toast, setToast] = useState(null)
-  const [showExport, setShowExport] = useState(false)
+  const showExport = !!exportOpen
   const [brExporting, setBrExporting] = useState(false)
   const [brOffset, setBrOffset] = useState(0)
-  const [pxPerSec, setPxPerSec] = useState(180)
+  const [pxPerSec, setPxPerSec] = useState(240)
   const { settings } = useSettings()
   const [rythmoStyle, setRythmoStyle] = useState(settings.brStyle || 'classique')
   const [lang, setLang] = useState('fr')
 
   const [selectedIdx, setSelectedIdx] = useState(null)
   const [brInPlayer, setBrInPlayer] = useState('play')
-  const [sidebarWidth, setSidebarWidth] = useState(370)
-  const sidebarDragRef = useRef(null)
+  const [brFont, setBrFont] = useState(() => {
+    try { return localStorage.getItem('br-font') || 'atkinson' } catch { return 'atkinson' }
+  })
+  const [sidebarWidth, setSidebarWidth] = useState(400)
   const [brPanelHeight, setBrPanelHeight] = useState(280)
   const [fontScale, setFontScale] = useState(1.0)
   const [editingIdx, setEditingIdx] = useState(null)
@@ -128,6 +133,8 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
   const [locked, setLocked] = useState(false)
   const [showRecorder, setShowRecorder] = useState(false)
   const [rightTab, setRightTab] = useState('repliques')
+  const [takes, setTakes] = useState([])
+  const [comediens, setComediens] = useState({})
   const loopRegionRef = useRef(null)
   const lockedRef = useRef(false)
   loopRegionRef.current = loopRegion
@@ -140,7 +147,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
   const debounceRef = useRef(null)
   const subtitlesRef = useRef(subtitles)
   const brOffsetRef = useRef(0)
-  const pxPerSecRef = useRef(120)
+  const pxPerSecRef = useRef(240)
   const rythmoStyleRef = useRef('classique')
   const waveformRef = useRef(null)
   const onsetsRef = useRef(null)
@@ -153,6 +160,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
   const brInPlayerRef = useRef('play')
   const playingRef = useRef(false)
   const fontScaleRef = useRef(1.0)
+  const brFontRef = useRef('atkinson')
   const exportingRef = useRef(false)
   // Smooth time interpolation: video.currentTime only updates at video fps (e.g. 24fps).
   // Between updates, we interpolate using wall clock so the canvas scrolls at 60fps.
@@ -165,6 +173,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
   brInPlayerRef.current = brInPlayer
   playingRef.current = playing
   fontScaleRef.current = fontScale
+  brFontRef.current = brFont
 
   const segmentUrl = `/${clip.segment_path}`
 
@@ -188,6 +197,44 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
     const t = currentTime + brOffset
     return subtitles.find(s => t >= s.start && t <= s.end) || null
   }, [subtitles, currentTime, brOffset])
+
+  // Load comédien names (per-clip, local)
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(`br-comediens-${clip.clip_id}`)
+      setComediens(raw ? JSON.parse(raw) : {})
+    } catch { setComediens({}) }
+  }, [clip.clip_id])
+
+  function setComedien(char, name) {
+    setComediens(prev => {
+      const next = { ...prev, [char]: name }
+      try { localStorage.setItem(`br-comediens-${clip.clip_id}`, JSON.stringify(next)) } catch {}
+      return next
+    })
+  }
+
+  // Fetch takes (refreshed when right pane tab changes or recorder toggles)
+  useEffect(() => {
+    fetch(`/api/takes/${clip.clip_id}`)
+      .then(r => r.ok ? r.json() : [])
+      .then(data => Array.isArray(data) && setTakes(data))
+      .catch(() => {})
+  }, [clip.clip_id, rightTab, showRecorder])
+
+  // Report save status up to the App top bar
+  useEffect(() => { onSaveStatus?.(saveStatus) }, [saveStatus, onSaveStatus])
+
+  // Persist BR font choice
+  useEffect(() => { try { localStorage.setItem('br-font', brFont) } catch {} }, [brFont])
+
+  // Escape closes the export modal
+  useEffect(() => {
+    if (!showExport) return
+    const onKey = e => { if (e.key === 'Escape') onToggleExport?.() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [showExport, onToggleExport])
 
   // Fetch waveform once on mount
   useEffect(() => {
@@ -400,38 +447,24 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
           }
         }
 
-        // Text — scale-to-fit then ellipsis-truncate
+        // Text — true rythmo: constant letter height, horizontally stretched/squeezed
+        // to exactly fill the réplique block (the block width encodes the duration).
         if (sub.text) {
-          const PADDING = 12
           const isReact = sub.text.startsWith('(')
           const BASE_FONT = Math.max(13, Math.round(FONT_BR_BASE * fontScaleRef.current))
-          const MIN_FONT = Math.max(9, Math.round(FONT_BR_MIN * fontScaleRef.current))
-          const fontStr = sz => isReact
-            ? `italic 600 ${sz}px "IBM Plex Sans", sans-serif`
-            : `bold ${sz}px "JetBrains Mono", "Courier New", monospace`
-          let fontSize = BASE_FONT
-          ctx.font = fontStr(fontSize)
-          const naturalW = ctx.measureText(sub.text).width
-          const availW = blockW - PADDING * 2
-          if (naturalW > availW && availW > 0) {
-            fontSize = Math.max(MIN_FONT, Math.floor(BASE_FONT * availW / naturalW))
-            ctx.font = fontStr(fontSize)
-          }
-          ctx.textBaseline = 'middle'
+          const fontStr = isReact
+            ? `italic 600 ${BASE_FONT}px 'IBM Plex Sans', sans-serif`
+            : `700 ${BASE_FONT}px ${brFontStack(brFontRef.current)}`
 
-          let drawText = sub.text
-          const finalW = ctx.measureText(drawText).width
-          if (finalW > availW && availW > 0) {
-            const ellipsisW = ctx.measureText('…').width
-            const budget = Math.max(0, availW - ellipsisW)
-            let lo = 0, hi = drawText.length
-            while (lo < hi) {
-              const mid = (lo + hi + 1) >> 1
-              if (ctx.measureText(drawText.slice(0, mid)).width <= budget) lo = mid
-              else hi = mid - 1
-            }
-            drawText = drawText.slice(0, lo).trimEnd() + '…'
-          }
+          ctx.font = fontStr
+          ctx.textBaseline = 'middle'
+          const naturalW = ctx.measureText(sub.text).width
+          const targetW = Math.max(1, blockW)
+          // scaleX < 1 squeezes (fast speech), > 1 stretches (slow speech).
+          // Near-zero floor: text always squeezes to exactly fit its block,
+          // never overflows / clips at the block edge.
+          let scaleX = naturalW > 0 ? targetW / naturalW : 1
+          scaleX = Math.max(0.05, Math.min(scaleX, 3.5))
 
           if (isNeon) { ctx.shadowColor = color.hex; ctx.shadowBlur = isActive ? 6 : 2 }
           else ctx.shadowBlur = 0
@@ -440,11 +473,12 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
           ctx.beginPath()
           ctx.rect(bx, yTop, bw, trackH)
           ctx.clip()
-          ctx.translate(leftX + PADDING, yTop + trackH / 2)
+          ctx.translate(leftX, yTop + trackH / 2)
+          ctx.scale(scaleX, 1)
           const baseFill = isReact
             ? (isActive ? color.hex : withAlpha(color.hex, 0.67))
             : (isActive ? '#fff' : 'rgba(255,255,255,0.42)')
-          const segs = drawText.split(/(\*)/)
+          const segs = sub.text.split(/(\*)/)
           let curX = 0
           for (const seg of segs) {
             if (seg === '*') {
@@ -622,10 +656,16 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
             const O_BASE_FONT = Math.max(10, Math.round(20 * fontScaleRef.current))
             const O_MIN_FONT = Math.max(7, Math.round(9 * fontScaleRef.current))
             const O_PAD = 4
+            let oNextStart = Infinity
+            for (const o of subtitlesRef.current) {
+              if (o === sub) continue
+              if ((charMapRef.current[o.character || ''] ?? 0) === trackIdx && o.start >= sub.end && o.start < oNextStart) oNextStart = o.start
+            }
+            const oRoomRightX = oNextStart === Infinity ? oW : Math.min(oW, oCursorX + (oNextStart - t) * pxSec - 3)
+            const oAvailW = Math.max((rightX - leftX) - O_PAD, oRoomRightX - leftX - O_PAD)
             let oFontSize = O_BASE_FONT
             oc.font = `bold ${oFontSize}px "Courier New", monospace`
             const oNatW = oc.measureText(sub.text).width
-            const oAvailW = (rightX - leftX) - O_PAD
             if (oNatW > oAvailW && oAvailW > 0) {
               oFontSize = Math.max(O_MIN_FONT, Math.floor(O_BASE_FONT * oAvailW / oNatW))
               oc.font = `bold ${oFontSize}px "Courier New", monospace`
@@ -634,7 +674,8 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
             const inactiveFill = oIsNeon ? 'rgba(220,240,255,0.55)' : 'rgba(255,255,255,0.35)'
             oc.save()
             oc.beginPath()
-            oc.rect(bx, trackIdx * oTrackH + 1, bw, oTrackH - 2)
+            const oClipX = Math.max(0, leftX)
+            oc.rect(oClipX, trackIdx * oTrackH + 1, Math.max(bw, oRoomRightX - oClipX), oTrackH - 2)
             oc.clip()
             oc.translate(leftX + O_PAD, trackIdx * oTrackH + oTrackH / 2)
             let oDrawText = sub.text
@@ -1210,11 +1251,10 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
     }
   }
 
-  const st = STATUS[saveStatus]
   const Kbd = ({ children }) => (
     <span style={{ display: 'inline-flex', alignItems: 'center', padding: '1px 5px', border: '1px solid var(--border2)', background: 'var(--surface2)', borderRadius: 3, fontFamily: 'var(--font-mono)', fontSize: 9.5, color: 'var(--text3)' }}>{children}</span>
   )
-  const tBtn = { background: 'none', border: '1px solid var(--border2)', color: 'var(--text2)', borderRadius: 3, padding: '3px 7px', cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }
+  const tBtn = { background: 'var(--surface2)', border: '1px solid var(--border2)', color: 'var(--text2)', borderRadius: 5, padding: '4px 7px', cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.15s, border-color 0.15s' }
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -1231,8 +1271,9 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
             {(clip.end - clip.start).toFixed(1)}s · {subtitles.length} réplique{subtitles.length !== 1 ? 's' : ''}{charList.filter(c => c).length > 0 ? ` · ${charList.filter(c => c).length} personnage${charList.filter(c => c).length !== 1 ? 's' : ''}` : ''}
           </div>
         </div>
+        <div style={{ flex: 1 }} />
         {/* Character chips */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flex: 1, overflow: 'hidden', minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, overflow: 'hidden', minWidth: 0, maxWidth: 380 }}>
           {charList.filter(c => c).map(char => {
             const color = TRACK_COLORS[(charMap[char] ?? 0) % TRACK_COLORS.length]
             return (
@@ -1245,16 +1286,26 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
             )
           })}
         </div>
-        <span style={{ fontSize: 11, color: st.color, flexShrink: 0 }}>{st.text}</span>
+        <button
+          onClick={() => {
+            const name = window.prompt('Nom du nouveau personnage :')
+            if (name == null || !name.trim()) return
+            const v = videoRef.current
+            const t = v ? v.currentTime : 0
+            handleSubtitlesChange([...subtitles, { start: t, end: t + 1.5, character: name.trim(), text: '', reactions: [] }].sort((a, b) => a.start - b.start))
+          }}
+          title="Ajouter un personnage"
+          style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', background: 'none', color: 'var(--text2)', border: '1px dashed var(--border2)', borderRadius: 6, fontSize: 11.5, fontWeight: 600, flexShrink: 0, cursor: 'pointer' }}>
+          <Ic d={ICONS.plus} size={12} /> Ajouter
+        </button>
+        <div style={{ width: 1, height: 20, background: 'var(--border2)', flexShrink: 0 }} />
         <select value={lang} onChange={e => setLang(e.target.value)} disabled={transcribing}
-          style={{ background: 'var(--surface3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 4, padding: '3px 5px', fontSize: 11, flexShrink: 0 }}>
+          style={{ background: 'var(--surface2)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 6, padding: '4px 7px', fontSize: 11, flexShrink: 0, cursor: 'pointer' }}>
           {LANGS.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
         </select>
-        <button onClick={transcribe} disabled={transcribing} style={{ padding: '4px 12px', background: 'var(--surface3)', color: subtitles.length > 0 ? 'var(--text2)' : '#f5c518', border: `1px solid ${subtitles.length > 0 ? 'var(--border2)' : 'rgba(245,197,24,0.4)'}`, borderRadius: 4, fontSize: 11, flexShrink: 0 }}>
-          {transcribing ? '◉ ...' : '◉ Whisper'}
-        </button>
-        <button onClick={() => setShowExport(v => !v)} style={{ padding: '5px 14px', background: showExport ? 'var(--accent)' : 'var(--accent)', color: '#000', fontWeight: 700, border: 'none', borderRadius: 4, fontSize: 13, flexShrink: 0 }}>
-          ↗ Exporter
+        <button onClick={transcribe} disabled={transcribing}
+          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 11px', background: 'var(--surface2)', color: subtitles.length > 0 ? 'var(--text2)' : 'var(--accent)', border: `1px solid ${subtitles.length > 0 ? 'var(--border2)' : 'rgba(245,197,24,0.4)'}`, borderRadius: 6, fontSize: 11.5, fontWeight: 600, flexShrink: 0, cursor: 'pointer' }}>
+          <Ic d={ICONS.mic} size={12} /> {transcribing ? '…' : 'Whisper'}
         </button>
       </div>
 
@@ -1286,21 +1337,21 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
               <span style={{ color: 'var(--accent)' }}>●</span> {fmt(currentTime)} / {fmt(duration)} · {speed}×
             </div>
             {/* Subtitle burn-in */}
-            {activeSubtitle && brInPlayer !== 'never' && (brInPlayer === 'always' || playing) && (
+            {brInPlayer !== 'never' && (brInPlayer === 'always' || playing) && (
               <div style={{
                 position: 'absolute', bottom: 22, left: '50%', transform: 'translateX(-50%)',
                 background: 'rgba(0,0,0,0.78)', color: '#fff', padding: '6px 16px',
-                borderRadius: 3, fontSize: 14, maxWidth: '88%', textAlign: 'center',
+                borderRadius: 3, fontSize: 14, maxWidth: '88%', minWidth: 120, textAlign: 'center',
                 fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                borderTop: `2px solid ${TRACK_COLORS[(charMap[activeSubtitle.character || ''] ?? 0) % TRACK_COLORS.length].label}`,
-                pointerEvents: 'none',
+                borderTop: `2px solid ${activeSubtitle ? TRACK_COLORS[(charMap[activeSubtitle.character || ''] ?? 0) % TRACK_COLORS.length].label : 'var(--border2)'}`,
+                pointerEvents: 'none', opacity: activeSubtitle ? 1 : 0.5,
               }}>
-                {activeSubtitle.character && (
+                {activeSubtitle?.character && (
                   <div style={{ color: TRACK_COLORS[(charMap[activeSubtitle.character || ''] ?? 0) % TRACK_COLORS.length].label, fontSize: 9, marginBottom: 2, letterSpacing: 2.5, fontWeight: 700 }}>
                     {activeSubtitle.character.toUpperCase()}
                   </div>
                 )}
-                {activeSubtitle.text}
+                {activeSubtitle ? activeSubtitle.text : ' '}
               </div>
             )}
             {subtitles.length === 0 && (
@@ -1336,11 +1387,18 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
             {/* Subtitle display mode — cycles play → always → never */}
             <button
               onClick={() => setBrInPlayer(m => m === 'play' ? 'always' : m === 'always' ? 'never' : 'play')}
-              title="Sous-titres sur la vidéo"
-              style={{ ...tBtn, fontSize: 10, padding: '3px 8px', gap: 4,
-                color: brInPlayer === 'never' ? 'var(--text4)' : 'var(--accent)',
-                borderColor: brInPlayer === 'never' ? 'var(--border2)' : 'var(--accent)' }}>
-              ST · {brInPlayer === 'play' ? 'lecture' : brInPlayer === 'always' ? 'toujours' : 'jamais'}
+              title="Sous-titres incrustés sur la vidéo — cliquer pour changer"
+              style={{
+                display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0,
+                padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
+                fontSize: 10.5, fontWeight: 600, letterSpacing: 0.2,
+                transition: 'background 0.15s, color 0.15s, border-color 0.15s',
+                background: brInPlayer === 'always' ? 'var(--accent)' : brInPlayer === 'play' ? 'var(--accent-soft)' : 'var(--surface2)',
+                color: brInPlayer === 'always' ? '#000' : brInPlayer === 'play' ? 'var(--accent)' : 'var(--text4)',
+                border: `1px solid ${brInPlayer === 'always' ? 'var(--accent)' : brInPlayer === 'play' ? 'rgba(245,197,24,0.45)' : 'var(--border2)'}`,
+              }}>
+              <Ic d={ICONS.caption} size={13} />
+              {brInPlayer === 'play' ? 'Sous-titres : lecture' : brInPlayer === 'always' ? 'Sous-titres : toujours' : 'Sous-titres : masqués'}
             </button>
             {/* BR text size */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0 }}>
@@ -1348,35 +1406,59 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
               <span style={{ fontSize: 9.5, fontFamily: 'var(--font-mono)', color: fontScale !== 1 ? 'var(--accent)' : 'var(--text3)', minWidth: 32, textAlign: 'center' }}>{Math.round(fontScale * 100)}%</span>
               <button onClick={() => setFontScale(f => Math.min(3, +(f + 0.15).toFixed(2)))} title="Texte BR +" style={{ ...tBtn, padding: '3px 6px' }}>A+</button>
             </div>
+            {/* BR font */}
+            <select value={brFont} onChange={e => setBrFont(e.target.value)} title="Police de la bande rythmo"
+              style={{ background: 'var(--surface2)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 6, padding: '4px 6px', fontSize: 10.5, flexShrink: 0, cursor: 'pointer' }}>
+              {BR_FONTS.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
+            </select>
           </div>
         </div>
 
-        {/* Right pane (400px) */}
-        <div style={{ width: 400, flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', borderLeft: '1px solid var(--border)', background: 'var(--bg)' }}>
+        {/* Right pane resize handle */}
+        <div
+          onMouseDown={e => {
+            e.preventDefault()
+            const startX = e.clientX
+            const startW = sidebarWidth
+            const onMove = ev => setSidebarWidth(Math.max(300, Math.min(680, startW - (ev.clientX - startX))))
+            const onUp = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
+            window.addEventListener('mousemove', onMove)
+            window.addEventListener('mouseup', onUp)
+          }}
+          style={{ width: 5, flexShrink: 0, cursor: 'col-resize', background: 'transparent', transition: 'background 0.15s' }}
+          onMouseEnter={e => { e.currentTarget.style.background = '#f5c51844' }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+        />
 
-          {/* Active character card */}
-          {activeSubtitle && (() => {
-            const trackIdx = charMap[activeSubtitle.character || ''] ?? 0
+        {/* Right pane (resizable) */}
+        <div style={{ width: sidebarWidth, flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', borderLeft: '1px solid var(--border)', background: 'var(--bg)' }}>
+
+          {/* Active character card — shown only during playback; empty state in gaps */}
+          {playing && (() => {
+            const trackIdx = activeSubtitle ? (charMap[activeSubtitle.character || ''] ?? 0) : 0
             const color = TRACK_COLORS[trackIdx % TRACK_COLORS.length]
-            const subIdx = subtitles.indexOf(activeSubtitle)
+            const subIdx = activeSubtitle ? subtitles.indexOf(activeSubtitle) : -1
             return (
-              <div style={{ flexShrink: 0, padding: '10px 14px', background: color.hex + '14', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div style={{ width: 36, height: 36, borderRadius: '50%', flexShrink: 0, border: `2px solid ${color.hex}`, background: color.hex + '22', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 700, color: color.hex }}>
-                  {(activeSubtitle.character || '?')[0].toUpperCase()}
+              <div style={{ flexShrink: 0, padding: '10px 14px', background: activeSubtitle ? color.hex + '14' : 'var(--surface)', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ width: 36, height: 36, borderRadius: '50%', flexShrink: 0, border: `2px solid ${activeSubtitle ? color.hex : 'var(--border2)'}`, background: activeSubtitle ? color.hex + '22' : 'var(--surface2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 700, color: activeSubtitle ? color.hex : 'var(--text4)' }}>
+                  {activeSubtitle ? (activeSubtitle.character || '?')[0].toUpperCase() : '—'}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ fontSize: 14, fontWeight: 700, color: color.hex }}>{activeSubtitle.character || '(défaut)'}</span>
-                    <span style={{ fontSize: 9.5, fontWeight: 600, color: 'var(--text3)' }}>· ACTIF</span>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: activeSubtitle ? color.hex : 'var(--text4)' }}>{activeSubtitle ? (activeSubtitle.character || '(défaut)') : '—'}</span>
+                    {activeSubtitle && <span style={{ fontSize: 9.5, fontWeight: 600, color: 'var(--text3)' }}>· ACTIF</span>}
                   </div>
                   <div style={{ fontSize: 10.5, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>
-                    réplique {subIdx + 1} / {subtitles.length} · {(activeSubtitle.end - activeSubtitle.start).toFixed(1)}s
+                    {activeSubtitle
+                      ? `réplique ${subIdx + 1} / ${subtitles.length} · ${(activeSubtitle.end - activeSubtitle.start).toFixed(1)}s`
+                      : 'Hors réplique'}
                   </div>
                 </div>
                 <button
                   onClick={() => setShowRecorder(s => !s)}
-                  title="Enregistrer (R)"
-                  style={{ width: 34, height: 34, borderRadius: 4, flexShrink: 0, background: showRecorder ? '#c0392b' : 'var(--danger)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  disabled={!activeSubtitle}
+                  title={activeSubtitle ? 'Enregistrer (R)' : 'Aucune réplique active'}
+                  style={{ width: 34, height: 34, borderRadius: 4, flexShrink: 0, background: !activeSubtitle ? 'var(--surface2)' : showRecorder ? '#c0392b' : 'var(--danger)', border: 'none', cursor: activeSubtitle ? 'pointer' : 'not-allowed', opacity: activeSubtitle ? 1 : 0.4, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                 >
                   <Ic d={ICONS.rec} size={12} fill="#fff" />
                 </button>
@@ -1420,46 +1502,88 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
                 )}
               </>
             )}
-            {rightTab === 'personnage' && (
-              <div style={{ padding: 16, overflow: 'auto', flex: 1 }}>
-                {charList.filter(c => c).length === 0 ? (
-                  <p style={{ color: 'var(--text3)', fontSize: 13 }}>Aucun personnage défini.</p>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    {charList.filter(c => c).map(char => {
-                      const trackIdx = charMap[char] ?? 0
-                      const color = TRACK_COLORS[trackIdx % TRACK_COLORS.length]
-                      const charSubs = subtitles.filter(s => s.character === char)
-                      const totalDur = charSubs.reduce((sum, s) => sum + s.end - s.start, 0)
-                      return (
-                        <div key={char} style={{ padding: 12, background: 'var(--surface)', border: `1px solid ${color.hex}33`, borderRadius: 8 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                            <div style={{ width: 30, height: 30, borderRadius: '50%', background: color.hex + '22', border: `2px solid ${color.hex}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: color.hex }}>
-                              {char[0].toUpperCase()}
-                            </div>
-                            <span style={{ fontSize: 14, fontWeight: 700, color: color.hex }}>{char}</span>
-                          </div>
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-                            {[['Répliques', charSubs.length], ['Durée', totalDur.toFixed(1) + 's']].map(([k, v]) => (
-                              <div key={k} style={{ padding: '6px 8px', background: 'var(--surface2)', borderRadius: 4 }}>
-                                <div style={{ fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>{k}</div>
-                                <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)', fontFamily: 'var(--font-mono)' }}>{v}</div>
-                              </div>
-                            ))}
-                          </div>
+            {rightTab === 'personnage' && (() => {
+              const chars = charList.filter(c => c)
+              if (chars.length === 0) {
+                return <div style={{ padding: 16 }}><p style={{ color: 'var(--text3)', fontSize: 13 }}>Aucun personnage défini.</p></div>
+              }
+              const focusChar = activeSubtitle?.character
+                || (selectedIdx != null && subtitles[selectedIdx]?.character)
+                || chars[0]
+              const trackIdx = charMap[focusChar] ?? 0
+              const color = TRACK_COLORS[trackIdx % TRACK_COLORS.length]
+              const charIndices = subtitles.map((s, i) => ({ s, i })).filter(({ s }) => (s.character || '') === focusChar)
+              const charSubs = charIndices.map(({ s }) => s)
+              const totalDur = charSubs.reduce((sum, s) => sum + s.end - s.start, 0)
+              const wordCount = charSubs.reduce((n, s) => (s.text && !s.text.startsWith('(')) ? n + s.text.trim().split(/\s+/).filter(Boolean).length : n, 0)
+              const wpm = totalDur > 0 ? Math.round(wordCount / totalDur * 60) : 0
+              const recorded = new Set(takes.filter(t => (t.character || '') === focusChar && t.subtitle_index != null).map(t => t.subtitle_index))
+              const recordedCount = charIndices.filter(({ i }) => recorded.has(i)).length
+              const queue = charIndices.filter(({ s }) => s.end >= currentTime).slice(0, 5)
+              const stats = [
+                ['Répliques', charSubs.length],
+                ['Durée', totalDur.toFixed(1) + 's'],
+                ['Mot/min', wpm],
+                ['Prises', `${recordedCount} / ${charSubs.length}`],
+              ]
+              return (
+                <div style={{ padding: 16, overflow: 'auto', flex: 1 }}>
+                  <div style={{ padding: 14, background: color.hex + '14', border: `1px solid ${color.hex}40`, borderRadius: 10 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                      <div style={{ width: 44, height: 44, borderRadius: '50%', flexShrink: 0, background: color.hex + '22', border: `2px solid ${color.hex}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 700, color: color.hex }}>
+                        {focusChar[0].toUpperCase()}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 16, fontWeight: 700, color: color.hex }}>{focusChar}</div>
+                        <input
+                          value={comediens[focusChar] || ''}
+                          onChange={e => setComedien(focusChar, e.target.value)}
+                          placeholder="Comédien·ne — nommer…"
+                          style={{ background: 'none', border: 'none', borderBottom: '1px dashed var(--border2)', color: 'var(--text2)', fontSize: 11, padding: '2px 0', width: '100%', outline: 'none' }}
+                        />
+                      </div>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                      {stats.map(([k, v]) => (
+                        <div key={k} style={{ padding: '7px 9px', background: 'var(--surface2)', borderRadius: 5 }}>
+                          <div style={{ fontSize: 8.5, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 3 }}>{k}</div>
+                          <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--text)', fontFamily: 'var(--font-mono)' }}>{v}</div>
                         </div>
-                      )
-                    })}
+                      ))}
+                    </div>
+                    <button
+                      onClick={() => { setShowRecorder(true); setRightTab('repliques') }}
+                      style={{ marginTop: 10, width: '100%', display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', background: 'var(--danger)', color: '#fff', border: 'none', borderRadius: 6, fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
+                      <Ic d={ICONS.rec} size={11} fill="#fff" /> Enregistrer la prise
+                      <span style={{ marginLeft: 'auto', fontSize: 9, fontFamily: 'var(--font-mono)', background: 'rgba(0,0,0,0.25)', padding: '1px 5px', borderRadius: 3 }}>R</span>
+                    </button>
                   </div>
-                )}
-              </div>
-            )}
+
+                  <div style={{ marginTop: 16, marginBottom: 8, fontSize: 9.5, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, fontWeight: 700 }}>File d'attente</div>
+                  {queue.length === 0 ? (
+                    <div style={{ fontSize: 12, color: 'var(--text3)' }}>Aucune réplique à venir.</div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {queue.map(({ s, i }, qi) => (
+                        <button key={i} onClick={() => { seekTo(s.start); setSelectedIdx(i) }}
+                          style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 9px', background: 'var(--surface)', border: `1px solid ${recorded.has(i) ? color.hex + '40' : 'var(--border)'}`, borderRadius: 6, cursor: 'pointer', textAlign: 'left' }}>
+                          <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: 'var(--text3)', flexShrink: 0 }}>{String(i + 1).padStart(2, '0')}</span>
+                          {qi === 0 && <span style={{ fontSize: 8, fontWeight: 700, color: color.hex, background: color.hex + '22', padding: '1px 5px', borderRadius: 3, flexShrink: 0 }}>SUIVANT</span>}
+                          <span style={{ flex: 1, minWidth: 0, fontSize: 12, color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.text || '∅'}</span>
+                          {recorded.has(i) && <Ic d={ICONS.check} size={12} style={{ color: color.hex }} />}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
             {rightTab === 'distribution' && (
               <div style={{ padding: 16, overflow: 'auto', flex: 1 }}>
                 {charList.length === 0 ? (
                   <p style={{ color: 'var(--text3)', fontSize: 13 }}>Aucune réplique.</p>
                 ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                     {charList.map(char => {
                       const trackIdx = charMap[char] ?? 0
                       const color = TRACK_COLORS[trackIdx % TRACK_COLORS.length]
@@ -1468,13 +1592,18 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
                       const clipDur = clip.end - clip.start
                       const pct = Math.min(100, clipDur > 0 ? (totalDur / clipDur) * 100 : 0)
                       return (
-                        <div key={char || '_default'}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 5 }}>
-                            <span style={{ color: color.hex, fontWeight: 600 }}>{char || '(défaut)'}</span>
-                            <span style={{ color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>{pct.toFixed(0)}%</span>
+                        <div key={char || '_default'} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <div style={{ width: 28, height: 28, borderRadius: '50%', flexShrink: 0, background: color.hex + '22', border: `2px solid ${color.hex}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: color.hex }}>
+                            {(char || '?')[0].toUpperCase()}
                           </div>
-                          <div style={{ height: 8, background: 'var(--surface2)', borderRadius: 4, overflow: 'hidden' }}>
-                            <div style={{ height: '100%', width: `${pct}%`, background: color.hex, opacity: 0.8, borderRadius: 4, transition: 'width 0.3s' }} />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
+                              <span style={{ color: color.hex, fontWeight: 600 }}>{char || '(défaut)'}</span>
+                              <span style={{ color: 'var(--text3)', fontFamily: 'var(--font-mono)', fontSize: 11 }}>{charSubs.length} répl. · {totalDur.toFixed(1)}s</span>
+                            </div>
+                            <div style={{ height: 6, background: 'var(--surface2)', borderRadius: 3, overflow: 'hidden' }}>
+                              <div style={{ height: '100%', width: `${pct}%`, background: color.hex, opacity: 0.85, borderRadius: 3, transition: 'width 0.3s' }} />
+                            </div>
                           </div>
                         </div>
                       )
@@ -1630,17 +1759,39 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack }) {
         </div>
       </div>
 
-      {/* ── Export panel ── */}
+      {/* ── Export modal ── */}
       {showExport && (
-        <div style={{ borderTop: '2px solid var(--accent)', background: 'var(--surface)', padding: 14, flexShrink: 0, maxHeight: 260, overflow: 'auto' }}>
-          <ExportPanel
-            segmentId={clip.clip_id}
-            subtitles={subtitles}
-            pxPerSec={pxPerSec}
-            brOffset={brOffset}
-            canvasH={canvasH}
-            getCanvasWidth={() => canvasRef.current?.width || 1200}
-          />
+        <div
+          onClick={() => onToggleExport?.()}
+          style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.66)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{ width: 'min(960px, 94vw)', maxHeight: '88vh', display: 'flex', flexDirection: 'column', background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: 14, overflow: 'hidden', boxShadow: '0 24px 80px rgba(0,0,0,0.6)' }}>
+            <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 11, padding: '15px 18px', borderBottom: '1px solid var(--border)' }}>
+              <div style={{ width: 32, height: 32, borderRadius: 8, flexShrink: 0, background: 'var(--accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent)' }}>
+                <Ic d={ICONS.download} size={16} />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>Exporter le clip</div>
+                <div style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>{clip.name}</div>
+              </div>
+              <button onClick={() => onToggleExport?.()} title="Fermer (Échap)"
+                style={{ width: 30, height: 30, borderRadius: 7, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--surface2)', border: '1px solid var(--border2)', color: 'var(--text2)', cursor: 'pointer' }}>
+                <Ic d={ICONS.close} size={15} />
+              </button>
+            </div>
+            <div style={{ flex: 1, overflow: 'auto', padding: 18 }}>
+              <ExportPanel
+                segmentId={clip.clip_id}
+                subtitles={subtitles}
+                pxPerSec={pxPerSec}
+                brOffset={brOffset}
+                canvasH={canvasH}
+                getCanvasWidth={() => canvasRef.current?.width || 1200}
+                brFont={brFont}
+              />
+            </div>
+          </div>
         </div>
       )}
 

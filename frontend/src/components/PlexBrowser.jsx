@@ -15,6 +15,20 @@ function PlexConnect({ onConnected }) {
   const [token, setToken] = useState('')
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState(null)
+  const [detected, setDetected] = useState(null)  // null=probing, false=none, string=found url
+
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/plex/probe')
+      .then(r => r.json())
+      .then(data => {
+        if (cancelled) return
+        if (data.found) { setDetected(data.url); setUrl(data.url) }
+        else setDetected(false)
+      })
+      .catch(() => { if (!cancelled) setDetected(false) })
+    return () => { cancelled = true }
+  }, [])
 
   async function handleConnect() {
     setLoading(true)
@@ -41,6 +55,17 @@ function PlexConnect({ onConnected }) {
       <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 20 }}>
         Trouvez votre token dans Plex Web → ⚙ → XML → attribut <code style={{ color: '#f5c518' }}>X-Plex-Token</code>
       </div>
+
+      {detected && (
+        <div style={{ fontSize: 12, color: 'var(--success)', padding: '6px 10px', background: 'rgba(68,187,85,0.1)', borderRadius: 4, marginBottom: 12 }}>
+          ✓ Serveur Plex détecté — {detected}
+        </div>
+      )}
+      {detected === false && (
+        <div style={{ fontSize: 12, color: 'var(--text3)', padding: '6px 10px', background: 'var(--surface2)', borderRadius: 4, marginBottom: 12 }}>
+          Aucun serveur local détecté — saisissez l'URL manuellement
+        </div>
+      )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <label style={{ fontSize: 12, color: 'var(--text2)' }}>

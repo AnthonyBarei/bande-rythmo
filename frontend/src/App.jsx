@@ -7,12 +7,21 @@ import MemeGenerator from './components/MemeGenerator'
 import Preferences from './components/Preferences'
 import { Icon, ICONS } from './Icons'
 
+const SAVE_STATUS = {
+  saved:   { text: '✓ Sauvegardé', color: 'var(--success)' },
+  saving:  { text: '… Sauvegarde', color: 'var(--text2)' },
+  unsaved: { text: '● Non sauvegardé', color: '#f5c518' },
+  error:   { text: '✕ Erreur', color: 'var(--danger)' },
+}
+
 export default function App() {
   const [section, setSection] = useState('import')
   const [video, setVideo] = useState(null)
   const [clips, setClips] = useState([])
   const [activeClip, setActiveClip] = useState(null)
   const [memeClip, setMemeClip] = useState(null)
+  const [dubSaveStatus, setDubSaveStatus] = useState('saved')
+  const [dubExportOpen, setDubExportOpen] = useState(false)
 
   useEffect(() => { fetchClips() }, [])
 
@@ -100,7 +109,22 @@ export default function App() {
         <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>Bande Rythmo</span>
         <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text3)' }}>v2.0</span>
         <div style={{ flex: 1 }} />
-        <button style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 12px', background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 4, fontSize: 12 }}>
+        {section === 'dub' && activeClip && (() => {
+          const ss = SAVE_STATUS[dubSaveStatus] || SAVE_STATUS.saved
+          return (
+            <>
+              <span style={{ display: 'flex', alignItems: 'center', fontSize: 11, fontWeight: 500, color: ss.color, padding: '4px 10px', background: 'var(--surface2)', border: '1px solid var(--border2)', borderRadius: 99 }}>
+                {ss.text}
+              </span>
+              <button onClick={() => setDubExportOpen(v => !v)}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 14px', background: 'var(--accent)', color: '#000', fontWeight: 700, border: 'none', borderRadius: 6, fontSize: 12.5, cursor: 'pointer' }}>
+                <Icon d={ICONS.download} size={14} /> Exporter
+              </button>
+              <div style={{ width: 1, height: 20, background: 'var(--border2)' }} />
+            </>
+          )
+        })()}
+        <button style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px', background: 'var(--surface2)', border: '1px solid var(--border2)', color: 'var(--text2)', borderRadius: 6, fontSize: 12, fontWeight: 500, cursor: 'pointer' }}>
           <Icon d={ICONS.kbd} size={14} /> Raccourcis
         </button>
         <div style={{ width: 1, height: 20, background: 'var(--border2)' }} />
@@ -111,7 +135,7 @@ export default function App() {
 
       {/* Body: nav rail + main */}
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
-        <Sidebar section={section} onNavigate={s => { if (s === 'memes') setMemeClip(null); setSection(s) }} clipCount={clips.length} />
+        <Sidebar section={section} onNavigate={s => { if (s === 'memes') setMemeClip(null); setDubExportOpen(false); setSection(s) }} clipCount={clips.length} />
         <main style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         {section === 'import' && (
           <ImportSection
@@ -135,7 +159,10 @@ export default function App() {
           <DubbingWorkspace
             clip={activeClip}
             onUpdate={handleClipUpdated}
-            onBack={() => setSection('clips')}
+            onBack={() => { setDubExportOpen(false); setSection('clips') }}
+            onSaveStatus={setDubSaveStatus}
+            exportOpen={dubExportOpen}
+            onToggleExport={() => setDubExportOpen(v => !v)}
           />
         )}
         {section === 'memes' && (
