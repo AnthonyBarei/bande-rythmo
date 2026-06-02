@@ -71,6 +71,13 @@ input[type="range"]::-webkit-slider-runnable-track {
   --font-ui:   'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono', 'Courier New', monospace;
   --font-br:   'JetBrains Mono', 'Courier New', monospace;
+
+  /* Z-index scale (DOUBLAGE_IA_REVIEW §8) — one source of truth, no scattered 9999s. */
+  --z-base:     0;     /* page content: video, canvas, panels */
+  --z-sticky:   40;    /* sticky bars: header, transport, band toolbar */
+  --z-dropdown: 60;    /* menus, popovers, portaled to body */
+  --z-modal:    100;   /* recorder, fullscreen export, shortcuts overlay */
+  --z-toast:    1000;  /* notifications, progress cards */
 }
 
 html, body, #root {
@@ -113,6 +120,23 @@ button {
 button:disabled { opacity: 0.35; cursor: not-allowed; }
 button:not(:disabled):hover { opacity: 0.88; }
 button:not(:disabled):active { opacity: 0.75; }
+
+/* Keyboard-only focus rings — visible accent outline for buttons, inputs, links.
+   Pointer focus stays clean. WCAG 2.4.7. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+button:focus-visible,
+[role="button"]:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 
 video { display: block; }
 

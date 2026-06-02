@@ -17,6 +17,14 @@ export default function VideoPlayer({
   onLoadedMetadata,
   overlay,
   style = {},
+  // MEME_PLEX_HANDOFF — range mode shows always-visible IN/OUT bar.
+  // imageMode dims the handles (capture at playhead instead of range).
+  rangeMode = false,
+  imageMode = false,
+  inPoint = 0,
+  outPoint = 0,
+  onInChange,
+  onOutChange,
 }) {
   const internalRef = useRef(null)
   const ref = externalRef || internalRef
@@ -147,6 +155,40 @@ export default function VideoPlayer({
         {overlay}
       </div>
 
+      {/* Range bar (rangeMode) — blue IN · accent OUT · white playhead. */}
+      {rangeMode && duration > 0 && (
+        <div style={{ background: '#0a0a0a', borderTop: '1px solid #111', padding: '8px 12px 4px' }}>
+          <div style={{ position: 'relative', height: 10, background: 'var(--surface3)', borderRadius: 3, opacity: imageMode ? 0.55 : 1 }}>
+            <div style={{
+              position: 'absolute', top: 0, height: '100%',
+              background: 'var(--accent-soft)', borderRadius: 3,
+              left: `${(inPoint / duration) * 100}%`,
+              width: `${((outPoint - inPoint) / duration) * 100}%`,
+            }} />
+            <div style={{ position: 'absolute', top: 0, width: 3, height: '100%', background: '#4af', borderRadius: 1, left: `${(inPoint / duration) * 100}%` }} />
+            <div style={{ position: 'absolute', top: 0, width: 3, height: '100%', background: 'var(--accent)', borderRadius: 1, left: `calc(${(outPoint / duration) * 100}% - 3px)` }} />
+            <div style={{ position: 'absolute', top: -3, width: 2, height: 'calc(100% + 6px)', background: '#fff', borderRadius: 1, left: `${(currentTime / duration) * 100}%`, boxShadow: '0 0 4px rgba(255,255,255,0.6)', pointerEvents: 'none' }} />
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'var(--font-mono)', fontSize: 10.5, marginTop: 6, color: 'var(--text2)' }}>
+            <button
+              onClick={() => onInChange?.(Math.min(currentTime, outPoint - 0.1))}
+              disabled={imageMode}
+              style={{ padding: '3px 8px', background: 'rgba(68,170,255,0.12)', color: '#4af', border: '1px solid rgba(68,170,255,0.3)', borderRadius: 4, fontSize: 10.5, cursor: imageMode ? 'default' : 'pointer', opacity: imageMode ? 0.5 : 1, minHeight: 26 }}
+              title="Marquer IN au temps courant"
+            >[ IN</button>
+            <span style={{ color: '#4af' }}>{fmt(inPoint)}</span>
+            <span style={{ flex: 1, textAlign: 'center', color: 'var(--text3)' }}>· {fmt(currentTime)} ·</span>
+            <span style={{ color: 'var(--accent)' }}>{fmt(outPoint)}</span>
+            <button
+              onClick={() => onOutChange?.(Math.max(currentTime, inPoint + 0.1))}
+              disabled={imageMode}
+              style={{ padding: '3px 8px', background: 'rgba(245,197,24,0.12)', color: 'var(--accent)', border: '1px solid rgba(245,197,24,0.3)', borderRadius: 4, fontSize: 10.5, cursor: imageMode ? 'default' : 'pointer', opacity: imageMode ? 0.5 : 1, minHeight: 26 }}
+              title="Marquer OUT au temps courant"
+            >OUT ]</button>
+          </div>
+        </div>
+      )}
+
       {/* Transport bar */}
       <div style={{
         background: '#0a0a0a', borderTop: '1px solid #111',
@@ -155,7 +197,7 @@ export default function VideoPlayer({
         <button
           onClick={togglePlay}
           style={{
-            background: 'rgba(245, 197, 24,0.04)', color: '#f5c518',
+            background: 'rgba(245, 197, 24,0.04)', color: 'var(--accent)',
             padding: '5px 8px', display: 'flex', alignItems: 'center', justifyContent: 'center',
             border: '1px solid rgba(245,197,24,0.27)', borderRadius: 3, minWidth: 30,
           }}
@@ -170,7 +212,7 @@ export default function VideoPlayer({
         <input
           type="range" min={0} max={duration || 1} step={0.05} value={currentTime}
           onChange={e => seekTo(parseFloat(e.target.value))}
-          style={{ flex: 1, color: '#f5c518', cursor: 'pointer', height: 4, '--pct': `${(currentTime / (duration || 1)) * 100}%` }}
+          style={{ flex: 1, color: 'var(--accent)', cursor: 'pointer', height: 4, '--pct': `${(currentTime / (duration || 1)) * 100}%` }}
         />
 
         <select

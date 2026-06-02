@@ -452,7 +452,10 @@ const toolBtn = {
   display: 'inline-flex', alignItems: 'center', gap: 4,
 }
 
-export default function SubtitleEditor({ subtitles, onChange, currentTime = 0, onSeek, selectedIdx, setSelectedIdx, compact = false }) {
+export default function SubtitleEditor({ subtitles, onChange, currentTime = 0, onSeek, selectedIdx, setSelectedIdx, compact = false, onDelete, charFilter }) {
+  // charFilter (optional Set of character names): when non-empty, hide rows whose
+  // character isn't in the set. Indices stay aligned with the unfiltered array
+  // so update/delete callbacks still work.
   const activeRef = useRef(null)
   const prevActiveIdx = useRef(-1)
 
@@ -472,7 +475,11 @@ export default function SubtitleEditor({ subtitles, onChange, currentTime = 0, o
   }
 
   function del(i) {
-    onChange(subtitles.filter((_, idx) => idx !== i))
+    if (onDelete) {
+      onDelete(i)
+    } else {
+      onChange(subtitles.filter((_, idx) => idx !== i))
+    }
     if (selectedIdx === i) setSelectedIdx?.(null)
   }
 
@@ -531,6 +538,7 @@ export default function SubtitleEditor({ subtitles, onChange, currentTime = 0, o
           </div>
         ) : subtitles.map((sub, i) => {
           const active = currentTime >= sub.start && currentTime <= sub.end
+          if (charFilter && charFilter.size > 0 && !charFilter.has(sub.character || '')) return null
           return (
             <div key={i} ref={active ? activeRef : null}>
               <SubtitleRow

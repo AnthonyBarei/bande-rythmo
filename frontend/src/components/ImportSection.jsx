@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import VideoEditor from './VideoEditor'
 import PlexBrowser from './PlexBrowser'
 import { Icon, ICONS } from '../Icons'
+import { useProgress } from '../ProgressContext'
 
 const selectStyle = {
   background: 'var(--surface2)',
@@ -26,6 +27,8 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
   const [audioSrc, setAudioSrc] = useState(null)  // extracted audio track URL
   const sourceIdRef = useRef(null)
   const pollRef = useRef(null)
+  const progress = useProgress()
+  const progressKeyRef = useRef(null)
 
   const timeoutRef = useRef(null)
 
@@ -48,9 +51,36 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
     stopPoll()
     setRemuxing(true)
 
+    let progressStarted = false
+
+    async function fireRemuxJob() {
+      const r = await fetch(`/api/files/remux/${sid}?video=${v}&audio=${a}`, { method: 'POST' })
+      const j = await r.json().catch(() => ({}))
+      return j.job_id || null
+    }
+
     async function startRemux() {
       try {
-        await fetch(`/api/files/remux/${sid}?video=${v}&audio=${a}`, { method: 'POST' })
+        const jobId = await fireRemuxJob()
+        if (jobId && !progressStarted) {
+          progressStarted = true
+          progress.start({
+            kind: 'plex-remux',
+            title: 'Préparation audio',
+            jobId,
+            retry: fireRemuxJob,
+            onCancel: () => {
+              stopPoll()
+              setRemuxing(false)
+              setError('Extraction annulée.')
+            },
+            onError: (err) => {
+              stopPoll()
+              setRemuxing(false)
+              setError('Erreur remux : ' + err.message)
+            },
+          })
+        }
       } catch (_) {}
 
       timeoutRef.current = setTimeout(() => {
@@ -63,10 +93,28 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
         try {
           const res = await fetch(`/api/files/remux-status/${sid}?video=${v}&audio=${a}`)
           const data = await res.json()
+          // If we missed the job_id on POST (race), pick it up on first poll.
+          if (data.job_id && !progressStarted) {
+            progressStarted = true
+            progress.start({
+              kind: 'plex-remux',
+              title: 'Préparation audio',
+              jobId: data.job_id,
+              onCancel: () => {
+                stopPoll()
+                setRemuxing(false)
+                setError('Extraction annulée.')
+              },
+              onError: (err) => {
+                stopPoll()
+                setRemuxing(false)
+                setError('Erreur remux : ' + err.message)
+              },
+            })
+          }
           if (data.status === 'ready') {
             stopPoll()
             setRemuxing(false)
-            // Video URL unchanged — just swap audio track via separate element
             setAudioSrc(`/api/files/stream/${sid}?video=${v}&audio=${a}`)
           } else if (data.status === 'error') {
             stopPoll()

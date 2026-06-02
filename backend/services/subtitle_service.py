@@ -255,6 +255,18 @@ def _to_detx_time(s: float, fps: float = 25.0) -> str:
     return f"{h:02d}:{m:02d}:{sec:02d}:{frame:02d}"
 
 
+# Sign type → DetX lipsync `type` family. Pairs emitted as in_<x>/out_<x>.
+# `open` is DetX's catch-all (any vowel); the others map to the labial/dental
+# families that DetX viewers (Cappella, Phonations, Joker) understand.
+_SIGN_DETX_TYPE = {
+    "labiale":   "closed",   # B/P/M — lips shut
+    "semi":      "closed",   # W — semi-vowel labial
+    "fricative": "open",     # F/V — labio-dental friction
+    "arrondie":  "rounded",  # O/U/Œ
+    "ouverte":   "open",     # vowels — rest state
+}
+
+
 def export_detx(
     subtitles: List[Dict],
     path: str,
@@ -266,6 +278,8 @@ def export_detx(
 
     Spec: https://github.com/MartinDelille/Joker/blob/master/DetX.md
     Structure: <detx> → <header>, <roles>, <body> with <line>/<lipsync>/<text>.
+    Carries per-char détection from `subtitle.words[].signs` (BR pro), and the
+    line flags `off`, `dos`, `ambiance` as DetX line attributes / line `type`.
     """
     seen = []
     for sub in subtitles:
@@ -286,6 +300,7 @@ def export_detx(
     ET.SubElement(header, "title").text = title
     if video_path:
         ET.SubElement(header, "videofile").text = video_path
+    ET.SubElement(header, "videoframerate").text = f"{fps:.3f}".rstrip("0").rstrip(".")
 
     roles = ET.SubElement(root, "roles")
     for c in seen:
@@ -306,10 +321,39 @@ def export_detx(
             role=role_id.get(c, "role0"),
             track=str(role_track.get(c, 0)),
         )
-        if is_reac:
+        # Line classification — `reac` exists in the original mapping; the
+        # off/dos/ambiance flags are new attrs (ignored by older viewers,
+        # honoured by Cappella's BR pro mode).
+        if sub.get("ambiance"):
+            line.set("type", "amb")
+        elif is_reac:
             line.set("type", "reac")
+        if sub.get("off"):
+            line.set("off", "true")
+        if sub.get("dos"):
+            line.set("dos", "true")
+        plan_cut = sub.get("plan_cut")
+        if isinstance(plan_cut, (int, float)):
+            line.set("plan", _to_detx_time(float(plan_cut), fps))
+
         ET.SubElement(line, "lipsync",
                       timecode=_to_detx_time(sub["start"], fps), type="in_open")
+
+        # Per-character détection signs (BR pro). Word data is optional.
+        words = sub.get("words") or []
+        for w in words if isinstance(words, list) else []:
+            for sg in (w.get("signs") or []):
+                kind = sg.get("type")
+                family = _SIGN_DETX_TYPE.get(kind)
+                if not family:
+                    continue
+                t0 = float(sg.get("t0", w.get("start", sub["start"])))
+                t1 = float(sg.get("t1", w.get("end", sub["end"])))
+                ET.SubElement(line, "lipsync",
+                              timecode=_to_detx_time(t0, fps), type=f"in_{family}")
+                ET.SubElement(line, "lipsync",
+                              timecode=_to_detx_time(t1, fps), type=f"out_{family}")
+
         ET.SubElement(line, "text").text = text
         ET.SubElement(line, "lipsync",
                       timecode=_to_detx_time(sub["end"], fps), type="out_open")
@@ -319,3 +363,99 @@ def export_detx(
     with open(path, "w", encoding="utf-8") as f:
         f.write('<?xml version="1.0" encoding="UTF-8" standalone="no" ?>\n')
         tree.write(f, encoding="unicode", xml_declaration=False)
+
+
+def export_croisille(
+    subtitles: List[Dict],
+    boucles: List[Dict],
+    path: str,
+    title: str = "Bande Rythmo",
+    fps: float = 25.0,
+):
+    """Studio planning grid: rows = characters (+ ambiance), columns = boucles.
+    Cell ●/○ shows whether that character has dialogue in that loop. Footer
+    counts speakers per loop — drives "who's needed in which session".
+    Plain HTML (printable / self-contained), no template engine."""
+    # Roles, ambiance as its own row
+    seen = []
+    for sub in subtitles:
+        c = sub.get("character", "") or ""
+        if c not in seen and not sub.get("ambiance"):
+            seen.append(c)
+    has_amb = any(sub.get("ambiance") for sub in subtitles)
+    rows = [c or "(défaut)" for c in seen]
+    if has_amb:
+        rows.append("[ambiance]")
+
+    cols = sorted(
+        [b for b in boucles if b.get("end", 0) > b.get("start", 0)],
+        key=lambda b: float(b.get("start", 0)),
+    )
+
+    # Cell = True if any subtitle for that character overlaps the boucle.
+    def overlaps(s, b):
+        return s["end"] > b["start"] and s["start"] < b["end"]
+
+    grid = []  # row index → set of column indices filled
+    for ri, row in enumerate(rows):
+        filled = set()
+        target_amb = row == "[ambiance]"
+        for s in subtitles:
+            if target_amb and not s.get("ambiance"):
+                continue
+            if not target_amb and (s.get("character", "") or "(défaut)") != row:
+                continue
+            if not target_amb and s.get("ambiance"):
+                continue
+            for ci, b in enumerate(cols):
+                if overlaps(s, b):
+                    filled.add(ci)
+        grid.append(filled)
+
+    # Per-column voice count (rows that have at least one filled cell there)
+    voice_count = [sum(1 for ri in range(len(rows)) if ci in grid[ri]) for ci in range(len(cols))]
+
+    html_rows = []
+    for ri, row in enumerate(rows):
+        cells = "".join(
+            f'<td class="{"on" if ci in grid[ri] else "off"}">{"●" if ci in grid[ri] else "·"}</td>'
+            for ci in range(len(cols))
+        )
+        html_rows.append(f"<tr><th>{row}</th>{cells}</tr>")
+
+    col_headers = "".join(
+        f'<th><div class="bnum">B{b.get("number", ci + 1)}</div>'
+        f'<div class="btc">{_to_detx_time(b["start"], fps)}</div></th>'
+        for ci, b in enumerate(cols)
+    )
+    footer = "".join(f"<td>{n}</td>" for n in voice_count)
+
+    html = f"""<!DOCTYPE html>
+<html lang="fr"><head><meta charset="utf-8"><title>Croisillé — {title}</title>
+<style>
+  body {{ font: 13px/1.4 -apple-system, system-ui, sans-serif; color: #1a1a1a; padding: 24px; background: #fafafa; }}
+  h1 {{ font-size: 18px; margin: 0 0 4px; }}
+  .meta {{ color: #666; font-size: 11px; margin-bottom: 16px; }}
+  table {{ border-collapse: collapse; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }}
+  th, td {{ border: 1px solid #ddd; padding: 6px 10px; text-align: center; font-family: 'JetBrains Mono', ui-monospace, monospace; }}
+  thead th {{ background: #f3f3f3; }}
+  th.role, tbody th {{ text-align: left; background: #f8f8f8; font-weight: 600; }}
+  td.on {{ color: #f5a600; font-weight: 700; font-size: 16px; }}
+  td.off {{ color: #ccc; }}
+  .bnum {{ font-weight: 700; color: #d68900; }}
+  .btc {{ font-size: 10px; color: #888; }}
+  tfoot td, tfoot th {{ background: #fafafa; font-weight: 700; color: #444; }}
+  @media print {{ body {{ background: #fff; }} table {{ box-shadow: none; }} }}
+</style></head>
+<body>
+  <h1>Croisillé — {title}</h1>
+  <div class="meta">{len(rows)} personnages · {len(cols)} boucles · {fps:.2f} fps</div>
+  <table>
+    <thead><tr><th class="role">Personnage</th>{col_headers}</tr></thead>
+    <tbody>{"".join(html_rows)}</tbody>
+    <tfoot><tr><th>Voix par boucle</th>{footer}</tr></tfoot>
+  </table>
+</body></html>
+"""
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(html)

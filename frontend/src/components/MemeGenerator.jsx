@@ -37,11 +37,26 @@ const fmtTime = t => {
   return `${m}:${s}`
 }
 
-export default function MemeGenerator({ clip = null, onBack = null }) {
+export default function MemeGenerator({ clip = null, onBack = null, initialTab = null }) {
   const segmentUrl = clip?.segment_path ? `/${clip.segment_path}` : null
 
-  // 'image' = capture frame, 'video' = select range → gif
-  const [sourceTab, setSourceTab] = useState(clip ? 'image' : 'image')
+  // MEME_PLEX_HANDOFF §2 entry intent:
+  //   ClipCard "GIF" → initialTab='video' (GIF tab)
+  //   Sidebar "Memes" → initialTab=null → 'image'
+  //   Drop zone (no clip) → 'image'
+  // Persist last-used tab per session (sessionStorage), but explicit prop wins.
+  const [sourceTab, setSourceTab] = useState(() => {
+    if (initialTab) return initialTab
+    try {
+      const last = sessionStorage.getItem('meme-last-tab')
+      if (last) return last
+    } catch {}
+    return 'image'
+  })
+  // Persist tab selection across session.
+  useEffect(() => {
+    try { sessionStorage.setItem('meme-last-tab', sourceTab) } catch {}
+  }, [sourceTab])
   const [imageUrl, setImageUrl] = useState(null)
   const [imageName, setImageName] = useState(null)
   const [imageDims, setImageDims] = useState(null)
@@ -244,6 +259,54 @@ export default function MemeGenerator({ clip = null, onBack = null }) {
     })
   }
 
+  // MEME_PLEX_HANDOFF §2.4 — layer affordances: duplicate, reorder, arrow nudge.
+  function duplicateLayer(id) {
+    setTexts(prev => {
+      const idx = prev.findIndex(t => t.id === id)
+      if (idx < 0) return prev
+      const src = prev[idx]
+      const dupe = { ...src, id: mkId(), x: Math.min(95, src.x + 4), y: Math.min(95, src.y + 4) }
+      const next = [...prev]
+      next.splice(idx + 1, 0, dupe)
+      setSelectedId(dupe.id)
+      return next
+    })
+  }
+  function reorderLayer(id, dir) {
+    setTexts(prev => {
+      const i = prev.findIndex(t => t.id === id)
+      if (i < 0) return prev
+      const j = dir < 0 ? i - 1 : i + 1
+      if (j < 0 || j >= prev.length) return prev
+      const next = [...prev]
+      ;[next[i], next[j]] = [next[j], next[i]]
+      return next
+    })
+  }
+  function nudgeLayer(id, dx, dy) {
+    setTexts(prev => prev.map(t => t.id === id
+      ? { ...t, x: Math.max(0, Math.min(100, t.x + dx)), y: Math.max(0, Math.min(100, t.y + dy)) }
+      : t))
+  }
+  // Arrow-key nudge for selected layer when not editing text.
+  useEffect(() => {
+    function onKey(e) {
+      if (!selectedIdRef.current) return
+      if (['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return
+      const step = e.shiftKey ? 5 : 1
+      let dx = 0, dy = 0
+      if (e.key === 'ArrowLeft')  dx = -step
+      else if (e.key === 'ArrowRight') dx = step
+      else if (e.key === 'ArrowUp')    dy = -step
+      else if (e.key === 'ArrowDown')  dy = step
+      else return
+      e.preventDefault()
+      nudgeLayer(selectedIdRef.current, dx, dy)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
   function handleFile(f) {
     if (!f) return
     if (!/\.(png|jpe?g|webp|gif)$/i.test(f.name)) { setError('Format non supporté (PNG, JPG, WEBP, GIF).'); return }
@@ -430,7 +493,7 @@ export default function MemeGenerator({ clip = null, onBack = null }) {
           {onBack && (
             <button onClick={onBack} style={BTN_GHOST}>← Mes clips</button>
           )}
-          <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0, color: 'var(--text)' }}>Mème</h1>
+          <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0, color: 'var(--text)' }}>Meme</h1>
           {clip && <span style={{ fontSize: 10, color: '#888', background: 'var(--surface3)', padding: '2px 7px', borderRadius: 3, border: '1px solid var(--border2)' }}>{clip.name}</span>}
           <div style={{ flex: 1 }} />
           {imageUrl && (
@@ -442,21 +505,30 @@ export default function MemeGenerator({ clip = null, onBack = null }) {
 
         {!imageUrl ? (
           <div>
-            {/* Tab switcher — only when clip provided */}
+            {/* Tab switcher — only when clip provided.
+                MEME_PLEX_HANDOFF §2.2: rename by intent + one-line flow hint. */}
             {clip && (
-              <div style={{ display: 'flex', gap: 0, marginBottom: 16, border: '1px solid var(--border)', borderRadius: 6, overflow: 'hidden', width: 'fit-content' }}>
-                {[['image', ICONS.film, 'Image'], ['video', ICONS.gif, 'GIF'], ['audio', ICONS.audio, 'Audio']].map(([tab, icon, label], i, arr) => (
-                  <button key={tab} onClick={() => setSourceTab(tab)} style={{
-                    display: 'flex', alignItems: 'center', gap: 6,
-                    padding: '7px 18px', fontSize: 12, fontWeight: 600,
-                    background: sourceTab === tab ? 'var(--accent-soft)' : 'var(--surface2)',
-                    color: sourceTab === tab ? 'var(--accent)' : 'var(--text2)',
-                    border: 'none',
-                    borderRight: i < arr.length - 1 ? '1px solid var(--border)' : 'none',
-                    cursor: 'pointer',
-                  }}><Icon d={icon} size={14} />{label}</button>
-                ))}
-              </div>
+              <>
+                <div style={{ display: 'flex', gap: 0, marginBottom: 6, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 99, padding: 3, width: 'fit-content' }}>
+                  {[['image', ICONS.film, 'Image'], ['video', ICONS.gif, 'GIF'], ['audio', ICONS.audio, 'Extrait audio']].map(([tab, icon, label]) => (
+                    <button key={tab} onClick={() => setSourceTab(tab)} style={{
+                      display: 'flex', alignItems: 'center', gap: 6,
+                      padding: '6px 16px', fontSize: 12, fontWeight: 600,
+                      background: sourceTab === tab ? 'var(--bg2)' : 'transparent',
+                      color: sourceTab === tab ? 'var(--accent)' : 'var(--text2)',
+                      border: 'none',
+                      borderRadius: 99,
+                      borderBottom: sourceTab === tab ? '2px solid var(--accent)' : '2px solid transparent',
+                      cursor: 'pointer', minHeight: 32,
+                    }}><Icon d={icon} size={14} />{label}</button>
+                  ))}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 16 }}>
+                  {sourceTab === 'audio'
+                    ? "L'audio s'exporte directement — pas d'éditeur."
+                    : 'Image & GIF passent par l\'éditeur de texte.'}
+                </div>
+              </>
             )}
 
             {/* IMAGE TAB — capture frame from video */}
@@ -474,7 +546,7 @@ export default function MemeGenerator({ clip = null, onBack = null }) {
                     <input
                       type="range" min={0} max={videoDuration || 1} step={0.05} value={videoTime}
                       onChange={e => seekVideo(+e.target.value)}
-                      style={{ width: '100%', color: '#f5c518', marginBottom: 6, '--pct': `${(videoTime / (videoDuration || 1)) * 100}%` }}
+                      style={{ width: '100%', color: 'var(--accent)', marginBottom: 6, '--pct': `${(videoTime / (videoDuration || 1)) * 100}%` }}
                     />
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>
                       <span>{fmtTime(videoTime)}</span>
@@ -488,13 +560,13 @@ export default function MemeGenerator({ clip = null, onBack = null }) {
                     disabled={!videoReady}
                     style={{
                       padding: '11px', fontWeight: 700, borderRadius: 4, fontSize: 13,
-                      background: videoReady ? '#f5c518' : 'var(--surface3)',
+                      background: videoReady ? 'var(--accent)' : 'var(--surface3)',
                       color: videoReady ? '#000' : '#888',
                       border: 'none', cursor: videoReady ? 'pointer' : 'default',
                     }}
                   >◉ Capturer ce frame</button>
                   <p style={{ fontSize: 11, color: 'var(--text3)', lineHeight: 1.6, margin: 0 }}>
-                    Naviguez avec le curseur puis capturez le frame souhaité pour créer votre mème.
+                    Naviguez avec le curseur puis capturez le frame souhaité pour créer votre meme.
                   </p>
                 </div>
               </div>
@@ -505,7 +577,7 @@ export default function MemeGenerator({ clip = null, onBack = null }) {
               <div
                 ref={dropRef}
                 onClick={() => fileInputRef.current?.click()}
-                onDragOver={e => { e.preventDefault(); dropRef.current.style.borderColor = '#f5c518' }}
+                onDragOver={e => { e.preventDefault(); dropRef.current.style.borderColor = 'var(--accent)' }}
                 onDragLeave={() => { dropRef.current.style.borderColor = '' }}
                 onDrop={e => { e.preventDefault(); dropRef.current.style.borderColor = ''; handleFile(e.dataTransfer.files?.[0]) }}
                 style={{ border: '2px dashed var(--border2)', borderRadius: 8, padding: 60, textAlign: 'center', background: 'var(--surface)', cursor: 'pointer', transition: 'border-color 0.2s' }}
@@ -564,7 +636,7 @@ export default function MemeGenerator({ clip = null, onBack = null }) {
                     >
                       <div style={{ position: 'absolute', top: 0, height: '100%', background: 'rgba(245, 197, 24,0.35)', borderRadius: 3, left: `${(inPoint / (videoDuration || 1)) * 100}%`, width: `${((outPoint - inPoint) / (videoDuration || 1)) * 100}%` }} />
                       <div style={{ position: 'absolute', top: 0, width: 3, height: '100%', background: '#4af', borderRadius: 1, left: `${(inPoint / (videoDuration || 1)) * 100}%` }} />
-                      <div style={{ position: 'absolute', top: 0, width: 3, height: '100%', background: '#f5c518', borderRadius: 1, left: `calc(${(outPoint / (videoDuration || 1)) * 100}% - 3px)` }} />
+                      <div style={{ position: 'absolute', top: 0, width: 3, height: '100%', background: 'var(--accent)', borderRadius: 1, left: `calc(${(outPoint / (videoDuration || 1)) * 100}% - 3px)` }} />
                       <div style={{ position: 'absolute', top: -3, width: 2, height: 'calc(100% + 6px)', background: '#fff', borderRadius: 1, left: `${(videoTime / (videoDuration || 1)) * 100}%`, boxShadow: '0 0 4px rgba(255,255,255,0.6)', pointerEvents: 'none' }} />
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'center' }}>
@@ -578,11 +650,11 @@ export default function MemeGenerator({ clip = null, onBack = null }) {
                       <button onClick={() => setInPoint(Math.min(videoTime, outPoint - 0.1))} style={{ padding: '3px 7px', background: 'rgba(68,170,255,0.12)', color: '#4af', border: '1px solid rgba(68,170,255,0.3)', borderRadius: 3, fontSize: 11, cursor: 'pointer', fontFamily: 'var(--font-mono)' }}>[ IN</button>
                       <span style={{ color: '#4af' }}>{fmtTime(inPoint)}</span>
                       <div style={{ flex: 1, textAlign: 'center', color: 'var(--text3)' }}>{fmtTime(videoTime)} · {gifDuration}s</div>
-                      <span style={{ color: '#f5c518' }}>{fmtTime(outPoint)}</span>
-                      <button onClick={() => setOutPoint(Math.max(videoTime, inPoint + 0.1))} style={{ padding: '3px 7px', background: 'rgba(245, 197, 24,0.12)', color: '#f5c518', border: '1px solid rgba(245, 197, 24,0.3)', borderRadius: 3, fontSize: 11, cursor: 'pointer', fontFamily: 'var(--font-mono)' }}>OUT ]</button>
+                      <span style={{ color: 'var(--accent)' }}>{fmtTime(outPoint)}</span>
+                      <button onClick={() => setOutPoint(Math.max(videoTime, inPoint + 0.1))} style={{ padding: '3px 7px', background: 'rgba(245, 197, 24,0.12)', color: 'var(--accent)', border: '1px solid rgba(245, 197, 24,0.3)', borderRadius: 3, fontSize: 11, cursor: 'pointer', fontFamily: 'var(--font-mono)' }}>OUT ]</button>
                     </div>
                     <input type="range" min={0} max={videoDuration || 1} step={0.05} value={inPoint} onChange={e => { const v = Math.min(+e.target.value, outPoint - 0.1); setInPoint(v); seekVideo(v) }} style={{ width: '100%', margin: 0, color: '#4af', '--pct': `${(inPoint / (videoDuration || 1)) * 100}%` }} />
-                    <input type="range" min={0} max={videoDuration || 1} step={0.05} value={outPoint} onChange={e => { const v = Math.max(+e.target.value, inPoint + 0.1); setOutPoint(v); seekVideo(v) }} style={{ width: '100%', margin: 0, color: '#f5c518', '--pct': `${(outPoint / (videoDuration || 1)) * 100}%` }} />
+                    <input type="range" min={0} max={videoDuration || 1} step={0.05} value={outPoint} onChange={e => { const v = Math.max(+e.target.value, inPoint + 0.1); setOutPoint(v); seekVideo(v) }} style={{ width: '100%', margin: 0, color: 'var(--accent)', '--pct': `${(outPoint / (videoDuration || 1)) * 100}%` }} />
                   </div>
                 </div>
               )
@@ -592,7 +664,7 @@ export default function MemeGenerator({ clip = null, onBack = null }) {
                   {rangePlayer}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                     {error && <div style={{ padding: '8px 10px', background: 'rgba(229,69,69,0.12)', color: '#e54545', borderRadius: 4, fontSize: 12, border: '1px solid rgba(229,69,69,0.3)' }}>{error}</div>}
-                    <button onClick={createGif} disabled={gifLoading || !videoReady || outPoint <= inPoint} style={{ padding: '11px', fontWeight: 700, borderRadius: 4, fontSize: 13, background: gifLoading || !videoReady || outPoint <= inPoint ? 'var(--surface3)' : '#f5c518', color: gifLoading || !videoReady || outPoint <= inPoint ? '#888' : '#000', border: 'none', cursor: gifLoading || !videoReady ? 'default' : 'pointer' }}>{gifLoading ? '◉ Génération GIF…' : '◉ Créer GIF'}</button>
+                    <button onClick={createGif} disabled={gifLoading || !videoReady || outPoint <= inPoint} style={{ padding: '11px', fontWeight: 700, borderRadius: 4, fontSize: 13, background: gifLoading || !videoReady || outPoint <= inPoint ? 'var(--surface3)' : 'var(--accent)', color: gifLoading || !videoReady || outPoint <= inPoint ? '#888' : '#000', border: 'none', cursor: gifLoading || !videoReady ? 'default' : 'pointer' }}>{gifLoading ? '◉ Génération GIF…' : '◉ Créer GIF'}</button>
                     <p style={{ fontSize: 11, color: 'var(--text3)', lineHeight: 1.6, margin: 0 }}>Réglez IN/OUT puis créez le GIF. Il s'ouvrira dans l'éditeur.</p>
                   </div>
                 </div>
@@ -606,7 +678,7 @@ export default function MemeGenerator({ clip = null, onBack = null }) {
                     <button
                       onClick={() => createAudio('mp3')}
                       disabled={audioLoading || !videoReady || outPoint <= inPoint}
-                      style={{ padding: '11px', fontWeight: 700, borderRadius: 4, fontSize: 13, background: audioLoading || !videoReady || outPoint <= inPoint ? 'var(--surface3)' : '#f5c518', color: audioLoading || !videoReady || outPoint <= inPoint ? '#888' : '#000', border: 'none', cursor: audioLoading || !videoReady ? 'default' : 'pointer' }}
+                      style={{ padding: '11px', fontWeight: 700, borderRadius: 4, fontSize: 13, background: audioLoading || !videoReady || outPoint <= inPoint ? 'var(--surface3)' : 'var(--accent)', color: audioLoading || !videoReady || outPoint <= inPoint ? '#888' : '#000', border: 'none', cursor: audioLoading || !videoReady ? 'default' : 'pointer' }}
                     >{audioLoading ? '◉ Export…' : 'Télécharger MP3'}</button>
                     <button
                       onClick={() => createAudio('wav')}
@@ -658,7 +730,7 @@ export default function MemeGenerator({ clip = null, onBack = null }) {
                 <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
                   <span style={SL}>TEXTES</span>
                   <div style={{ flex: 1 }} />
-                  <button onClick={addLayer} style={{ fontSize: 11, color: '#f5c518', background: 'rgba(245, 197, 24,0.1)', border: '1px solid rgba(245, 197, 24,0.3)', borderRadius: 3, padding: '3px 8px', cursor: 'pointer' }}>+ Ajouter</button>
+                  <button onClick={addLayer} style={{ fontSize: 11, color: 'var(--accent)', background: 'rgba(245, 197, 24,0.1)', border: '1px solid rgba(245, 197, 24,0.3)', borderRadius: 3, padding: '3px 8px', cursor: 'pointer' }}>+ Ajouter</button>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   {texts.map((t, i) => (
@@ -686,6 +758,24 @@ export default function MemeGenerator({ clip = null, onBack = null }) {
                           letterSpacing: 0.5,
                         }}
                       />
+                      {/* Layer affordances: duplicate, ↑↓ reorder, delete. */}
+                      <button
+                        onClick={e => { e.stopPropagation(); duplicateLayer(t.id) }}
+                        title="Dupliquer"
+                        style={{ fontSize: 11, color: 'var(--text3)', background: 'none', border: 'none', cursor: 'pointer', padding: '0 4px' }}
+                      >⎘</button>
+                      <button
+                        onClick={e => { e.stopPropagation(); reorderLayer(t.id, -1) }}
+                        disabled={i === 0}
+                        title="Monter"
+                        style={{ fontSize: 11, color: i === 0 ? 'var(--text4)' : 'var(--text3)', background: 'none', border: 'none', cursor: i === 0 ? 'default' : 'pointer', padding: '0 2px' }}
+                      >↑</button>
+                      <button
+                        onClick={e => { e.stopPropagation(); reorderLayer(t.id, 1) }}
+                        disabled={i === texts.length - 1}
+                        title="Descendre"
+                        style={{ fontSize: 11, color: i === texts.length - 1 ? 'var(--text4)' : 'var(--text3)', background: 'none', border: 'none', cursor: i === texts.length - 1 ? 'default' : 'pointer', padding: '0 2px' }}
+                      >↓</button>
                       {texts.length > 1 && (
                         <button
                           onClick={e => { e.stopPropagation(); removeLayer(t.id) }}
@@ -695,6 +785,9 @@ export default function MemeGenerator({ clip = null, onBack = null }) {
                       )}
                     </div>
                   ))}
+                </div>
+                <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 6 }}>
+                  ↑↓ ← → flèches : déplacer le texte sélectionné · ⇧ pour 5×
                 </div>
               </div>
 
@@ -709,7 +802,7 @@ export default function MemeGenerator({ clip = null, onBack = null }) {
                         <button key={f.id} onClick={() => updateLayer(selectedId, { fontId: f.id })} style={{
                           flex: 1, padding: '5px 4px',
                           background: sel.fontId === f.id ? 'rgba(245, 197, 24,0.1)' : 'var(--surface3)',
-                          color: sel.fontId === f.id ? '#f5c518' : '#888',
+                          color: sel.fontId === f.id ? 'var(--accent)' : '#888',
                           border: `1px solid ${sel.fontId === f.id ? 'rgba(245, 197, 24,0.4)' : 'var(--border2)'}`,
                           borderRadius: 3, fontSize: 10, cursor: 'pointer', fontFamily: f.css,
                         }}>{f.label}</button>
@@ -722,7 +815,7 @@ export default function MemeGenerator({ clip = null, onBack = null }) {
                       <label style={LBL}>TAILLE — {sel.fontSize}px</label>
                       <input type="range" min={16} max={120} value={sel.fontSize}
                         onChange={e => updateLayer(selectedId, { fontSize: +e.target.value })}
-                        style={{ width: '100%', color: '#f5c518' }}
+                        style={{ width: '100%', color: 'var(--accent)' }}
                       />
                     </div>
                     <button
@@ -730,7 +823,7 @@ export default function MemeGenerator({ clip = null, onBack = null }) {
                       style={{
                         padding: '4px 12px', marginBottom: 1,
                         background: sel.bold ? 'rgba(245, 197, 24,0.1)' : 'var(--surface3)',
-                        color: sel.bold ? '#f5c518' : '#888',
+                        color: sel.bold ? 'var(--accent)' : '#888',
                         border: `1px solid ${sel.bold ? 'rgba(245, 197, 24,0.4)' : 'var(--border2)'}`,
                         borderRadius: 3, fontSize: 14, fontWeight: 700, cursor: 'pointer',
                       }}
@@ -747,7 +840,7 @@ export default function MemeGenerator({ clip = null, onBack = null }) {
                       {QUICK_COLORS_TEXT.map(c => (
                         <div key={c} onClick={() => updateLayer(selectedId, { color: c })}
                           style={{ width: 18, height: 18, background: c, borderRadius: 2, cursor: 'pointer', flexShrink: 0,
-                            border: sel.color.toLowerCase() === c ? '2px solid #f5c518' : '1px solid #444' }}
+                            border: sel.color.toLowerCase() === c ? '2px solid var(--accent)' : '1px solid #444' }}
                         />
                       ))}
                     </div>
@@ -763,13 +856,13 @@ export default function MemeGenerator({ clip = null, onBack = null }) {
                       {QUICK_COLORS_STROKE.map(c => (
                         <div key={c} onClick={() => updateLayer(selectedId, { strokeColor: c })}
                           style={{ width: 18, height: 18, background: c, borderRadius: 2, cursor: 'pointer', flexShrink: 0,
-                            border: sel.strokeColor.toLowerCase() === c ? '2px solid #f5c518' : '1px solid #444' }}
+                            border: sel.strokeColor.toLowerCase() === c ? '2px solid var(--accent)' : '1px solid #444' }}
                         />
                       ))}
                     </div>
                     <input type="range" min={0} max={8} value={sel.strokeWidth}
                       onChange={e => updateLayer(selectedId, { strokeWidth: +e.target.value })}
-                      style={{ width: '100%', color: '#f5c518' }}
+                      style={{ width: '100%', color: 'var(--accent)' }}
                     />
                   </div>
 
@@ -781,7 +874,7 @@ export default function MemeGenerator({ clip = null, onBack = null }) {
                           style={{
                             flex: 1, padding: '5px 4px',
                             background: sel.align === v ? 'rgba(245, 197, 24,0.1)' : 'var(--surface3)',
-                            color: sel.align === v ? '#f5c518' : '#888',
+                            color: sel.align === v ? 'var(--accent)' : '#888',
                             border: `1px solid ${sel.align === v ? 'rgba(245, 197, 24,0.4)' : 'var(--border2)'}`,
                             borderRadius: 3, fontSize: 10, cursor: 'pointer',
                           }}
@@ -803,7 +896,7 @@ export default function MemeGenerator({ clip = null, onBack = null }) {
                 disabled={loading || !imageUrl}
                 style={{
                   padding: '10px', fontWeight: 700, borderRadius: 4, fontSize: 13,
-                  background: loading ? 'var(--surface3)' : '#f5c518',
+                  background: loading ? 'var(--surface3)' : 'var(--accent)',
                   color: loading ? '#888' : '#000',
                   border: 'none', cursor: loading ? 'default' : 'pointer',
                 }}
@@ -834,5 +927,5 @@ export default function MemeGenerator({ clip = null, onBack = null }) {
 
 const SL = { fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: 1 }
 const LBL = { display: 'block', fontSize: 10, fontWeight: 700, color: '#666', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 4 }
-const BTN_GHOST = { fontSize: 11, color: '#888', background: 'var(--surface3)', border: '1px solid var(--border2)', borderRadius: 3, padding: '4px 10px', cursor: 'pointer' }
-const SEEK_BTN = { fontSize: 13, color: '#aaa', background: 'var(--surface3)', border: '1px solid var(--border2)', borderRadius: 3, padding: '4px 9px', cursor: 'pointer' }
+const BTN_GHOST = { fontSize: 11, color: 'var(--text2)', background: 'var(--surface2)', border: '1px solid var(--border2)', borderRadius: 5, padding: '5px 10px', cursor: 'pointer', minHeight: 28 }
+const SEEK_BTN = { fontSize: 13, color: 'var(--text2)', background: 'var(--surface2)', border: '1px solid var(--border2)', borderRadius: 5, padding: '5px 9px', cursor: 'pointer', minHeight: 28 }

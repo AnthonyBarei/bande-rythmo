@@ -6,6 +6,9 @@ import DubbingWorkspace from './components/DubbingWorkspace'
 import MemeGenerator from './components/MemeGenerator'
 import Preferences from './components/Preferences'
 import { Icon, ICONS } from './Icons'
+import { ProgressProvider } from './ProgressContext'
+import { ToastProvider, useToast } from './ToastContext'
+import ShortcutsOverlay from './components/ShortcutsOverlay'
 
 const SAVE_STATUS = {
   saved:   { text: '✓ Sauvegardé', color: 'var(--success)' },
@@ -15,15 +18,41 @@ const SAVE_STATUS = {
 }
 
 export default function App() {
+  return (
+    <ProgressProvider>
+      <ToastProvider>
+        <AppInner />
+      </ToastProvider>
+    </ProgressProvider>
+  )
+}
+
+function AppInner() {
+  const toast = useToast()
   const [section, setSection] = useState('import')
   const [video, setVideo] = useState(null)
   const [clips, setClips] = useState([])
   const [activeClip, setActiveClip] = useState(null)
   const [memeClip, setMemeClip] = useState(null)
+  const [memeInitialTab, setMemeInitialTab] = useState(null)
   const [dubSaveStatus, setDubSaveStatus] = useState('saved')
   const [dubExportOpen, setDubExportOpen] = useState(false)
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
 
   useEffect(() => { fetchClips() }, [])
+
+  // Global "?" key opens shortcuts overlay.
+  useEffect(() => {
+    function onKey(e) {
+      if (['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return
+      if (e.target.isContentEditable) return
+      if (e.key === '?' || (e.key === '/' && e.shiftKey)) {
+        e.preventDefault(); setShortcutsOpen(v => !v)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   async function fetchClips() {
     try {
@@ -49,8 +78,9 @@ export default function App() {
     setSection('dub')
   }
 
-  function handleMeme(clip) {
+  function handleMeme(clip, initialTab = null) {
     setMemeClip(clip)
+    setMemeInitialTab(initialTab)
     setSection('memes')
   }
 
@@ -60,12 +90,26 @@ export default function App() {
   }
 
   async function handleDelete(clipId) {
-    try {
-      await fetch(`/api/clips/${clipId}`, { method: 'DELETE' })
-      setClips(prev => prev.filter(c => c.clip_id !== clipId))
-    } catch (e) {
-      console.error(e)
-    }
+    // Optimistic remove from UI immediately, but hold the backend DELETE for 5s
+    // behind an Undo toast. If user clicks Annuler, restore. Otherwise commit.
+    const snapshot = clips.find(c => c.clip_id === clipId)
+    if (!snapshot) return
+    setClips(prev => prev.filter(c => c.clip_id !== clipId))
+    toast.undo({
+      msg: `Clip « ${snapshot.name || clipId} » supprimé`,
+      onUndo: () => {
+        setClips(prev => prev.some(c => c.clip_id === clipId) ? prev : [snapshot, ...prev])
+      },
+      onCommit: async () => {
+        try {
+          await fetch(`/api/clips/${clipId}`, { method: 'DELETE' })
+        } catch (e) {
+          console.error(e)
+          toast.error('Suppression échouée — clip restauré')
+          setClips(prev => prev.some(c => c.clip_id === clipId) ? prev : [snapshot, ...prev])
+        }
+      },
+    })
   }
 
   async function handleRename(clipId, name) {
@@ -124,7 +168,8 @@ export default function App() {
             </>
           )
         })()}
-        <button style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px', background: 'var(--surface2)', border: '1px solid var(--border2)', color: 'var(--text2)', borderRadius: 6, fontSize: 12, fontWeight: 500, cursor: 'pointer' }}>
+        <button onClick={() => setShortcutsOpen(true)} title="Raccourcis clavier (?)"
+          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px', background: 'var(--surface2)', border: '1px solid var(--border2)', color: 'var(--text2)', borderRadius: 6, fontSize: 12, fontWeight: 500, cursor: 'pointer' }}>
           <Icon d={ICONS.kbd} size={14} /> Raccourcis
         </button>
         <div style={{ width: 1, height: 20, background: 'var(--border2)' }} />
@@ -166,11 +211,12 @@ export default function App() {
           />
         )}
         {section === 'memes' && (
-          <MemeGenerator clip={memeClip} onBack={memeClip ? () => setSection('clips') : null} />
+          <MemeGenerator clip={memeClip} initialTab={memeInitialTab} onBack={memeClip ? () => setSection('clips') : null} />
         )}
         {section === 'settings' && <Preferences />}
         </main>
       </div>
+      <ShortcutsOverlay open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
     </div>
   )
 }

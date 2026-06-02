@@ -1,8 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import SubtitleEditor from './SubtitleEditor'
 import ExportPanel from './ExportPanel'
 import RecorderPanel from './RecorderPanel'
 import { useSettings } from '../SettingsContext'
+import { classifyChar, SIGN_KINDS, DEFAULT_SIGN_TOGGLES } from '../detection'
+import { useProgress } from '../ProgressContext'
+import { useToast } from '../ToastContext'
 
 // BR canvas — constant-speed scrolling
 // Cursor is at CURSOR_X_RATIO * W from left
@@ -11,7 +15,7 @@ import { useSettings } from '../SettingsContext'
 const CURSOR_X_RATIO = 0.32
 const H_TRACK = 76
 const BR_CONTROLS_H = 50
-const FONT_BR_BASE = 44
+const FONT_BR_BASE = 34
 const FONT_BR = 'bold 22px "JetBrains Mono", "Courier New", monospace'
 const FONT_LABEL = 'bold 10px "IBM Plex Sans", sans-serif'
 
@@ -92,15 +96,117 @@ const LANGS = [
   { code: 'auto', label: '🔍 Auto-détect' },
 ]
 
+// Font picker — manuscript options first, then maximum-legibility.
+// Atkinson stays default (most readable); `lisible` (Shantell Sans) gives the
+// handwritten feel without the hit to readability that pure cursive has.
 const BR_FONTS = [
   { id: 'atkinson',  label: 'Atkinson Hyperlegible', stack: "'Atkinson Hyperlegible', sans-serif" },
+  { id: 'lisible',   label: 'Manuscrite lisible',    stack: "'Shantell Sans', 'Caveat', cursive" },
+  { id: 'cursive',   label: 'Caveat (manuscrite)',   stack: "'Caveat', cursive" },
   { id: 'inter',     label: 'Inter',                 stack: "'Inter', sans-serif" },
   { id: 'jetbrains', label: 'JetBrains Mono',        stack: "'JetBrains Mono', 'Courier New', monospace" },
 ]
 const brFontStack = id => (BR_FONTS.find(f => f.id === id) || BR_FONTS[0]).stack
 
+// SMPTE HH:MM:SS:FF — replaces decimal `fmt` everywhere a frame-accurate
+// readout is wanted (cursor, grid majors, list timecodes). Negative time is
+// preserved with a leading minus so calibration marks (START at −3s) read
+// correctly. `fps` defaults to 25 (PAL) when the clip doesn't carry one yet.
+const fmtTC = (sec, fps = 25) => {
+  if (sec == null || Number.isNaN(sec)) return '--:--:--:--'
+  const f = Math.max(1, Math.round(fps))
+  const neg = sec < 0
+  const abs = Math.abs(sec)
+  const totalFrames = Math.round(abs * f)
+  const ff = totalFrames % f
+  const totalSec = Math.floor(totalFrames / f)
+  const ss = totalSec % 60
+  const totalMin = Math.floor(totalSec / 60)
+  const mm = totalMin % 60
+  const hh = Math.floor(totalMin / 60)
+  const p2 = n => String(n).padStart(2, '0')
+  return `${neg ? '-' : ''}${p2(hh)}:${p2(mm)}:${p2(ss)}:${p2(ff)}`
+}
+
+// Détection sign palette colour (graphite, low-saturation so it never fights
+// the dialogue text). Same on canvas and in MP4 burn (see br_renderer).
+const SIGN_COLOR = '#c7ccd4'
+const SIGN_COLOR_INACTIVE = 'rgba(199,204,212,0.45)'
+
+// Resolve a word's signs: persisted wins; otherwise auto-classify from letters.
+function resolveSigns(word, autoEnabled) {
+  if (Array.isArray(word.signs) && word.signs.length) return word.signs
+  if (!autoEnabled) return []
+  const text = word.w || ''
+  const dur = Math.max(0.05, (word.end || 0) - (word.start || 0))
+  const out = []
+  for (let i = 0; i < text.length; i++) {
+    const kind = classifyChar(text[i])
+    if (!kind) continue
+    // Even time split across letters — only used as a hint; persisted signs
+    // carry their own t0/t1 (e.g. labiale = frame of closure, independent).
+    const t0 = word.start + (i / Math.max(1, text.length)) * dur
+    const t1 = word.start + ((i + 1) / Math.max(1, text.length)) * dur
+    out.push({ i, type: kind, t0, t1 })
+  }
+  return out
+}
+
+// Return per-word timing for a réplique only if it is still consistent with
+// the current text + timing (else the words are stale from an edit → caller
+// falls back to even-stretch). Whitespace-insensitive text match.
+function validWords(sub) {
+  const ws = sub.words
+  if (!Array.isArray(ws) || !ws.length) return null
+  const joined = ws.map(w => (w.w || '')).join('').replace(/\s/g, '')
+  const txt = (sub.text || '').replace(/\s/g, '')
+  if (!joined || joined !== txt) return null
+  for (const w of ws) {
+    if (w.start < sub.start - 0.05 || w.end > sub.end + 0.05) return null
+  }
+  return ws
+}
+
+// First-run coachmark on BR canvas — shows hidden gestures once, then never again.
+function CanvasCoachmark() {
+  const [open, setOpen] = useState(() => {
+    try { return !localStorage.getItem('br-coachmark-seen') } catch { return false }
+  })
+  if (!open) return null
+  function dismiss() {
+    try { localStorage.setItem('br-coachmark-seen', '1') } catch {}
+    setOpen(false)
+  }
+  return (
+    <div style={{
+      position: 'absolute', top: 10, left: 14, right: 14, zIndex: 5,
+      display: 'flex', alignItems: 'center', gap: 10,
+      padding: '8px 12px',
+      background: 'rgba(245,197,24,0.10)',
+      border: '1px solid rgba(245,197,24,0.45)',
+      borderRadius: 6,
+      fontSize: 11.5, color: 'var(--text)',
+      pointerEvents: 'auto',
+    }}>
+      <span style={{ color: 'var(--accent)' }}>◎</span>
+      <span>
+        <strong>glisser</strong> pour créer · <strong>⇧ glisser</strong> pour boucler ·
+        <strong> alt glisser</strong> pour dupliquer · <strong>clic lettre</strong> pour la détection ·
+        <strong> ?</strong> pour tous les raccourcis
+      </span>
+      <div style={{ flex: 1 }} />
+      <button onClick={dismiss}
+        style={{ background: 'transparent', border: '1px solid var(--border2)', color: 'var(--text2)', borderRadius: 4, padding: '2px 8px', fontSize: 11, cursor: 'pointer' }}>
+        Compris
+      </button>
+    </div>
+  )
+}
+
 export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus, exportOpen, onToggleExport }) {
   const [subtitles, setSubtitles] = useState(clip.subtitles || [])
+  const [boucles, setBoucles] = useState(clip.boucles || [])
+  const clipFps = clip.fps || 25
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
   const [playing, setPlaying] = useState(false)
@@ -112,15 +218,32 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   const showExport = !!exportOpen
   const [brExporting, setBrExporting] = useState(false)
   const [brOffset, setBrOffset] = useState(0)
-  const [pxPerSec, setPxPerSec] = useState(240)
+  // DOUBLAGE_IA_REVIEW §7 — default 150 px/s (comfortable reading cadence at
+  // normal speech). pxPerSec is also re-measured per clip in the auto-fit block.
+  const [pxPerSec, setPxPerSec] = useState(150)
   const { settings } = useSettings()
+  const progress = useProgress()
+  const undoToast = useToast()
   const [rythmoStyle, setRythmoStyle] = useState(settings.brStyle || 'classique')
   const [lang, setLang] = useState('fr')
 
   const [selectedIdx, setSelectedIdx] = useState(null)
   const [brInPlayer, setBrInPlayer] = useState('play')
   const [brFont, setBrFont] = useState(() => {
-    try { return localStorage.getItem('br-font') || 'atkinson' } catch { return 'atkinson' }
+    // Pro classique default = Caveat manuscrite (DOUBLAGE_IA_REVIEW §7).
+    // localStorage override wins so user choice persists across sessions.
+    try { return localStorage.getItem('br-font') || 'cursive' } catch { return 'cursive' }
+  })
+  // Détection layer toggles — independent persisted booleans so the user can
+  // hide noise without losing manual signs. `layer` is the whole-layer kill switch.
+  const [detection, setDetection] = useState(() => {
+    try {
+      const raw = localStorage.getItem('br-detection')
+      return raw ? { ...DEFAULT_SIGN_TOGGLES, ...JSON.parse(raw) } : { ...DEFAULT_SIGN_TOGGLES }
+    } catch { return { ...DEFAULT_SIGN_TOGGLES } }
+  })
+  const [detectionAuto, setDetectionAuto] = useState(() => {
+    try { return localStorage.getItem('br-detection-auto') !== 'false' } catch { return true }
   })
   const [sidebarWidth, setSidebarWidth] = useState(400)
   const [brPanelHeight, setBrPanelHeight] = useState(280)
@@ -131,6 +254,20 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   const [ctxMenu, setCtxMenu] = useState(null)
   const [loopRegion, setLoopRegion] = useState(null)
   const [locked, setLocked] = useState(false)
+  // DOUBLAGE_IA_REVIEW §6.2 — header character pills FILTER the band.
+  // Empty set = no filter (show all). Multi-select toggle: click adds/removes.
+  const [charFilter, setCharFilter] = useState(() => new Set())
+  const charFilterRef = useRef(charFilter)
+  useEffect(() => { charFilterRef.current = charFilter }, [charFilter])
+
+  function toggleCharFilter(char) {
+    setCharFilter(prev => {
+      const next = new Set(prev)
+      if (next.has(char)) next.delete(char); else next.add(char)
+      return next
+    })
+  }
+  function clearCharFilter() { setCharFilter(new Set()) }
   const [showRecorder, setShowRecorder] = useState(false)
   const [rightTab, setRightTab] = useState('repliques')
   const [takes, setTakes] = useState([])
@@ -147,7 +284,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   const debounceRef = useRef(null)
   const subtitlesRef = useRef(subtitles)
   const brOffsetRef = useRef(0)
-  const pxPerSecRef = useRef(240)
+  const pxPerSecRef = useRef(180)
   const rythmoStyleRef = useRef('classique')
   const waveformRef = useRef(null)
   const onsetsRef = useRef(null)
@@ -161,6 +298,10 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   const playingRef = useRef(false)
   const fontScaleRef = useRef(1.0)
   const brFontRef = useRef('atkinson')
+  const detectionRef = useRef(detection)
+  const detectionAutoRef = useRef(detectionAuto)
+  const bouclesRef = useRef(boucles)
+  const clipFpsRef = useRef(clipFps)
   const exportingRef = useRef(false)
   // Smooth time interpolation: video.currentTime only updates at video fps (e.g. 24fps).
   // Between updates, we interpolate using wall clock so the canvas scrolls at 60fps.
@@ -174,6 +315,10 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   playingRef.current = playing
   fontScaleRef.current = fontScale
   brFontRef.current = brFont
+  detectionRef.current = detection
+  detectionAutoRef.current = detectionAuto
+  bouclesRef.current = boucles
+  clipFpsRef.current = clipFps
 
   const segmentUrl = `/${clip.segment_path}`
 
@@ -227,6 +372,85 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
 
   // Persist BR font choice
   useEffect(() => { try { localStorage.setItem('br-font', brFont) } catch {} }, [brFont])
+
+  // Persist détection toggles
+  useEffect(() => { try { localStorage.setItem('br-detection', JSON.stringify(detection)) } catch {} }, [detection])
+  useEffect(() => { try { localStorage.setItem('br-detection-auto', String(detectionAuto)) } catch {} }, [detectionAuto])
+
+  // Sync boucles in from clip whenever clip swaps
+  useEffect(() => { setBoucles(clip.boucles || []) }, [clip.clip_id])
+
+  // Save boucles when they change (debounced like subtitles)
+  const bouclesDebounceRef = useRef(null)
+  function saveBoucles(next) {
+    setBoucles(next)
+    clearTimeout(bouclesDebounceRef.current)
+    bouclesDebounceRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/clips/${clip.clip_id}/boucles`, {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ boucles: next }),
+        })
+        if (res.ok) onUpdate(await res.json())
+      } catch {}
+    }, 800)
+  }
+
+  // Add or split boucle at current cursor.
+  function addBoucleAtCursor() {
+    const v = videoRef.current
+    if (!v) return
+    const t = v.currentTime
+    const cur = bouclesRef.current
+    // Inside an existing boucle → split it at t.
+    const containing = cur.find(b => t > b.start + 0.1 && t < b.end - 0.1)
+    if (containing) {
+      const others = cur.filter(b => b !== containing)
+      saveBoucles([
+        ...others,
+        { ...containing, end: t },
+        { start: t, end: containing.end },
+      ].sort((a, b) => a.start - b.start).map((b, i) => ({ ...b, number: i + 1 })))
+      return
+    }
+    // Otherwise create boucle from cursor to end-of-clip or next boucle start.
+    const next = cur.find(b => b.start > t)
+    const endT = next ? next.start : (v.duration || (clip.end - clip.start))
+    if (endT - t < 0.5) return
+    saveBoucles([...cur, { start: t, end: endT }]
+      .sort((a, b) => a.start - b.start)
+      .map((b, i) => ({ ...b, number: i + 1 })))
+  }
+
+  function removeBoucle(number) {
+    const next = bouclesRef.current
+      .filter(b => b.number !== number)
+      .sort((a, b) => a.start - b.start)
+      .map((b, i) => ({ ...b, number: i + 1 }))
+    saveBoucles(next)
+  }
+
+  // Auto-fit scroll rate, once per clip: pick pxPerSec so the densest réplique
+  // sits near its natural width and lighter ones stretch out — the airy
+  // VoxDub-style layout, without the user having to touch the zoom.
+  const autoFitRef = useRef(null)
+  useEffect(() => {
+    if (!subtitles.length || autoFitRef.current === clip.clip_id) return
+    autoFitRef.current = clip.clip_id
+    const ctx = document.createElement('canvas').getContext('2d')
+    const base = Math.max(13, Math.round(FONT_BR_BASE * fontScale))
+    let need = 0
+    for (const s of subtitles) {
+      if (!s.text) continue
+      const isReact = s.text.startsWith('(')
+      ctx.font = isReact
+        ? `italic 600 ${base}px 'IBM Plex Sans', sans-serif`
+        : `700 ${base}px ${brFontStack(brFont)}`
+      const dur = Math.max(0.1, s.end - s.start)
+      need = Math.max(need, ctx.measureText(s.text).width / dur)
+    }
+    if (need > 0) setPxPerSec(Math.round(Math.max(100, Math.min(220, need))))
+  }, [clip.clip_id, subtitles])
 
   // Escape closes the export modal
   useEffect(() => {
@@ -315,7 +539,8 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
             ctx.fillStyle = 'rgba(156,156,166,0.22)'
             ctx.font = '10px "JetBrains Mono", monospace'
             ctx.textBaseline = 'top'
-            ctx.fillText(fmt(tick), gx + 3, 3)
+            // SMPTE HH:MM:SS:FF — pro convention reads in frames, not decimal.
+            ctx.fillText(fmtTC(tick, clipFpsRef.current), gx + 3, 3)
           }
         }
       }
@@ -413,6 +638,9 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
       }
 
       // Subtitle blocks + text — single pass, prototype-faithful insets
+      // DOUBLAGE_IA_REVIEW §6.2: when header pills filter, dim non-matching subs.
+      const _cFilter = charFilterRef.current
+      const _filterActive = _cFilter && _cFilter.size > 0
       for (const sub of subtitlesRef.current) {
         const trackIdx = charMap[sub.character || ''] ?? 0
         const trackH = H / numTracks
@@ -425,6 +653,8 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
         const isActive = t >= sub.start && t <= sub.end
         const bx = Math.max(0, leftX)
         const bw = Math.min(W, rightX) - bx
+        const _dimmed = _filterActive && !_cFilter.has(sub.character || '')
+        if (_dimmed) ctx.globalAlpha = 0.15
 
         // Block fill
         if (isMinimal) {
@@ -447,51 +677,264 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
           }
         }
 
-        // Text — true rythmo: constant letter height, horizontally stretched/squeezed
-        // to exactly fill the réplique block (the block width encodes the duration).
+        // Per-word text — each word fills its own time-block [start, end]:
+        // squeezed to fit, stretch capped at 1.2 (held words sit left-aligned
+        // with a trailing gap). No / stale word data → whole text as one word.
         if (sub.text) {
           const isReact = sub.text.startsWith('(')
           const BASE_FONT = Math.max(13, Math.round(FONT_BR_BASE * fontScaleRef.current))
-          const fontStr = isReact
+          ctx.font = isReact
             ? `italic 600 ${BASE_FONT}px 'IBM Plex Sans', sans-serif`
             : `700 ${BASE_FONT}px ${brFontStack(brFontRef.current)}`
-
-          ctx.font = fontStr
+          // Expose the most recent resolved BR font on the canvas so hit-test
+          // helpers (hitTestLetter for click-letter détection) can measure
+          // glyphs in the same font without redoing the resolution.
+          if (canvas) canvas._brFontResolved = ctx.font
           ctx.textBaseline = 'middle'
-          const naturalW = ctx.measureText(sub.text).width
-          const targetW = Math.max(1, blockW)
-          // scaleX < 1 squeezes (fast speech), > 1 stretches (slow speech).
-          // Near-zero floor: text always squeezes to exactly fit its block,
-          // never overflows / clips at the block edge.
-          let scaleX = naturalW > 0 ? targetW / naturalW : 1
-          scaleX = Math.max(0.05, Math.min(scaleX, 3.5))
 
-          if (isNeon) { ctx.shadowColor = color.hex; ctx.shadowBlur = isActive ? 6 : 2 }
-          else ctx.shadowBlur = 0
+          const words = validWords(sub)
+            || [{ w: sub.text, start: sub.start, end: sub.end }]
 
-          ctx.save()
-          ctx.beginPath()
-          ctx.rect(bx, yTop, bw, trackH)
-          ctx.clip()
-          ctx.translate(leftX, yTop + trackH / 2)
-          ctx.scale(scaleX, 1)
-          const baseFill = isReact
-            ? (isActive ? color.hex : withAlpha(color.hex, 0.67))
-            : (isActive ? '#fff' : 'rgba(255,255,255,0.42)')
-          const segs = sub.text.split(/(\*)/)
-          let curX = 0
-          for (const seg of segs) {
-            if (seg === '*') {
-              ctx.fillStyle = isActive ? '#7ec0ff' : 'rgba(126,192,255,0.72)'
-              ctx.fillText('○', curX, 0)
-            } else {
-              ctx.fillStyle = baseFill
-              ctx.fillText(seg, curX, 0)
+          for (const wd of words) {
+            if (!wd.w) continue
+            const wtext = wd.w + ' '  // trailing space keeps words separated
+            const wLeft = cursor_x + (wd.start - t) * pxSec
+            const wRight = cursor_x + (wd.end - t) * pxSec
+            if (wRight < -10 || wLeft > W + 10) continue
+            const wActive = t >= wd.start && t <= wd.end
+
+            const naturalW = ctx.measureText(wtext).width
+            let scaleX = naturalW > 0 ? (wRight - wLeft) / naturalW : 1
+            scaleX = Math.max(0.05, Math.min(scaleX, 1.2))
+
+            // Word width ≤ block width by construction → never overflows.
+            const wbx = Math.max(0, wLeft)
+            const wbw = Math.min(W, wRight) - wbx
+            if (wbw <= 0) continue
+
+            if (isNeon) { ctx.shadowColor = color.hex; ctx.shadowBlur = wActive ? 6 : 2 }
+            else ctx.shadowBlur = 0
+
+            ctx.save()
+            ctx.beginPath()
+            ctx.rect(wbx, yTop, wbw, trackH)
+            ctx.clip()
+            ctx.translate(wLeft, yTop + trackH / 2)
+            ctx.scale(scaleX, 1)
+            const baseFill = isReact
+              ? (wActive ? color.hex : withAlpha(color.hex, 0.67))
+              : (wActive ? '#fff' : 'rgba(255,255,255,0.42)')
+            const segs = wtext.split(/(\*)/)
+            let curX = 0
+            for (const seg of segs) {
+              if (seg === '*') {
+                ctx.fillStyle = wActive ? '#7ec0ff' : 'rgba(126,192,255,0.72)'
+                ctx.fillText('○', curX, 0)
+              } else {
+                ctx.fillStyle = baseFill
+                ctx.fillText(seg, curX, 0)
+              }
+              curX += ctx.measureText(seg).width
             }
-            curX += ctx.measureText(seg).width
+            ctx.restore()
+            ctx.shadowBlur = 0
+
+            // ── Détection signs — graphite, pinned to letter x-positions ──
+            // Drawn AFTER the glyphs (so they sit visually on top), inside the
+            // same per-word block so x scales with the letter compression.
+            const det = detectionRef.current
+            if (det.layer) {
+              const signs = resolveSigns(wd, detectionAutoRef.current)
+              if (signs.length) {
+                ctx.save()
+                const detFill = wActive ? SIGN_COLOR : SIGN_COLOR_INACTIVE
+                ctx.strokeStyle = detFill
+                ctx.fillStyle = detFill
+                for (const sign of signs) {
+                  if (!det[sign.type]) continue
+                  // Char x: measure unscaled substring then scale to match the
+                  // squeezed/stretched letter position.
+                  const prefix = wtext.slice(0, Math.max(0, sign.i))
+                  const charX0 = wLeft + ctx.measureText(prefix).width * scaleX
+                  const ch = wtext[sign.i] || ''
+                  const charW = ctx.measureText(ch).width * scaleX
+                  // labiale spans its own [t0,t1] — independent of letter
+                  // stretch (it's frame-anchored to lip closure). Other types
+                  // sit under the letter at its own width.
+                  if (sign.type === 'labiale') {
+                    const lx = cursor_x + (sign.t0 - t) * pxSec
+                    const rx = cursor_x + (sign.t1 - t) * pxSec
+                    if (rx > 0 && lx < W) {
+                      ctx.lineWidth = 2.4
+                      ctx.setLineDash([])
+                      ctx.beginPath()
+                      const sy = yTop + trackH - Math.max(7, trackH * 0.10)
+                      ctx.moveTo(Math.max(0, lx), sy)
+                      ctx.lineTo(Math.min(W, rx), sy)
+                      ctx.stroke()
+                    }
+                  } else if (sign.type === 'semi') {
+                    ctx.lineWidth = 1.6
+                    ctx.setLineDash([3, 2])
+                    ctx.beginPath()
+                    const sy = yTop + trackH - Math.max(6, trackH * 0.09)
+                    ctx.moveTo(charX0, sy)
+                    ctx.lineTo(charX0 + charW, sy)
+                    ctx.stroke()
+                    ctx.setLineDash([])
+                  } else if (sign.type === 'fricative') {
+                    const cx0 = charX0 + charW / 2
+                    const sy = yTop + Math.max(4, trackH * 0.10)
+                    const r = Math.max(3, trackH * 0.06)
+                    ctx.lineWidth = 1.4
+                    ctx.beginPath()
+                    ctx.moveTo(cx0 - r, sy + r)
+                    ctx.lineTo(cx0, sy)
+                    ctx.lineTo(cx0 + r, sy + r)
+                    ctx.stroke()
+                  } else if (sign.type === 'arrondie') {
+                    const cx0 = charX0 + charW / 2
+                    const sy = yTop + Math.max(5, trackH * 0.12)
+                    const r = Math.max(3, trackH * 0.07)
+                    ctx.lineWidth = 1.6
+                    ctx.beginPath()
+                    ctx.arc(cx0, sy, r, 0, Math.PI * 2)
+                    ctx.stroke()
+                  } else if (sign.type === 'ouverte') {
+                    const cx0 = charX0 + charW / 2
+                    const sy = yTop + Math.max(5, trackH * 0.12)
+                    const r = Math.max(3, trackH * 0.08)
+                    ctx.lineWidth = 1.4
+                    ctx.beginPath()
+                    ctx.arc(cx0, sy, r, Math.PI * 1.15, Math.PI * 1.85)
+                    ctx.stroke()
+                  }
+                }
+                ctx.restore()
+              }
+            }
           }
-          ctx.restore()
-          ctx.shadowBlur = 0
+        }
+
+        // ── Line flags: off / dos / ambiance / plan_cut + début/fin wedges ──
+        const detTog = detectionRef.current
+        const onScreenL = Math.max(0, leftX)
+        const onScreenR = Math.min(W, rightX)
+        if (onScreenR > onScreenL) {
+          if (sub.off || sub.dos) {
+            const sy = yTop + trackH - 1.5
+            ctx.strokeStyle = color.hex
+            ctx.lineWidth = 1.4
+            ctx.setLineDash(sub.dos ? [2, 3] : [])
+            ctx.beginPath()
+            ctx.moveTo(onScreenL, sy)
+            ctx.lineTo(onScreenR, sy)
+            ctx.stroke()
+            ctx.setLineDash([])
+          }
+        }
+        // début/fin wedges at the line's own boundaries — small in-track colour
+        if (detTog.startEnd) {
+          const wedge = Math.max(4, trackH * 0.10)
+          ctx.fillStyle = withAlpha(color.hex, isActive ? 1 : 0.55)
+          if (leftX > 0 && leftX < W) {
+            ctx.beginPath()
+            ctx.moveTo(leftX, yTop + trackH / 2 - wedge)
+            ctx.lineTo(leftX + wedge, yTop + trackH / 2)
+            ctx.lineTo(leftX, yTop + trackH / 2 + wedge)
+            ctx.closePath()
+            ctx.fill()
+          }
+          if (rightX > 0 && rightX < W) {
+            ctx.beginPath()
+            ctx.moveTo(rightX, yTop + trackH / 2 - wedge)
+            ctx.lineTo(rightX - wedge, yTop + trackH / 2)
+            ctx.lineTo(rightX, yTop + trackH / 2 + wedge)
+            ctx.closePath()
+            ctx.fill()
+          }
+        }
+        // plan_cut — dashed vertical full-height + PLAN tag
+        if (typeof sub.plan_cut === 'number') {
+          const px = cursor_x + (sub.plan_cut - t) * pxSec
+          if (px >= 0 && px <= W) {
+            ctx.strokeStyle = '#7ec0ff'
+            ctx.lineWidth = 1.2
+            ctx.setLineDash([4, 3])
+            ctx.beginPath(); ctx.moveTo(px, 0); ctx.lineTo(px, H); ctx.stroke()
+            ctx.setLineDash([])
+            ctx.fillStyle = '#7ec0ff'
+            ctx.font = 'bold 9px "JetBrains Mono", monospace'
+            ctx.textBaseline = 'top'
+            ctx.fillText('PLAN', px + 3, 16)
+          }
+        }
+        // ambiance — start ▸ + end ◂ arrows in muted track colour
+        if (sub.ambiance) {
+          ctx.fillStyle = withAlpha(color.hex, 0.7)
+          ctx.font = '12px sans-serif'
+          ctx.textBaseline = 'middle'
+          if (leftX > 0 && leftX < W) ctx.fillText('▸', leftX + 2, yTop + trackH / 2)
+          if (rightX > 0 && rightX < W) ctx.fillText('◂', rightX - 12, yTop + trackH / 2)
+        }
+        if (_dimmed) ctx.globalAlpha = 1
+      }
+
+      // ── Calibration marks: START −3s · BIP 1000 Hz −2s · PI 0s ──
+      // Anchored to clip time 0 (= PI / première image). Band already scrolls
+      // into negative time when the user seeks past 0.
+      const calibs = [
+        { time: -3.0, label: 'START', kind: 'start' },
+        { time: -2.0, label: 'BIP 1000 Hz', kind: 'bip' },
+        { time:  0.0, label: 'PI', kind: 'pi' },
+      ]
+      ctx.font = 'bold 9.5px "JetBrains Mono", monospace'
+      ctx.textBaseline = 'top'
+      for (const cal of calibs) {
+        const cx = cursor_x + (cal.time - t) * pxSec
+        if (cx < -50 || cx > W + 50) continue
+        ctx.setLineDash(cal.kind === 'bip' ? [4, 3] : [])
+        ctx.lineWidth = cal.kind === 'pi' ? 1.6 : 1.2
+        ctx.strokeStyle = cal.kind === 'bip' ? '#7ec0ff'
+          : cal.kind === 'pi' ? '#ffffff'
+          : 'rgba(255,255,255,0.7)'
+        ctx.beginPath(); ctx.moveTo(cx, 0); ctx.lineTo(cx, H); ctx.stroke()
+        if (cal.kind === 'start') {
+          // ✕ across the line
+          const sz = 6
+          ctx.beginPath()
+          ctx.moveTo(cx - sz, H / 2 - sz); ctx.lineTo(cx + sz, H / 2 + sz)
+          ctx.moveTo(cx + sz, H / 2 - sz); ctx.lineTo(cx - sz, H / 2 + sz)
+          ctx.stroke()
+        }
+        ctx.setLineDash([])
+        ctx.fillStyle = cal.kind === 'bip' ? '#7ec0ff' : '#fff'
+        ctx.fillText(`${cal.label} ${fmtTC(cal.time, clipFpsRef.current)}`, cx + 4, H - 14)
+      }
+
+      // ── Boucles — dashed verticals with B{n} cap ──
+      const bouclesNow = bouclesRef.current
+      if (bouclesNow && bouclesNow.length) {
+        ctx.font = 'bold 9px "JetBrains Mono", monospace'
+        ctx.textBaseline = 'top'
+        for (const b of bouclesNow) {
+          for (const [edge, time] of [['start', b.start], ['end', b.end]]) {
+            const bx = cursor_x + (time - t) * pxSec
+            if (bx < -20 || bx > W + 20) continue
+            ctx.strokeStyle = 'rgba(245,197,24,0.55)'
+            ctx.lineWidth = 1.2
+            ctx.setLineDash([6, 4])
+            ctx.beginPath(); ctx.moveTo(bx, 0); ctx.lineTo(bx, H); ctx.stroke()
+            ctx.setLineDash([])
+            if (edge === 'start') {
+              const cap = `B${b.number}`
+              const cw = ctx.measureText(cap).width + 8
+              ctx.fillStyle = 'rgba(245,197,24,0.18)'
+              ctx.fillRect(bx, 0, cw, 13)
+              ctx.fillStyle = '#f5c518'
+              ctx.fillText(cap, bx + 4, 2)
+            }
+          }
         }
       }
 
@@ -545,6 +988,23 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
       ctx.lineTo(cursor_x, 10)
       ctx.closePath()
       ctx.fill()
+      // SMPTE TC chip at the cursor foot — pro readout (HH:MM:SS:FF @ clip fps).
+      {
+        const tcLabel = fmtTC(t, clipFpsRef.current)
+        ctx.font = 'bold 10px "JetBrains Mono", monospace'
+        const tcW = ctx.measureText(tcLabel).width + 10
+        const tcH = 16
+        const tx = Math.max(2, Math.min(W - tcW - 2, cursor_x - tcW / 2))
+        const ty = H - tcH - 2
+        ctx.fillStyle = 'rgba(8,8,10,0.92)'
+        ctx.fillRect(tx, ty, tcW, tcH)
+        ctx.strokeStyle = '#f5c518'
+        ctx.lineWidth = 1
+        ctx.strokeRect(tx + 0.5, ty + 0.5, tcW - 1, tcH - 1)
+        ctx.fillStyle = '#f5c518'
+        ctx.textBaseline = 'middle'
+        ctx.fillText(tcLabel, tx + 5, ty + tcH / 2)
+      }
 
       // Hover scrub indicator
       const hov = hoverRef.current
@@ -755,7 +1215,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
         case ',': e.preventDefault(); v.pause(); v.currentTime = Math.max(0, t - 0.04); break
         case '.': e.preventDefault(); v.pause(); v.currentTime = Math.min(v.duration || 0, t + 0.04); break
         case 'Delete': case 'Backspace':
-          if (activeI >= 0) { e.preventDefault(); handleSubtitlesChange(subs.filter((_, i) => i !== activeI)) }
+          if (activeI >= 0) { e.preventDefault(); deleteReplicaWithUndo(activeI) }
           break
         case 'Enter':
           if (e.shiftKey) {
@@ -838,6 +1298,26 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
     debounceRef.current = setTimeout(() => doSave(sorted), 1500)
   }
 
+  // Réplique delete via undo toast — 5s window to recover before auto-save commits.
+  function deleteReplicaWithUndo(idx) {
+    const subs = subtitlesRef.current
+    const removed = subs[idx]
+    if (!removed) return
+    const next = subs.filter((_, i) => i !== idx)
+    handleSubtitlesChange(next)
+    if (selectedIdx === idx) setSelectedIdx(null)
+    undoToast.undo({
+      msg: removed.text
+        ? `Réplique « ${removed.text.slice(0, 32)}${removed.text.length > 32 ? '…' : ''} » supprimée`
+        : 'Réplique supprimée',
+      onUndo: () => {
+        // Re-insert at original position (sort will place by start).
+        const restored = [...subtitlesRef.current, removed]
+        handleSubtitlesChange(restored)
+      },
+    })
+  }
+
   useEffect(() => () => {
     clearTimeout(debounceRef.current)
     if (saveStatusRef.current === 'unsaved') doSave(subtitlesRef.current)
@@ -889,6 +1369,95 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
       break
     }
     return { ...c, trackIdx, subIdx: bestIdx, zone: bestZone }
+  }
+
+  // DOUBLAGE_IA_REVIEW §6 — click a letter on the band to cycle its detection sign.
+  // Returns { subIdx, wordIdx, charIdx } or null. Hit-tests using the current
+  // render geometry (cursor_x, pxSec, word stretch). Mirrors the draw loop math.
+  function hitTestLetter(e) {
+    const c = canvasCoords(e); if (!c) return null
+    const cH = canvasHRef.current
+    const n = numTracksRef.current
+    const trackH = cH / n
+    const trackIdx = Math.min(n - 1, Math.max(0, Math.floor(c.y / trackH)))
+    const cMap = charMapRef.current
+    const subs = subtitlesRef.current
+    const canvas = canvasRef.current
+    if (!canvas) return null
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return null
+    ctx.save()
+    // Same font as draw loop — see drawing pass for the FONT_BR / brFont scaling.
+    const baseFont = canvas._brFontResolved || FONT_BR
+    ctx.font = baseFont
+    let result = null
+    for (let i = 0; i < subs.length; i++) {
+      const sub = subs[i]
+      const sTrack = cMap[sub.character || ''] ?? 0
+      if (sTrack !== trackIdx) continue
+      const left = c.cursor_x + (sub.start - c.t) * c.pxSec
+      const right = c.cursor_x + (sub.end - c.t) * c.pxSec
+      if (c.x < left || c.x > right) continue
+      const words = validWords(sub) || (sub.words || [{ w: sub.text || '', start: sub.start, end: sub.end }])
+      for (let wIdx = 0; wIdx < words.length; wIdx++) {
+        const wd = words[wIdx]
+        if (!wd.w) continue
+        const wtext = wd.w + ' '
+        const wLeft = c.cursor_x + (wd.start - c.t) * c.pxSec
+        const wRight = c.cursor_x + (wd.end - c.t) * c.pxSec
+        if (c.x < wLeft || c.x > wRight) continue
+        const naturalW = ctx.measureText(wtext).width
+        let scaleX = naturalW > 0 ? (wRight - wLeft) / naturalW : 1
+        scaleX = Math.max(0.05, Math.min(scaleX, 1.2))
+        const localX = (c.x - wLeft) / Math.max(0.0001, scaleX)
+        let acc = 0
+        for (let chIdx = 0; chIdx < wd.w.length; chIdx++) {
+          const ch = wd.w[chIdx]
+          const cw = ctx.measureText(ch).width
+          if (localX >= acc && localX <= acc + cw) {
+            result = { subIdx: i, wordIdx: wIdx, charIdx: chIdx }
+            break
+          }
+          acc += cw
+        }
+        if (result) break
+      }
+      if (result) break
+    }
+    ctx.restore()
+    return result
+  }
+
+  // Cycle sign at (sub, word, char): none → labiale → semi → fricative → arrondie → ouverte → none.
+  function cycleSignAt(subIdx, wordIdx, charIdx) {
+    const subs = subtitlesRef.current
+    const sub = subs[subIdx]
+    if (!sub) return
+    const words = sub.words || []
+    const wd = words[wordIdx]
+    if (!wd) return
+    const signs = Array.isArray(wd.signs) ? [...wd.signs] : []
+    const existing = signs.findIndex(s => s.i === charIdx)
+    const order = [null, 'labiale', 'semi', 'fricative', 'arrondie', 'ouverte']
+    const cur = existing >= 0 ? signs[existing].type : null
+    const nextType = order[(order.indexOf(cur) + 1) % order.length]
+
+    if (nextType == null) {
+      if (existing >= 0) signs.splice(existing, 1)
+    } else {
+      // Time span: use the letter's slice of the word duration.
+      const len = (wd.w || '').length || 1
+      const dur = Math.max(0.05, (wd.end || 0) - (wd.start || 0))
+      const t0 = (wd.start || 0) + (charIdx / len) * dur
+      const t1 = (wd.start || 0) + ((charIdx + 1) / len) * dur
+      const entry = { i: charIdx, type: nextType, t0, t1 }
+      if (existing >= 0) signs[existing] = entry
+      else signs.push(entry)
+    }
+    const nextWords = words.map((w, j) => j === wordIdx ? { ...w, signs: signs.length ? signs : null } : w)
+    const nextSub = { ...sub, words: nextWords }
+    const nextSubs = subs.map((s, j) => j === subIdx ? nextSub : s)
+    handleSubtitlesChange(nextSubs)
   }
 
   function snapTime(t, e, preferOnset = false) {
@@ -1051,6 +1620,15 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
       return
     }
     if (!drag.didMove && drag.mode !== 'create') {
+      // Plain click on a block — try letter cycle first (no modifiers, mid zone).
+      // Falls through to seek if no letter hit.
+      if (!e.shiftKey && !e.altKey && !e.ctrlKey && drag.mode === 'shift') {
+        const letterHit = hitTestLetter(e)
+        if (letterHit) {
+          cycleSignAt(letterHit.subIdx, letterHit.wordIdx, letterHit.charIdx)
+          return
+        }
+      }
       const hit = hitTest(e)
       if (hit) seekTo(Math.max(0, hit.time))
     } else {
@@ -1071,7 +1649,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   function onCanvasWheel(e) {
     if (!e.ctrlKey && !e.shiftKey) return
     e.preventDefault()
-    setPxPerSec(p => Math.max(40, Math.min(400, p + (e.deltaY < 0 ? 20 : -20))))
+    setPxPerSec(p => Math.max(40, Math.min(600, p + (e.deltaY < 0 ? 20 : -20))))
   }
 
   function onCanvasContextMenu(e) {
@@ -1113,7 +1691,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
       next.splice(i + 1, 0, { ...sub, start: sub.end, end: sub.end + dur, text: sub.text })
       handleSubtitlesChange(next)
     } else if (action === 'delete') {
-      handleSubtitlesChange(subs.filter((_, idx) => idx !== i))
+      deleteReplicaWithUndo(i)
     } else if (action === 'character') {
       handleSubtitlesChange(subs.map((s, idx) => idx === i ? { ...s, character: payload } : s))
     } else if (action === 'newCharacter') {
@@ -1138,17 +1716,41 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
 
   async function transcribe() {
     setTranscribing(true)
-    try {
-      const res = await fetch('/api/transcription/transcribe', {
+    const fireJob = async () => {
+      const res = await fetch('/api/transcription/transcribe-job', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ segment_id: clip.clip_id, language: lang === 'auto' ? null : lang }),
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      handleSubtitlesChange((await res.json()).subtitles)
-      setToast({ msg: 'Transcription terminée', type: 'success' })
+      const { job_id } = await res.json()
+      return job_id
+    }
+    try {
+      const jobId = await fireJob()
+      progress.start({
+        kind: 'transcribe',
+        title: 'Transcription Whisper',
+        jobId,
+        retry: fireJob,
+        onDone: (result) => {
+          if (result && result.subtitles) handleSubtitlesChange(result.subtitles)
+          setToast({ msg: 'Transcription terminée', type: 'success' })
+          setTranscribing(false)
+          setTimeout(() => setToast(null), 3000)
+        },
+        onError: (err) => {
+          setToast({ msg: 'Erreur : ' + err.message, type: 'error' })
+          setTranscribing(false)
+          setTimeout(() => setToast(null), 4000)
+        },
+        onCancel: () => {
+          setToast({ msg: 'Transcription annulée', type: 'error' })
+          setTranscribing(false)
+          setTimeout(() => setToast(null), 3000)
+        },
+      })
     } catch (e) {
       setToast({ msg: 'Erreur : ' + e.message, type: 'error' })
-    } finally {
       setTranscribing(false)
       setTimeout(() => setToast(null), 3000)
     }
@@ -1272,19 +1874,46 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
           </div>
         </div>
         <div style={{ flex: 1 }} />
-        {/* Character chips */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4, overflow: 'hidden', minWidth: 0, maxWidth: 380 }}>
+        {/* Character chips — click to filter band + list (multi-select). */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, overflow: 'hidden', minWidth: 0, maxWidth: 480 }}>
           {charList.filter(c => c).map(char => {
             const color = TRACK_COLORS[(charMap[char] ?? 0) % TRACK_COLORS.length]
+            const active = charFilter.has(char)
+            const dimOthers = charFilter.size > 0 && !active
             return (
-              <span key={char} style={{ padding: '3px 9px 3px 5px', borderRadius: 99, background: color.hex + '22', border: `1px solid ${color.hex}33`, color: color.hex, fontSize: 11, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+              <button
+                key={char}
+                onClick={() => toggleCharFilter(char)}
+                title={active ? `Cliquer pour retirer ${char} du filtre` : `Filtrer sur ${char}`}
+                style={{
+                  padding: '3px 9px 3px 5px', borderRadius: 99,
+                  background: active ? color.hex + '44' : color.hex + '22',
+                  border: `1px solid ${active ? color.hex : color.hex + '33'}`,
+                  color: color.hex,
+                  fontSize: 11, fontWeight: 600,
+                  display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0,
+                  opacity: dimOthers ? 0.55 : 1,
+                  cursor: 'pointer', minHeight: 26,
+                }}>
                 <span style={{ width: 18, height: 18, borderRadius: '50%', background: color.hex + '22', border: `1px solid ${color.hex}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 700 }}>
                   {char[0].toUpperCase()}
                 </span>
                 {char}
-              </span>
+              </button>
             )
           })}
+          {charFilter.size > 0 && (
+            <button
+              onClick={clearCharFilter}
+              title="Effacer le filtre"
+              style={{
+                padding: '3px 9px', borderRadius: 99,
+                background: 'var(--surface2)', border: '1px solid var(--border2)',
+                color: 'var(--text2)', fontSize: 11, cursor: 'pointer', minHeight: 26,
+              }}>
+              ✕ filtré ({charFilter.size})
+            </button>
+          )}
         </div>
         <button
           onClick={() => {
@@ -1486,7 +2115,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
                       <button onClick={transcribe} style={{ padding: '6px 16px', background: '#f5c518', color: '#000', fontWeight: 600, borderRadius: 4, fontSize: 12 }}>◉ Transcrire</button>
                     </div>
                   ) : (
-                    <SubtitleEditor subtitles={subtitles} onChange={handleSubtitlesChange} currentTime={currentTime} onSeek={seekTo} selectedIdx={selectedIdx} setSelectedIdx={setSelectedIdx} compact={true} />
+                    <SubtitleEditor subtitles={subtitles} onChange={handleSubtitlesChange} onDelete={deleteReplicaWithUndo} currentTime={currentTime} onSeek={seekTo} selectedIdx={selectedIdx} setSelectedIdx={setSelectedIdx} compact={true} charFilter={charFilter} />
                   )}
                 </div>
                 {showRecorder && (
@@ -1666,6 +2295,16 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
           setFontScale={setFontScale}
           locked={locked}
           setLocked={setLocked}
+          detection={detection}
+          setDetection={setDetection}
+          detectionAuto={detectionAuto}
+          setDetectionAuto={setDetectionAuto}
+          boucles={boucles}
+          onAddBoucle={addBoucleAtCursor}
+          onRemoveBoucle={removeBoucle}
+          clipFps={clipFps}
+          brFont={brFont}
+          setBrFont={setBrFont}
         />
         {/* Canvas */}
         <div style={{ position: 'relative', flex: 1, minHeight: 0, overflow: 'hidden' }}>
@@ -1682,6 +2321,8 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
             onWheel={onCanvasWheel}
             onContextMenu={onCanvasContextMenu}
           />
+          <CanvasCoachmark />
+
           {loopRegion && (
             <div style={{ position: 'absolute', top: 6, right: 8, display: 'flex', alignItems: 'center', gap: 4, padding: '2px 8px', background: 'rgba(245,197,24,0.12)', border: '1px solid rgba(245,197,24,0.4)', borderRadius: 4, zIndex: 5 }}>
               <span style={{ fontSize: 11, color: 'var(--accent)', fontFamily: 'var(--font-mono)' }}>
@@ -1734,8 +2375,8 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
             const canSplit = ctxMenu.time > sub.start && ctxMenu.time < sub.end
             return (
               <>
-                <div onClick={() => setCtxMenu(null)} onContextMenu={e => { e.preventDefault(); setCtxMenu(null) }} style={{ position: 'fixed', inset: 0, zIndex: 20 }} />
-                <div style={{ position: 'absolute', left: ctxMenu.x, top: ctxMenu.y, background: '#0c0c0c', border: '1px solid #2a2a2a', borderRadius: 4, padding: 4, zIndex: 21, fontSize: 12, minWidth: 180, boxShadow: '0 4px 16px rgba(0,0,0,0.6)' }}>
+                <div onClick={() => setCtxMenu(null)} onContextMenu={e => { e.preventDefault(); setCtxMenu(null) }} style={{ position: 'fixed', inset: 0, zIndex: 'var(--z-dropdown)' }} />
+                <div style={{ position: 'fixed', left: ctxMenu.x, top: ctxMenu.y, background: '#0c0c0c', border: '1px solid #2a2a2a', borderRadius: 4, padding: 4, zIndex: 'var(--z-dropdown)', fontSize: 12, minWidth: 180, boxShadow: '0 4px 16px rgba(0,0,0,0.6)' }}>
                   <div style={menuHeader}>{sub.character || '(défaut)'} · {sub.text.slice(0, 30) || '∅'}</div>
                   <MenuBtn onClick={() => ctxAction('edit')}>✎ Éditer texte</MenuBtn>
                   {canSplit && <MenuBtn onClick={() => ctxAction('split')}>✂ Couper ici ({fmt(ctxMenu.time)})</MenuBtn>}
@@ -1763,7 +2404,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
       {showExport && (
         <div
           onClick={() => onToggleExport?.()}
-          style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.66)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          style={{ position: 'fixed', inset: 0, zIndex: 'var(--z-modal)', background: 'rgba(0,0,0,0.66)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
           <div
             onClick={e => e.stopPropagation()}
             style={{ width: 'min(960px, 94vw)', maxHeight: '88vh', display: 'flex', flexDirection: 'column', background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: 14, overflow: 'hidden', boxShadow: '0 24px 80px rgba(0,0,0,0.6)' }}>
@@ -1784,11 +2425,13 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
               <ExportPanel
                 segmentId={clip.clip_id}
                 subtitles={subtitles}
+                boucles={boucles}
                 pxPerSec={pxPerSec}
                 brOffset={brOffset}
                 canvasH={canvasH}
                 getCanvasWidth={() => canvasRef.current?.width || 1200}
                 brFont={brFont}
+                brStyle={rythmoStyle}
               />
             </div>
           </div>
@@ -1797,7 +2440,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
 
       {/* ── Toast ── */}
       {toast && (
-        <div style={{ position: 'fixed', bottom: 24, right: 24, padding: '10px 18px', background: toast.type === 'error' ? '#e54545' : '#44bb55', color: '#fff', borderRadius: 6, fontSize: 13, fontWeight: 500, zIndex: 1000, boxShadow: '0 4px 16px rgba(0,0,0,0.4)' }}>
+        <div style={{ position: 'fixed', bottom: 24, right: 24, padding: '10px 18px', background: toast.type === 'error' ? '#e54545' : '#44bb55', color: '#fff', borderRadius: 6, fontSize: 13, fontWeight: 500, zIndex: 'var(--z-toast)', boxShadow: '0 4px 16px rgba(0,0,0,0.4)' }}>
           {toast.msg}
         </div>
       )}
@@ -1812,7 +2455,12 @@ function BandeRythmoToolbar({
   charMap, brInPlayer, setBrInPlayer, rythmoStyle, setRythmoStyle,
   fontScale, setFontScale,
   locked, setLocked,
+  detection, setDetection, detectionAuto, setDetectionAuto,
+  boucles = [], onAddBoucle, onRemoveBoucle, clipFps = 25,
+  brFont = 'atkinson', setBrFont = () => {},
 }) {
+  const [showDetection, setShowDetection] = React.useState(false)
+  const [showBoucles, setShowBoucles] = React.useState(false)
   const liveIdx = subtitles.findIndex(s => {
     const v = videoRef.current
     const t = v ? v.currentTime : 0
@@ -1825,17 +2473,56 @@ function BandeRythmoToolbar({
   const [showResp, setShowResp] = React.useState(false)
   const [showNote, setShowNote] = React.useState(false)
   const [showCharPicker, setShowCharPicker] = React.useState(false)
+  // DOUBLAGE_IA_REVIEW §3 — 6 labelled clusters:
+  // Qui · Éditer · Insérer ▾ · Détection ▾ · Boucles ▾ · Affichage ▾ · 🔒
+  const [showInserer, setShowInserer] = React.useState(false)
+  const [showAffichage, setShowAffichage] = React.useState(false)
   const [dropdownAnchor, setDropdownAnchor] = React.useState({ bottom: 60, left: 200 })
+  // Per-menu anchors so each in-toolbar dropdown can portal to body with
+  // position:fixed, escaping the toolbar's overflow:auto clip + stacking ctx.
+  const [charAnchor, setCharAnchor] = React.useState({ bottom: 60, left: 200 })
+  const [detAnchor, setDetAnchor] = React.useState({ bottom: 60, left: 200 })
+  const [boucleAnchor, setBoucleAnchor] = React.useState({ bottom: 60, left: 200 })
   const toolbarRef = React.useRef(null)
   const [loop, setLoop] = React.useState(false)
   const charPickerRef = React.useRef(null)
 
+  // Anchor a portaled dropdown above its trigger button. Tags the trigger with
+  // a data-popover attribute so the click-away effect can recognise it.
+  function anchorFromEvent(e, setter, name) {
+    try {
+      const el = e.currentTarget
+      const r = el.getBoundingClientRect()
+      setter({ bottom: window.innerHeight - r.top + 4, left: r.left })
+      if (name) el.setAttribute('data-popover-trigger', name)
+    } catch {}
+  }
+
+  // Global click-away: portaled dropdowns + their triggers carry data-popover[-trigger].
+  // A mousedown outside any matching element closes the active popover.
   React.useEffect(() => {
-    if (!showCharPicker) return
-    const close = e => { if (!charPickerRef.current?.contains(e.target)) setShowCharPicker(false) }
-    setTimeout(() => window.addEventListener('mousedown', close), 0)
-    return () => window.removeEventListener('mousedown', close)
-  }, [showCharPicker])
+    const anyOpen = showCharPicker || showDetection || showBoucles ||
+                    showResp || showReact || showNote || showInserer || showAffichage
+    if (!anyOpen) return
+    const onDown = (e) => {
+      const t = e.target
+      if (!t || typeof t.closest !== 'function') return
+      const hit = t.closest('[data-popover], [data-popover-trigger]')
+      if (hit) return
+      // Click landed outside all popovers → close everything.
+      setShowCharPicker(false)
+      setShowDetection(false)
+      setShowBoucles(false)
+      setShowResp(false)
+      setShowReact(false)
+      setShowNote(false)
+      setShowInserer(false)
+      setShowAffichage(false)
+    }
+    // Defer one tick so the opening click doesn't immediately close.
+    const id = setTimeout(() => document.addEventListener('mousedown', onDown), 0)
+    return () => { clearTimeout(id); document.removeEventListener('mousedown', onDown) }
+  }, [showCharPicker, showDetection, showBoucles, showResp, showReact, showNote, showInserer, showAffichage])
 
   // Loop the active sub when loop is on
   React.useEffect(() => {
@@ -1925,6 +2612,7 @@ function BandeRythmoToolbar({
       const el = e.currentTarget || e.nativeEvent?.currentTarget || e.target
       const r = el.getBoundingClientRect()
       setDropdownAnchor({ bottom: window.innerHeight - r.top + 4, left: r.left })
+      if (el && el.setAttribute) el.setAttribute('data-popover-trigger', type)
     } catch {}
     if (type === 'resp') { setShowResp(s => !s); setShowReact(false) }
     else { setShowReact(s => !s); setShowResp(false) }
@@ -1971,7 +2659,7 @@ function BandeRythmoToolbar({
       {/* Active character pill — click to reassign */}
       <div ref={charPickerRef} style={{ position: 'relative', flexShrink: 0 }}>
         <button
-          onClick={() => { if (target) setShowCharPicker(s => !s) }}
+          onClick={e => { if (target) { anchorFromEvent(e, setCharAnchor, 'char'); setShowCharPicker(s => !s) } }}
           title={target ? 'Changer le personnage de cette réplique' : 'Sélectionnez une réplique'}
           style={{
             ...btnBase, height: 34, minWidth: 140, padding: '0 10px',
@@ -1989,9 +2677,9 @@ function BandeRythmoToolbar({
           <span style={{ flex: 1, textAlign: 'left', textTransform: 'capitalize' }}>{activeChar || 'personnage'}</span>
           <Ic d={ICONS.chevron} size={14} />
         </button>
-        {showCharPicker && target && (
-          <div style={{
-            position: 'absolute', bottom: 'calc(100% + 4px)', left: 0, zIndex: 20,
+        {showCharPicker && target && createPortal(
+          <div data-popover="char" style={{
+            position: 'fixed', bottom: charAnchor.bottom, left: charAnchor.left, zIndex: 'var(--z-dropdown)',
             background: '#0c0c0c', border: '1px solid #2a2a2a', borderRadius: 6,
             padding: '4px 0', minWidth: 180, boxShadow: '0 6px 18px rgba(0,0,0,0.7)',
           }}>
@@ -2013,16 +2701,17 @@ function BandeRythmoToolbar({
                 >
                   <span style={{ width: 8, height: 8, borderRadius: '50%', background: cc, flexShrink: 0 }} />
                   <span style={{ flex: 1, color: cc }}>{c || '(défaut)'}</span>
-                  {active && <span style={{ fontSize: 10, color: '#f5c518' }}>✓</span>}
+                  {active && <span style={{ fontSize: 10, color: 'var(--accent)' }}>✓</span>}
                 </button>
               )
             })}
             <div style={{ height: 1, background: '#1e1e1e', margin: '4px 0' }} />
             <button onClick={newCharacterPrompt}
-              style={{ display: 'block', width: '100%', padding: '7px 12px', fontSize: 11, color: '#f5c518', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer' }}>
+              style={{ display: 'block', width: '100%', padding: '7px 12px', fontSize: 11, color: 'var(--accent)', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer' }}>
               + Nouveau personnage…
             </button>
-          </div>
+          </div>,
+          document.body
         )}
       </div>
 
@@ -2053,19 +2742,17 @@ function BandeRythmoToolbar({
         </button>
       </div>
 
-      {/* Resp / Réact / Note */}
-      <div style={grp}>
-        <button onClick={e => openDropdown('resp', e)} title="Respirations…"
-          style={{ ...btn(true, showResp), padding: '0 9px', gap: 5, fontSize: 11.5 }}>
-          <Ic d={ICONS.breath} size={14} />Resp.
-        </button>
-        <button onClick={e => openDropdown('react', e)} title="Réactions…"
-          style={{ ...btn(true, showReact), padding: '0 9px', gap: 5, fontSize: 11.5 }}>
-          <Ic d={ICONS.reactions} size={14} />Réact.
-        </button>
-        <button onClick={() => setShowNote(s => !s)} title="Note de direction"
-          style={{ ...btn(target != null, showNote || !!target?.note), padding: '0 9px', gap: 5, fontSize: 11.5 }}>
-          <Ic d={ICONS.note} size={14} />Note
+      {/* Insérer ▾ — collapses Resp · Réact · Note (DOUBLAGE_IA_REVIEW §3). */}
+      <div style={{ ...grp, position: 'relative' }}>
+        <button
+          onClick={e => {
+            anchorFromEvent(e, setDropdownAnchor, 'inserer')
+            setShowInserer(s => !s)
+            setShowResp(false); setShowReact(false); setShowNote(false)
+          }}
+          title="Insérer respiration, réaction, ou note"
+          style={{ ...btn(true, showInserer), padding: '0 9px', gap: 5, fontSize: 11.5 }}>
+          <Ic d={ICONS.plus} size={14} />Insérer<Ic d={ICONS.chevron} size={12} />
         </button>
       </div>
 
@@ -2079,49 +2766,114 @@ function BandeRythmoToolbar({
           style={btn(true, locked)}><Ic d={locked ? ICONS.lock : ICONS.lockOpen} size={14} /></button>
       </div>
 
-      <div style={{ flex: 1, minWidth: 8 }} />
-
-      {/* BR style segmented */}
-      <div style={{ display: 'flex', alignItems: 'center', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, padding: 2 }}>
-        {['classique', 'neon', 'minimal'].map(s => (
-          <button key={s} onClick={() => setRythmoStyle(s)} style={{
-            ...btnBase, height: 26, padding: '0 11px', fontSize: 10.5, borderRadius: 4,
-            background: rythmoStyle === s ? 'var(--accent)' : 'transparent',
-            color: rythmoStyle === s ? '#000' : 'var(--text2)',
-            fontWeight: 600, textTransform: 'capitalize',
-          }}>{s}</button>
-        ))}
-      </div>
-
-      {/* Zoom */}
-      <div style={grp}>
-        <button onClick={() => setPxPerSec(p => Math.max(40, p - 20))} title="Zoom −" style={btn(true)}>
-          <Ic d={ICONS.zoomOut} />
+      {/* Pro BR — détection layer toggle + per-sign menu */}
+      <div style={{ ...grp, position: 'relative' }}>
+        <button
+          onClick={() => setDetection(d => ({ ...d, layer: !d.layer }))}
+          title="Calque détection (B/P/M, fricatives, etc.) — graphite sous le texte"
+          style={{ ...btn(true, detection.layer), padding: '0 9px', gap: 5, fontSize: 11.5 }}>
+          Détection
         </button>
-        <span style={{ fontSize: 10.5, color: 'var(--text2)', fontFamily: 'var(--font-mono)', padding: '0 4px', minWidth: 52, textAlign: 'center' }}>{pxPerSec}px/s</span>
-        <button onClick={() => setPxPerSec(p => Math.min(400, p + 20))} title="Zoom +" style={btn(true)}>
-          <Ic d={ICONS.zoomIn} />
-        </button>
-      </div>
-
-      {/* Décalage */}
-      <div style={{ ...grp, padding: '4px 8px', gap: 6 }}>
-        <span style={{ fontSize: 10.5, color: 'var(--text3)' }}>Décalage</span>
-        <input type="range" min={-2} max={2} step={0.05} value={brOffset}
-          onChange={e => setBrOffset(parseFloat(e.target.value))}
-          style={{ width: 64, color: '#f5c518', '--pct': `${((brOffset + 2) / 4) * 100}%` }} />
-        <span style={{ fontSize: 10.5, color: brOffset !== 0 ? 'var(--accent)' : 'var(--text2)', fontFamily: 'var(--font-mono)', minWidth: 40, textAlign: 'right' }}>
-          {brOffset >= 0 ? '+' : ''}{brOffset.toFixed(2)}s
-        </span>
-        {brOffset !== 0 && (
-          <button onClick={() => setBrOffset(0)} title="Réinitialiser le décalage" style={{ ...btnBase, height: 20, width: 20, minWidth: 20, padding: 0, fontSize: 11, color: 'var(--accent)' }}>✕</button>
+        <button onClick={e => { anchorFromEvent(e, setDetAnchor, 'det'); setShowDetection(s => !s) }} title="Signes affichés"
+          style={btn(true, showDetection)}><Ic d={ICONS.chevron} size={14} /></button>
+        {showDetection && createPortal(
+          <div data-popover="det" style={{
+            position: 'fixed', bottom: detAnchor.bottom, left: detAnchor.left, zIndex: 'var(--z-dropdown)',
+            background: '#0c0c0c', border: '1px solid #2a2a2a', borderRadius: 6,
+            padding: 8, minWidth: 230, boxShadow: '0 6px 18px rgba(0,0,0,0.7)',
+          }}>
+            <div style={{ fontSize: 9, color: '#777', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>
+              Signes phonétiques
+            </div>
+            {[
+              ['labiale', 'Labiale (B P M)'],
+              ['semi', 'Semi (W)'],
+              ['fricative', 'Fricative (F V)'],
+              ['arrondie', 'Arrondie (O U Œ)'],
+              ['ouverte', 'Ouverte (A E I…)'],
+              ['startEnd', 'Début / Fin de phrase'],
+            ].map(([k, lbl]) => (
+              <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 4px', fontSize: 11, color: 'var(--text2)', cursor: 'pointer' }}>
+                <input type="checkbox" checked={!!detection[k]} onChange={e => setDetection(d => ({ ...d, [k]: e.target.checked }))} />
+                {lbl}
+              </label>
+            ))}
+            <div style={{ height: 1, background: '#1e1e1e', margin: '6px 0' }} />
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 4px', fontSize: 11, color: 'var(--text2)', cursor: 'pointer' }}>
+              <input type="checkbox" checked={detectionAuto} onChange={e => setDetectionAuto(e.target.checked)} />
+              Aide auto (depuis les lettres)
+            </label>
+          </div>,
+          document.body
         )}
       </div>
 
+      {/* Boucles — split at cursor + list */}
+      <div style={{ ...grp, position: 'relative' }}>
+        <button onClick={onAddBoucle} title="Créer / scinder une boucle au temps courant"
+          style={{ ...btn(true), padding: '0 9px', gap: 5, fontSize: 11.5 }}>
+          Boucle +
+        </button>
+        <button onClick={e => { anchorFromEvent(e, setBoucleAnchor, 'boucle'); setShowBoucles(s => !s) }} title={`Boucles (${boucles.length})`}
+          style={btn(true, showBoucles)}>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>{boucles.length}</span>
+          <Ic d={ICONS.chevron} size={14} />
+        </button>
+        {showBoucles && createPortal(
+          <div data-popover="boucle" style={{
+            position: 'fixed', bottom: boucleAnchor.bottom, left: boucleAnchor.left, zIndex: 'var(--z-dropdown)',
+            background: '#0c0c0c', border: '1px solid #2a2a2a', borderRadius: 6,
+            padding: 8, minWidth: 260, maxHeight: 260, overflow: 'auto',
+            boxShadow: '0 6px 18px rgba(0,0,0,0.7)',
+          }}>
+            <div style={{ fontSize: 9, color: '#777', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>
+              Boucles · fps {clipFps.toFixed(2)}
+            </div>
+            {boucles.length === 0 ? (
+              <div style={{ fontSize: 11, color: 'var(--text3)', padding: 6 }}>Aucune boucle. Placez le curseur et cliquez « Boucle + ».</div>
+            ) : boucles.map(b => (
+              <div key={b.number} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 4px', fontSize: 11, fontFamily: 'var(--font-mono)' }}>
+                <button onClick={() => { const v = videoRef.current; if (v) v.currentTime = b.start }}
+                  style={{ background: 'none', border: 'none', color: '#f5c518', cursor: 'pointer', fontWeight: 700 }}>
+                  B{b.number}
+                </button>
+                <span style={{ color: 'var(--text3)', flex: 1 }}>
+                  {fmtTC(b.start, clipFps)} — {fmtTC(b.end, clipFps)} · {(b.end - b.start).toFixed(1)}s
+                </span>
+                <button onClick={() => onRemoveBoucle(b.number)} title="Supprimer cette boucle"
+                  style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer' }}>✕</button>
+              </div>
+            ))}
+          </div>,
+          document.body
+        )}
+      </div>
+
+      <div style={{ flex: 1, minWidth: 8 }} />
+
+      {/* Affichage ▾ — collapses Style · Zoom · Décalage · Font · BR-in-player
+          (DOUBLAGE_IA_REVIEW §3 — set-once knobs out of the way). */}
+      <div style={{ ...grp, position: 'relative' }}>
+        <button
+          onClick={e => {
+            try {
+              const el = e.currentTarget
+              const r = el.getBoundingClientRect()
+              setDropdownAnchor({ bottom: window.innerHeight - r.top + 4, left: Math.max(8, r.right - 320) })
+              if (el.setAttribute) el.setAttribute('data-popover-trigger', 'affichage')
+            } catch {}
+            setShowAffichage(s => !s)
+          }}
+          title="Affichage : style, zoom, décalage, police, sous-titre dans le player"
+          style={{ ...btn(true, showAffichage), padding: '0 11px', gap: 6, fontSize: 11.5, fontWeight: 600 }}>
+          Affichage<Ic d={ICONS.chevron} size={12} />
+        </button>
+      </div>
+
       {/* Respirations dropdown */}
-      {showResp && (
-        <div style={{
-          position: 'fixed', bottom: dropdownAnchor.bottom, left: dropdownAnchor.left, zIndex: 9999,
+      {showResp && createPortal(
+        <div data-popover="resp" style={{
+          position: 'fixed', bottom: dropdownAnchor.bottom, left: dropdownAnchor.left, zIndex: 'var(--z-dropdown)',
           background: '#0c0c0c', border: '1px solid #7ec0ff33', borderRadius: 6,
           padding: 10, minWidth: 260, boxShadow: '0 6px 18px rgba(0,0,0,0.7)',
         }}>
@@ -2152,13 +2904,14 @@ function BandeRythmoToolbar({
           <div style={{ fontSize: 9, color: '#555' }}>
             Personnage actif : <span style={{ color: cColor }}>{activeChar || '(défaut)'}</span>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Réactions dropdown */}
-      {showReact && (
-        <div style={{
-          position: 'fixed', bottom: dropdownAnchor.bottom, left: dropdownAnchor.left, zIndex: 9999,
+      {showReact && createPortal(
+        <div data-popover="react" style={{
+          position: 'fixed', bottom: dropdownAnchor.bottom, left: dropdownAnchor.left, zIndex: 'var(--z-dropdown)',
           background: '#0c0c0c', border: '1px solid #f5c51844', borderRadius: 6,
           padding: 10, minWidth: 300, maxWidth: 380, boxShadow: '0 6px 18px rgba(0,0,0,0.7)',
         }}>
@@ -2194,23 +2947,211 @@ function BandeRythmoToolbar({
           <div style={{ fontSize: 9, color: '#555' }}>
             Crée un bloc BR indépendant · personnage actif : <span style={{ color: cColor }}>{activeChar || '(défaut)'}</span>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Note popover */}
-      {showNote && target && (
-        <div style={{
-          position: 'fixed', bottom: dropdownAnchor.bottom, right: 160, zIndex: 9999,
-          background: '#0c0c0c', border: '1px dashed #f5c518', borderRadius: 4,
+      {showNote && target && createPortal(
+        <div data-popover="note" style={{
+          position: 'fixed', bottom: dropdownAnchor.bottom, right: 160, zIndex: 'var(--z-dropdown)',
+          background: '#0c0c0c', border: '1px dashed var(--accent)', borderRadius: 4,
           padding: 8, minWidth: 280, boxShadow: '0 6px 18px rgba(0,0,0,0.7)',
         }}>
-          <div style={{ fontSize: 9, color: '#f5c518', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>
+          <div style={{ fontSize: 9, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>
             Note — réplique #{targetIdx + 1}
           </div>
           <textarea value={target.note || ''} onChange={e => updateTarget({ note: e.target.value })} rows={2}
             placeholder="Intention, ton, timing…"
-            style={{ width: '100%', fontFamily: 'var(--font-ui)', fontStyle: 'italic', fontSize: 11, padding: '5px 7px', background: '#0a0a0a', color: '#f5c518c', border: '1px solid #f5c5184', borderRadius: 3, resize: 'vertical' }} />
-        </div>
+            style={{ width: '100%', fontFamily: 'var(--font-ui)', fontStyle: 'italic', fontSize: 11, padding: '5px 7px', background: '#0a0a0a', color: 'var(--text)', border: '1px solid var(--border2)', borderRadius: 3, resize: 'vertical' }} />
+        </div>,
+        document.body
+      )}
+
+      {/* Insérer popover — Resp · Réact · Note all in one (DOUBLAGE_IA_REVIEW §3). */}
+      {showInserer && createPortal(
+        <div data-popover="inserer" style={{
+          position: 'fixed', bottom: dropdownAnchor.bottom, left: dropdownAnchor.left, zIndex: 'var(--z-dropdown)',
+          background: '#0c0c0c', border: '1px solid var(--border2)', borderRadius: 8,
+          padding: 12, minWidth: 340, maxWidth: 400, boxShadow: '0 8px 22px rgba(0,0,0,0.75)',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text)', textTransform: 'uppercase', letterSpacing: 1 }}>
+              Insérer
+            </span>
+            <div style={{ flex: 1 }} />
+            <button onClick={() => setShowInserer(false)}
+              style={{ background: 'transparent', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 14 }}>×</button>
+          </div>
+
+          {/* Respirations */}
+          <div style={{ fontSize: 9, color: '#7ec0ff', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>
+            Respirations
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 10 }}>
+            {[
+              { label: '(HH)', color: '#7ec0ff', dur: 0.5 },
+              { label: '(H)',  color: '#7ec0ff', dur: 0.4 },
+              { label: '(Hm)', color: '#7ec0ff', dur: 0.4 },
+              { label: '*',    color: '#5599cc', dur: 0.3 },
+              { label: '(…)',  color: '#888',    dur: 0.6 },
+            ].map(r => (
+              <button key={r.label}
+                onClick={() => { insertTagSub(r.label, r.dur); setShowInserer(false) }}
+                title={`${r.label} — ${r.dur}s`}
+                style={{
+                  fontSize: 12, padding: '5px 10px', fontFamily: 'var(--font-mono)',
+                  background: 'rgba(126,192,255,0.06)', border: `1px solid ${r.color}44`,
+                  color: r.color, borderRadius: 4, cursor: 'pointer', fontWeight: 700, minHeight: 28,
+                }}>{r.label}</button>
+            ))}
+          </div>
+
+          {/* Réactions */}
+          <div style={{ fontSize: 9, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>
+            Réactions
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 10 }}>
+            {[
+              { label: '(rires)',      color: 'var(--accent)', dur: 1.5 },
+              { label: '(pleurs)',     color: '#ff8888', dur: 2.0 },
+              { label: '(soupir)',     color: '#aaa',    dur: 1.0 },
+              { label: '(cri)',        color: '#ff5a5a', dur: 0.7 },
+              { label: '(chuchoté)',   color: '#88ddaa', dur: 1.2 },
+              { label: '(essoufflé)',  color: '#7ec0ff', dur: 1.0 },
+              { label: '(hésitation)', color: '#bb88ff', dur: 0.5 },
+            ].map(r => (
+              <button key={r.label}
+                onClick={() => { insertTagSub(r.label, r.dur); setShowInserer(false) }}
+                style={{
+                  fontSize: 10.5, padding: '5px 9px', fontFamily: 'var(--font-mono)',
+                  background: 'rgba(255,255,255,0.04)', border: `1px solid ${r.color}44`,
+                  color: r.color, borderRadius: 4, cursor: 'pointer', minHeight: 28,
+                }}>{r.label}<span style={{ fontSize: 8, opacity: 0.5, marginLeft: 4 }}>{r.dur}s</span></button>
+            ))}
+          </div>
+
+          {/* Note */}
+          {target ? (
+            <>
+              <div style={{ fontSize: 9, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>
+                Note — réplique #{targetIdx + 1}
+              </div>
+              <textarea
+                value={target.note || ''}
+                onChange={e => updateTarget({ note: e.target.value })}
+                rows={2}
+                placeholder="Intention, ton, timing…"
+                style={{
+                  width: '100%', fontFamily: 'var(--font-ui)', fontStyle: 'italic',
+                  fontSize: 12, padding: '6px 8px',
+                  background: 'var(--surface2)', color: 'var(--text)',
+                  border: '1px solid var(--border2)', borderRadius: 5, resize: 'vertical',
+                }} />
+            </>
+          ) : (
+            <div style={{ fontSize: 11, color: 'var(--text3)' }}>
+              Sélectionnez une réplique pour ajouter une note.
+            </div>
+          )}
+        </div>,
+        document.body
+      )}
+
+      {/* Affichage popover — Style · Zoom · Décalage · Police · BR-in-player (DOUBLAGE_IA_REVIEW §3). */}
+      {showAffichage && createPortal(
+        <div data-popover="affichage" style={{
+          position: 'fixed', bottom: dropdownAnchor.bottom, left: dropdownAnchor.left, zIndex: 'var(--z-dropdown)',
+          background: '#0c0c0c', border: '1px solid var(--border2)', borderRadius: 8,
+          padding: 14, width: 340, boxShadow: '0 8px 22px rgba(0,0,0,0.75)',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text)', textTransform: 'uppercase', letterSpacing: 1 }}>
+              Affichage
+            </span>
+            <div style={{ flex: 1 }} />
+            <button onClick={() => setShowAffichage(false)}
+              style={{ background: 'transparent', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 14 }}>×</button>
+          </div>
+
+          {/* Style */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <span style={{ fontSize: 10.5, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, width: 80 }}>Style</span>
+            <div style={{ display: 'flex', alignItems: 'center', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, padding: 2, flex: 1 }}>
+              {['classique', 'neon', 'minimal'].map(s => (
+                <button key={s} onClick={() => setRythmoStyle(s)} style={{
+                  ...btnBase, height: 26, padding: '0 10px', fontSize: 10.5, borderRadius: 4, flex: 1,
+                  background: rythmoStyle === s ? 'var(--accent)' : 'transparent',
+                  color: rythmoStyle === s ? '#000' : 'var(--text2)',
+                  fontWeight: 600, textTransform: 'capitalize',
+                }}>{s}</button>
+              ))}
+            </div>
+          </div>
+
+          {/* Police */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <span style={{ fontSize: 10.5, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, width: 80 }}>Police</span>
+            <select value={brFont} onChange={e => setBrFont(e.target.value)}
+              style={{ flex: 1, background: 'var(--surface2)', color: 'var(--text)', border: '1px solid var(--border2)', borderRadius: 5, padding: '5px 8px', fontSize: 12 }}>
+              <option value="atkinson">Atkinson</option>
+              <option value="lisible">Manuscrite lisible</option>
+              <option value="cursive">Cursive (Caveat)</option>
+              <option value="inter">Inter</option>
+              <option value="jetbrains">JetBrains Mono</option>
+            </select>
+          </div>
+
+          {/* Zoom */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <span style={{ fontSize: 10.5, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, width: 80 }}>Zoom</span>
+            <button onClick={() => setPxPerSec(p => Math.max(40, p - 20))} style={btn(true)}><Ic d={ICONS.zoomOut} /></button>
+            <span style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--font-mono)', flex: 1, textAlign: 'center' }}>{pxPerSec} px/s</span>
+            <button onClick={() => setPxPerSec(p => Math.min(600, p + 20))} style={btn(true)}><Ic d={ICONS.zoomIn} /></button>
+          </div>
+
+          {/* Décalage */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <span style={{ fontSize: 10.5, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, width: 80 }}>Décalage</span>
+            <input type="range" min={-2} max={2} step={0.05} value={brOffset}
+              onChange={e => setBrOffset(parseFloat(e.target.value))}
+              style={{ flex: 1, color: 'var(--accent)', '--pct': `${((brOffset + 2) / 4) * 100}%` }} />
+            <span style={{ fontSize: 11, color: brOffset !== 0 ? 'var(--accent)' : 'var(--text2)', fontFamily: 'var(--font-mono)', minWidth: 50, textAlign: 'right' }}>
+              {brOffset >= 0 ? '+' : ''}{brOffset.toFixed(2)}s
+            </span>
+            {brOffset !== 0 && (
+              <button onClick={() => setBrOffset(0)} title="Reset" style={{ ...btnBase, height: 22, width: 22, minWidth: 22, padding: 0, fontSize: 11, color: 'var(--accent)' }}>✕</button>
+            )}
+          </div>
+
+          {/* Taille texte */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <span style={{ fontSize: 10.5, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, width: 80 }}>Taille</span>
+            <button onClick={() => setFontScale(s => Math.max(0.6, s - 0.1))} style={btn(true)}>A−</button>
+            <span style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--font-mono)', flex: 1, textAlign: 'center' }}>{Math.round(fontScale * 100)} %</span>
+            <button onClick={() => setFontScale(s => Math.min(2.0, s + 0.1))} style={btn(true)}>A+</button>
+          </div>
+
+          {/* Incrustation vidéo (BR in player) */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 10.5, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, width: 80 }}>Sous-titres</span>
+            <div style={{ display: 'flex', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, padding: 2, flex: 1 }}>
+              {[
+                { v: 'never',  l: 'Masqué' },
+                { v: 'play',   l: 'À la lecture' },
+                { v: 'always', l: 'Toujours' },
+              ].map(o => (
+                <button key={o.v} onClick={() => setBrInPlayer(o.v)} style={{
+                  ...btnBase, height: 24, padding: '0 8px', fontSize: 10, borderRadius: 4, flex: 1,
+                  background: brInPlayer === o.v ? 'var(--accent)' : 'transparent',
+                  color: brInPlayer === o.v ? '#000' : 'var(--text2)',
+                  fontWeight: 600,
+                }}>{o.l}</button>
+              ))}
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   )

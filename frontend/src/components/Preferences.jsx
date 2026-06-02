@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { useSettings } from '../SettingsContext'
 
 const ACCENTS = [
@@ -20,6 +20,23 @@ const DENSITIES = [
   { key: 'compact',     label: 'Compact',     desc: 'Interface dense' },
   { key: 'normal',      label: 'Normal',      desc: 'Par défaut' },
   { key: 'comfortable', label: 'Confortable', desc: 'Plus d’espace' },
+]
+
+const WHISPER_LANGS = [
+  { key: 'fr',   label: 'Français' },
+  { key: 'en',   label: 'Anglais' },
+  { key: 'es',   label: 'Espagnol' },
+  { key: 'de',   label: 'Allemand' },
+  { key: 'it',   label: 'Italien' },
+  { key: 'auto', label: 'Détection auto' },
+]
+
+const BR_FONTS = [
+  { id: 'atkinson',  label: 'Atkinson' },
+  { id: 'lisible',   label: 'Manuscrite lisible' },
+  { id: 'cursive',   label: 'Cursive (Caveat)' },
+  { id: 'inter',     label: 'Inter' },
+  { id: 'jetbrains', label: 'JetBrains Mono' },
 ]
 
 function Section({ title, children }) {
@@ -137,9 +154,154 @@ export default function Preferences() {
           </div>
         </Section>
 
+        <Section title="TRANSCRIPTION WHISPER">
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 10 }}>
+            <label style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 8 }}>
+              Langue par défaut
+              <select
+                value={settings.whisperLang || 'fr'}
+                onChange={e => update({ whisperLang: e.target.value })}
+                style={selectStyle}
+              >
+                {WHISPER_LANGS.map(l => <option key={l.key} value={l.key}>{l.label}</option>)}
+              </select>
+            </label>
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--text3)' }}>
+            Modèle Whisper backend : <code style={{ fontFamily: 'var(--font-mono)' }}>{settings.whisperModel || 'large-v3'}</code> · réglable via <code>WHISPER_MODEL</code> env.
+          </div>
+        </Section>
+
+        <Section title="CONNEXION PLEX">
+          <PlexSection />
+        </Section>
+
+        <Section title="EXPORT — VALEURS PAR DÉFAUT">
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+            <label style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 8 }}>
+              Police BR
+              <select
+                value={settings.exportBrFont || 'atkinson'}
+                onChange={e => update({ exportBrFont: e.target.value })}
+                style={selectStyle}
+              >
+                {BR_FONTS.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
+              </select>
+            </label>
+            <label style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 8 }}>
+              Style BR
+              <select
+                value={settings.exportBrStyle || 'classique'}
+                onChange={e => update({ exportBrStyle: e.target.value })}
+                style={selectStyle}
+              >
+                {BR_STYLES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+              </select>
+            </label>
+            <label style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input
+                type="checkbox"
+                checked={!!settings.exportDetectionBurn}
+                onChange={e => update({ exportDetectionBurn: e.target.checked })}
+              />
+              Incruster la détection (MP4)
+            </label>
+          </div>
+        </Section>
+
         <div style={{ fontSize: 11, color: 'var(--text3)', borderTop: '1px solid var(--border)', paddingTop: 14 }}>
           Les préférences sont enregistrées localement dans ce navigateur.
         </div>
+      </div>
+    </div>
+  )
+}
+
+const selectStyle = {
+  background: 'var(--surface2)',
+  color: 'var(--text)',
+  border: '1px solid var(--border2)',
+  borderRadius: 6,
+  padding: '5px 10px',
+  fontSize: 12,
+  minHeight: 32,
+}
+
+function PlexSection() {
+  const [status, setStatus] = useState(null)    // { connected, server, url }
+  const [url, setUrl]       = useState('')
+  const [token, setToken]   = useState('')
+  const [busy, setBusy]     = useState(false)
+  const [err, setErr]       = useState(null)
+
+  useEffect(() => {
+    let alive = true
+    fetch('/api/plex/status').then(r => r.json()).then(d => {
+      if (!alive) return
+      setStatus(d)
+      if (d.url) setUrl(d.url)
+    }).catch(() => {})
+    return () => { alive = false }
+  }, [])
+
+  async function connect() {
+    setBusy(true); setErr(null)
+    try {
+      const r = await fetch('/api/plex/connect', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: url.trim(), token: token.trim() }),
+      })
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}))
+        throw new Error(d.detail || `HTTP ${r.status}`)
+      }
+      const d = await r.json()
+      setStatus({ connected: true, server: d.server, url: url.trim() })
+      setToken('')
+    } catch (e) {
+      setErr(e.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {status && status.connected && (
+        <div style={{ fontSize: 12, color: 'var(--success)' }}>
+          ● Connecté à {status.server} ({status.url})
+        </div>
+      )}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <input
+          placeholder="URL Plex (http://localhost:32400)"
+          value={url}
+          onChange={e => setUrl(e.target.value)}
+          style={{ flex: '1 1 240px', minHeight: 32, fontSize: 12 }}
+        />
+        <input
+          type="password"
+          placeholder="Token (masqué)"
+          value={token}
+          onChange={e => setToken(e.target.value)}
+          style={{ flex: '1 1 200px', minHeight: 32, fontSize: 12 }}
+        />
+        <button
+          onClick={connect}
+          disabled={busy || !url || !token}
+          style={{
+            padding: '6px 14px', minHeight: 32,
+            background: 'var(--accent)', color: '#000', fontWeight: 600,
+            fontSize: 12, borderRadius: 6,
+            opacity: (busy || !url || !token) ? 0.55 : 1,
+            cursor: (busy || !url || !token) ? 'default' : 'pointer',
+          }}>
+          {busy ? 'Connexion…' : 'Connecter'}
+        </button>
+      </div>
+      {err && <div style={{ fontSize: 12, color: 'var(--danger)' }}>{err}</div>}
+      <div style={{ fontSize: 11, color: 'var(--text3)' }}>
+        Le token reste local — utilisé uniquement pour les requêtes vers votre serveur Plex.
       </div>
     </div>
   )

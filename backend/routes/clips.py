@@ -16,8 +16,9 @@ from database import get_db
 from services.clip_service import (
     create_clip, delete_clip, get_clip,
     list_clips, update_name, update_status, update_subtitles,
+    update_boucles, update_fps,
 )
-from services.ffmpeg_service import extract_segment, extract_thumbnail, probe_streams
+from services.ffmpeg_service import extract_segment, extract_thumbnail, probe_streams, probe_fps
 
 router = APIRouter()
 
@@ -26,12 +27,20 @@ class UpdateSubtitlesRequest(BaseModel):
     subtitles: List[Dict[str, Any]]
 
 
+class UpdateBouclesRequest(BaseModel):
+    boucles: List[Dict[str, Any]]
+
+
 class RenameRequest(BaseModel):
     name: str
 
 
 class StatusRequest(BaseModel):
     status: str
+
+
+class FpsRequest(BaseModel):
+    fps: float
 
 
 class ProbeLocalRequest(BaseModel):
@@ -71,11 +80,15 @@ async def create_batch(
     source_filename = file.filename or "video"
     tmp_path = None
     extracted = []
+    source_fps = 25.0
 
     try:
         with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
             shutil.copyfileobj(file.file, tmp)
             tmp_path = tmp.name
+
+        # Source fps once per upload — passed to every clip carved out of it.
+        source_fps = await asyncio.to_thread(probe_fps, tmp_path)
 
         for c in clips_data:
             clip_id = str(uuid.uuid4())
@@ -115,6 +128,7 @@ async def create_batch(
         create_clip(
             db, e["clip_id"], e["name"], source_filename,
             e["start"], e["end"], e["segment_path"], e["thumbnail_path"],
+            fps=source_fps,
         )
         for e in extracted
     ]
@@ -136,6 +150,7 @@ async def create_batch_local(req: BatchLocalRequest, db: Session = Depends(get_d
 
     source_filename = req.source_filename or os.path.basename(req.path)
     extracted = []
+    source_fps = await asyncio.to_thread(probe_fps, req.path)
 
     for c in req.clips:
         clip_id = str(uuid.uuid4())
@@ -167,6 +182,7 @@ async def create_batch_local(req: BatchLocalRequest, db: Session = Depends(get_d
             db, e["clip_id"], e["name"], source_filename,
             e["start"], e["end"], e["segment_path"], e["thumbnail_path"],
             source_path=req.path,
+            fps=source_fps,
         )
         for e in extracted
     ]
@@ -188,6 +204,24 @@ async def get_one(clip_id: str, db: Session = Depends(get_db)):
 @router.put("/{clip_id}/subtitles")
 async def set_subtitles(clip_id: str, req: UpdateSubtitlesRequest, db: Session = Depends(get_db)):
     clip = update_subtitles(db, clip_id, req.subtitles)
+    if not clip:
+        raise HTTPException(404, "Clip not found")
+    return clip
+
+
+@router.put("/{clip_id}/boucles")
+async def set_boucles(clip_id: str, req: UpdateBouclesRequest, db: Session = Depends(get_db)):
+    clip = update_boucles(db, clip_id, req.boucles)
+    if not clip:
+        raise HTTPException(404, "Clip not found")
+    return clip
+
+
+@router.put("/{clip_id}/fps")
+async def set_fps(clip_id: str, req: FpsRequest, db: Session = Depends(get_db)):
+    if req.fps <= 0:
+        raise HTTPException(400, "fps must be positive")
+    clip = update_fps(db, clip_id, req.fps)
     if not clip:
         raise HTTPException(404, "Clip not found")
     return clip

@@ -8,12 +8,17 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from database import init_db
-from routes import video, transcription, export, clips, meme, files, plex, takes
+from routes import video, transcription, export, clips, meme, files, plex, takes, jobs
+from services import jobs as jobs_service
+import asyncio
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    # Threaded job workers push progress via call_soon_threadsafe — capture the
+    # running loop now so they can wake WS subscribers.
+    jobs_service.bind_loop(asyncio.get_running_loop())
     yield
 
 
@@ -37,6 +42,7 @@ app.include_router(meme.router, prefix="/api/meme", tags=["meme"])
 app.include_router(files.router, prefix="/api/files", tags=["files"])
 app.include_router(plex.router, prefix="/api/plex", tags=["plex"])
 app.include_router(takes.router, prefix="/api/takes", tags=["takes"])
+app.include_router(jobs.router, prefix="/api/jobs", tags=["jobs"])
 
 app.mount("/segments", StaticFiles(directory="segments"), name="segments")
 app.mount("/exports", StaticFiles(directory="exports"), name="exports")

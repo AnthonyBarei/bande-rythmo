@@ -20,7 +20,7 @@ def get_db():
 
 
 def init_db():
-    from models import Clip, Subtitle, Take  # noqa: F401
+    from models import Clip, Subtitle, Take, Boucle  # noqa: F401
     Base.metadata.create_all(bind=engine)
     from sqlalchemy import text
     with engine.connect() as conn:
@@ -33,4 +33,19 @@ def init_db():
                 "UPDATE clips SET status = 'dubbing' "
                 "WHERE clip_id IN (SELECT DISTINCT clip_id FROM subtitles)"
             ))
+        # Source fps for SMPTE display + DetX export. Backfill 25 (PAL).
+        if "fps" not in cols:
+            conn.execute(text("ALTER TABLE clips ADD COLUMN fps REAL NOT NULL DEFAULT 25.0"))
+        sub_cols = [r[1] for r in conn.execute(text("PRAGMA table_info(subtitles)")).fetchall()]
+        if "words" not in sub_cols:
+            conn.execute(text("ALTER TABLE subtitles ADD COLUMN words TEXT"))
+        # Pro BR line flags. SQLite stores BOOLEAN as INTEGER (0/1).
+        if "off" not in sub_cols:
+            conn.execute(text("ALTER TABLE subtitles ADD COLUMN off INTEGER NOT NULL DEFAULT 0"))
+        if "dos" not in sub_cols:
+            conn.execute(text("ALTER TABLE subtitles ADD COLUMN dos INTEGER NOT NULL DEFAULT 0"))
+        if "ambiance" not in sub_cols:
+            conn.execute(text("ALTER TABLE subtitles ADD COLUMN ambiance INTEGER NOT NULL DEFAULT 0"))
+        if "plan_cut" not in sub_cols:
+            conn.execute(text("ALTER TABLE subtitles ADD COLUMN plan_cut REAL"))
         conn.commit()

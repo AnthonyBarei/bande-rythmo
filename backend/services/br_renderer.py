@@ -4,18 +4,35 @@ import subprocess
 from typing import Dict, List, Optional
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 CURSOR_X_RATIO = 0.30
 BG = (5, 5, 5)
+
+# Band background per rythmo style (matches the editor canvas).
+_STYLE_BG = {
+    "classique": (10, 10, 12),
+    "neon":      (6, 6, 10),
+    "minimal":   (13, 13, 16),
+}
+
+
+def _blend(fg, a, bg):
+    """Blend colour `fg` at opacity `a` (0..1) over opaque background `bg`."""
+    return tuple(int(bg[i] + (fg[i] - bg[i]) * a) for i in range(3))
 
 # Bundled BR fonts — keyed by the id sent from the frontend font picker.
 _FONTS_DIR = os.path.join(os.path.dirname(__file__), "..", "fonts")
 _ATKINSON_BOLD = os.path.join(_FONTS_DIR, "AtkinsonHyperlegible-Bold.ttf")
 _BR_FONT_FILES = {
     "atkinson":  os.path.join(_FONTS_DIR, "AtkinsonHyperlegible-Bold.ttf"),
+    # Legible-handwriting alternative to the cursive Caveat — keeps the
+    # manuscript feel while staying readable in motion. Falls back to
+    # atkinson if ShantellSans.ttf isn't bundled yet.
+    "lisible":   os.path.join(_FONTS_DIR, "ShantellSans.ttf"),
     "inter":     os.path.join(_FONTS_DIR, "Inter.ttf"),
     "jetbrains": os.path.join(_FONTS_DIR, "JetBrainsMono-Bold.ttf"),
+    "cursive":   os.path.join(_FONTS_DIR, "Caveat.ttf"),
 }
 
 TRACK_COLORS = [
@@ -24,14 +41,6 @@ TRACK_COLORS = [
     {"bg": (255, 100, 160), "bg_a": 26,  "label": (255, 100, 160)},
     {"bg": (100, 230, 160), "bg_a": 26,  "label": (100, 230, 160)},
 ]
-
-
-def _blend(fg, alpha, bg=BG):
-    a = alpha / 255.0
-    return tuple(int(bg[i] + (fg[i] - bg[i]) * a) for i in range(3))
-
-
-BLOCK_FILLS = [_blend(c["bg"], c["bg_a"]) for c in TRACK_COLORS]
 
 
 def _load_font(candidates: list, size: int) -> ImageFont.FreeTypeFont:
@@ -76,6 +85,97 @@ def _text_rgb(is_active: bool) -> tuple:
     return (255, 255, 255) if is_active else (89, 89, 89)  # 255*0.35
 
 
+def _merge_words(ws):
+    """Merge contraction fragments — Whisper splits "t'as" → "t" + "'as".
+    A token starting with ' / ’ / - (or following one) joins the previous."""
+    out = []
+    for w in ws:
+        wt = w.get("w") or ""
+        if out and wt and (wt[0] in "'’-"
+                            or (out[-1]["w"] and out[-1]["w"][-1] in "'’-")):
+            out[-1] = {"w": out[-1]["w"] + wt,
+                       "start": out[-1]["start"], "end": w["end"]}
+        else:
+            out.append({"w": wt, "start": w["start"], "end": w["end"]})
+    return out
+
+
+def _valid_words(sub: Dict):
+    """Per-word timing, only if still consistent with the réplique text+timing
+    (else stale from an edit → caller falls back to whole-text even-stretch)."""
+    ws = sub.get("words")
+    if not isinstance(ws, list) or not ws:
+        return None
+    joined = "".join("".join((w.get("w") or "").split()) for w in ws)
+    txt = "".join((sub.get("text") or "").split())
+    if not joined or joined != txt:
+        return None
+    s, e = sub["start"], sub["end"]
+    for w in ws:
+        if w["start"] < s - 0.05 or w["end"] > e + 0.05:
+            return None
+    return _merge_words(ws)
+
+
+_STRETCH_CAP = 1.2  # max horizontal stretch — a held word stays near-normal
+                    # width and sits left-aligned; the trailing gap shows the hold.
+
+
+def _draw_word(img, word_text, bl, br_, y_top, track_h, y_center, is_active,
+               color, style, font_main, font_size, W):
+    """Draw one word inside its time-block [bl, br_]: squeezed to fit; stretch
+    capped at _STRETCH_CAP (long holds → left-aligned word + trailing gap).
+    word_text carries a trailing space so consecutive words stay separated."""
+    block_w = br_ - bl
+    text_rgb = _text_rgb(is_active)
+    stroke_w = max(1, round(font_size / 18))
+
+    try:
+        bb = font_main.getbbox(word_text, stroke_width=stroke_w)
+        text_h = bb[3] - bb[1]
+        bb0 = bb[0]
+        # getlength = advance (counts the trailing space) → words keep a gap.
+        natural_w = max(1, int(round(font_main.getlength(word_text))) + stroke_w * 2)
+    except Exception:
+        natural_w = max(1, len(word_text) * font_size // 2)
+        text_h, bb0 = font_size, 0
+
+    scale_x = block_w / natural_w if block_w > 0 else 1.0
+    scale_x = max(0.05, min(scale_x, _STRETCH_CAP))
+
+    tmp_w = natural_w + 4
+    tmp = Image.new("RGBA", (tmp_w, track_h), (0, 0, 0, 0))
+    tdraw = ImageDraw.Draw(tmp)
+    ty = y_center - y_top - text_h // 2 - bb0
+    tdraw.text((-bb0, ty), word_text, font=font_main, fill=(*text_rgb, 255),
+               stroke_width=stroke_w, stroke_fill=(0, 0, 0, 235))
+
+    if abs(scale_x - 1.0) > 0.01:
+        tmp = tmp.resize((max(1, int(tmp_w * scale_x)), track_h), Image.LANCZOS)
+
+    # Left-aligned at the block start; tmp width ≤ block width by construction
+    # (squeezed → exact, capped → narrower) so the word never overflows br_.
+    dst = int(bl)
+    src_x = 0
+    if dst < 0:
+        src_x = -dst
+        dst = 0
+    if dst >= W or src_x >= tmp.width:
+        return
+    copy_w = min(tmp.width - src_x, W - dst)
+    if copy_w <= 0:
+        return
+    crop = tmp.crop((src_x, 0, src_x + copy_w, track_h))
+    if style == "neon":
+        # Coloured blurred halo behind the glyphs — neon glow.
+        alpha = crop.split()[3]
+        glow = Image.new("RGBA", crop.size, (0, 0, 0, 0))
+        glow.paste(Image.new("RGBA", crop.size, (*color["label"], 255)), (0, 0), alpha)
+        glow = glow.filter(ImageFilter.GaussianBlur(max(2, font_size // 9)))
+        img.paste(glow, (dst, y_top), glow)
+    img.paste(crop, (dst, y_top), crop)
+
+
 def _render_frame(
     t: float,
     subtitles: List[Dict],
@@ -88,8 +188,11 @@ def _render_frame(
     font_label: ImageFont.FreeTypeFont,
     font_avatar: ImageFont.FreeTypeFont,
     font_size: int,
+    style: str = "classique",
 ) -> Image.Image:
-    img = Image.new("RGBA", (W, H), (*BG, 255))
+    # Opaque BR band — glued below the picture (vstack), not over it.
+    bg = _STYLE_BG.get(style, _STYLE_BG["classique"])
+    img = Image.new("RGB", (W, H), bg)
     draw = ImageDraw.Draw(img)
 
     track_h = H // max(1, num_tracks)
@@ -98,47 +201,59 @@ def _render_frame(
     # Track separator lines
     for tr in range(1, num_tracks):
         y = tr * track_h
-        draw.line([(0, y), (W, y)], fill=(26, 26, 26), width=1)
+        draw.line([(0, y), (W, y)], fill=_blend((255, 255, 255), 0.05, bg), width=1)
 
-    # Subtitle background blocks
+    # Réplique blocks — style-dependent (drawn before text so text sits on top)
+    edge_w = max(2, int(track_h * 0.035))
     for sub in subtitles:
         tr = char_map.get(sub.get("character", ""), 0)
+        col = TRACK_COLORS[tr % len(TRACK_COLORS)]["bg"]
         y_top = tr * track_h
         bl = cursor_x + (sub["start"] - t) * px_per_sec
-        br = cursor_x + (sub["end"]   - t) * px_per_sec
-        if br < 0 or bl > W:
+        br_ = cursor_x + (sub["end"] - t) * px_per_sec
+        if br_ < 0 or bl > W:
             continue
-        bx = max(0, bl)
-        bw = min(W, br) - bx
-        if bw <= 0:
+        is_active = sub["start"] <= t <= sub["end"]
+        bx = int(max(0, bl))
+        bx2 = int(min(W, br_))
+        if bx2 <= bx:
             continue
-        draw.rectangle([int(bx), y_top + 1, int(bx + bw), y_top + track_h - 2],
-                       fill=BLOCK_FILLS[tr % len(BLOCK_FILLS)])
+        if style == "minimal":
+            uy = y_top + track_h - max(3, int(track_h * 0.05))
+            draw.rectangle([bx, uy, bx2, y_top + track_h - 2],
+                           fill=_blend(col, 1.0 if is_active else 0.4, bg))
+        elif style == "neon":
+            draw.rectangle([bx + 1, y_top + 4, bx2 - 1, y_top + track_h - 5],
+                           outline=_blend(col, 0.7 if is_active else 0.4, bg),
+                           width=max(1, int(track_h * 0.02)))
+        else:  # classique
+            draw.rectangle([bx, y_top + 3, bx2, y_top + track_h - 4],
+                           fill=_blend(col, 0.28 if is_active else 0.14, bg))
+            lx = int(bl)
+            if -1 < lx < W:
+                draw.rectangle([lx, y_top + 3, lx + edge_w, y_top + track_h - 4],
+                               fill=_blend(col, 1.0 if is_active else 0.67, bg))
 
-    # Avatar circles + stretched text
+    # Avatar circle (once per réplique) + per-word stretched text
     for sub in subtitles:
         tr = char_map.get(sub.get("character", ""), 0)
         color = TRACK_COLORS[tr % len(TRACK_COLORS)]
         y_top = tr * track_h
         y_mid = y_top + track_h // 2
-        is_active = sub["start"] <= t <= sub["end"]
         char = sub.get("character", "")
 
-        bl = cursor_x + (sub["start"] - t) * px_per_sec
-        br_ = cursor_x + (sub["end"]   - t) * px_per_sec
-        block_w = br_ - bl
-
-        if br_ < 0 or bl > W:
+        sub_bl = cursor_x + (sub["start"] - t) * px_per_sec
+        sub_br = cursor_x + (sub["end"]   - t) * px_per_sec
+        if sub_br < 0 or sub_bl > W:
             continue
+        sub_active = sub["start"] <= t <= sub["end"]
 
-        # Avatar circle
-        if char and block_w > 20:
+        # Avatar circle — at the réplique start
+        if char and (sub_br - sub_bl) > 20:
             r = max(8, int(track_h * 0.13))
             pad = max(5, int(track_h * 0.09))
-            ax = max(bl, 0) + pad
-            ay = y_top + pad
-            cx, cy = int(ax + r), int(ay + r)
-            lc = color["label"] if is_active else tuple(int(c * 0.6) for c in color["label"])
+            cx, cy = int(max(sub_bl, 0) + pad + r), int(y_top + pad + r)
+            lc = color["label"] if sub_active else tuple(int(c * 0.6) for c in color["label"])
             draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=lc)
             initial = char[0].upper()
             try:
@@ -149,66 +264,24 @@ def _render_frame(
             except Exception:
                 draw.text((cx - 4, cy - 4), initial, font=font_avatar, fill=(0, 0, 0))
 
-        # Stretched text
-        raw_text = sub.get("text", "").replace("*", "○")
-        if not raw_text:
-            continue
-
+        # Per-word text — each word fills its own time-block [start, end].
+        # No / stale word data → fall back to the whole réplique as one word.
+        words = _valid_words(sub) or [
+            {"w": sub.get("text", ""), "start": sub["start"], "end": sub["end"]}
+        ]
         text_y_center = y_mid + (6 if char else 0)
-        text_rgb = _text_rgb(is_active)
-
-        # Thin black stroke around glyphs — definition against motion blur and
-        # h264 compression, without a thick halo that reads as softness.
-        stroke_w = max(1, round(font_size / 18))
-
-        try:
-            bb = font_main.getbbox(raw_text, stroke_width=stroke_w)
-            natural_w = max(1, bb[2] - bb[0])
-        except Exception:
-            natural_w = max(1, len(raw_text) * font_size // 2)
-
-        # Near-zero floor: text always squeezes to exactly fit its block — never
-        # overflows / clips at the block edge. Extreme squeeze = too-short cue.
-        scale_x = max(0.05, block_w / natural_w) if block_w > 0 else 0.05
-
-        # Render text to RGBA temp image, then resize
-        tmp_w = natural_w + stroke_w * 2 + 4
-        try:
-            bb = font_main.getbbox(raw_text, stroke_width=stroke_w)
-            text_h = bb[3] - bb[1]
-            tmp = Image.new("RGBA", (tmp_w, track_h), (0, 0, 0, 0))
-            tdraw = ImageDraw.Draw(tmp)
-            ty = text_y_center - y_top - text_h // 2 - bb[1]
-            tdraw.text((-bb[0], ty), raw_text, font=font_main, fill=(*text_rgb, 255),
-                       stroke_width=stroke_w, stroke_fill=(0, 0, 0, 235))
-        except Exception:
-            tmp = Image.new("RGBA", (tmp_w, track_h), (0, 0, 0, 0))
-            tdraw = ImageDraw.Draw(tmp)
-            tdraw.text((0, text_y_center - y_top - font_size // 2),
-                       raw_text, font=font_main, fill=(*text_rgb, 255),
-                       stroke_width=stroke_w, stroke_fill=(0, 0, 0, 235))
-
-        # Horizontal scale
-        if abs(scale_x - 1.0) > 0.01:
-            new_w = max(1, int(tmp_w * scale_x))
-            tmp = tmp.resize((new_w, track_h), Image.LANCZOS)
-
-        scaled_w = tmp.width
-        text_start_x = int(bl)
-        clip_l = max(0, int(bl))
-        clip_r = min(W, int(br_))
-        if clip_r <= clip_l:
-            continue
-
-        src_x = max(0, clip_l - text_start_x)
-        dst_x = clip_l
-        copy_w = min(scaled_w - src_x, clip_r - dst_x)
-        if copy_w <= 0:
-            continue
-
-        crop = tmp.crop((src_x, 0, src_x + copy_w, track_h))
-        img.paste(crop, (dst_x, y_top), crop)
-        draw = ImageDraw.Draw(img)
+        for wd in words:
+            core = (wd.get("w") or "").replace("*", "○")
+            if not core:
+                continue
+            wbl = cursor_x + (wd["start"] - t) * px_per_sec
+            wbr = cursor_x + (wd["end"] - t) * px_per_sec
+            if wbr < 0 or wbl > W:
+                continue
+            w_active = wd["start"] <= t <= wd["end"]
+            _draw_word(img, core + " ", wbl, wbr, y_top, track_h, text_y_center,
+                       w_active, color, style, font_main, font_size, W)
+    draw = ImageDraw.Draw(img)
 
     # Track labels (fixed left, always on top)
     label_pad = max(5, int(track_h * 0.07))
@@ -248,7 +321,8 @@ def render_br_video(
     font_scale: float = 1.0,
     br_font: str = "atkinson",
     supersample: int = 4,
-    shutter: float = 0.4,
+    shutter: float = 0.25,
+    style: str = "classique",
 ):
     """Render BR strip frames to a lossless video file at exact video fps.
 
@@ -272,10 +346,10 @@ def render_br_video(
     ss = max(1, int(supersample))
 
     # Scale fonts to track height so BR text stays readable at any export
-    # resolution. Text fills most of the track height (VoxDub-style) — large
-    # glyphs are far easier to read while scrolling.
+    # resolution. ~0.45 of track height — large readable glyphs with margin
+    # above/below (VoxDub proportions).
     track_h = H // max(1, num_tracks)
-    font_size = max(14, round(track_h * 0.58 * font_scale))
+    font_size = max(14, round(track_h * 0.45 * font_scale))
     label_size = max(9, round(track_h * 0.13))
     avatar_size = max(8, round(track_h * 0.13))
     font_main, font_label, font_avatar = _get_fonts(
@@ -284,7 +358,7 @@ def render_br_video(
     num_frames = max(1, round(duration * fps))
 
     # FFV1 lossless RGB intermediate — no chroma subsampling on text edges,
-    # so the only lossy pass is the final overlay encode.
+    # so the only lossy pass is the final encode.
     cmd = [
         "ffmpeg", "-y",
         "-f", "rawvideo", "-vcodec", "rawvideo",
@@ -303,9 +377,9 @@ def render_br_video(
         img = _render_frame(
             t, subtitles, char_map, num_tracks,
             W, H, px_per_sec,
-            font_main, font_label, font_avatar, font_size,
-        ).convert("RGB")
-        return np.asarray(img, dtype=np.float32)
+            font_main, font_label, font_avatar, font_size, style,
+        )
+        return np.asarray(img.convert("RGB"), dtype=np.float32)
 
     try:
         for frame_idx in range(num_frames):

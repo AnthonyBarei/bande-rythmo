@@ -144,12 +144,25 @@ export default function ClipsLibrary({ clips, onDub, onMeme, onDelete, onRename,
       {/* Grid */}
       <div style={{ flex: 1, overflow: 'auto', padding: 24 }}>
         {visible.length === 0 ? (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60%', gap: 12, color: 'var(--text3)' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60%', gap: 14, color: 'var(--text3)' }}>
             <div style={{ fontSize: 40, opacity: 0.25 }}>▤</div>
             <div style={{ fontSize: 14, color: 'var(--text2)' }}>
               {clips.length === 0 ? 'Aucun clip encore' : 'Aucun clip dans ce filtre'}
             </div>
-            {clips.length === 0 && <div style={{ fontSize: 12 }}>Importez une vidéo et découpez des segments</div>}
+            {clips.length === 0 && (
+              <>
+                <div style={{ fontSize: 12 }}>Importez une vidéo et découpez des segments</div>
+                <button onClick={onNewClip}
+                  style={{
+                    marginTop: 4, padding: '10px 20px',
+                    background: 'var(--accent)', color: '#000',
+                    fontWeight: 600, fontSize: 13,
+                    borderRadius: 'var(--radius)', cursor: 'pointer',
+                  }}>
+                  + Importer une vidéo
+                </button>
+              </>
+            )}
           </div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>

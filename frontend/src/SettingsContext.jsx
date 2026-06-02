@@ -6,6 +6,13 @@ const DEFAULTS = {
   accent: '#f5c518',
   brStyle: 'classique',
   density: 'normal',
+  // Whisper transcription defaults — applied when a clip is opened without override.
+  whisperLang: 'fr',                // fr | en | auto | …
+  whisperModel: 'large-v3',         // mirrors backend WHISPER_MODEL env var, info-only here
+  // Export defaults — pre-filled in ExportPanel form.
+  exportBrFont: 'atkinson',
+  exportBrStyle: 'classique',
+  exportDetectionBurn: false,
 }
 
 const DENSITY_FONT = { compact: 13, normal: 14, comfortable: 15 }

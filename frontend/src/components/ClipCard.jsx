@@ -63,6 +63,10 @@ export default function ClipCard({ clip, onDub, onMeme, onDelete, onRename, onSt
     onStatusChange(clip.clip_id, next)
   }
 
+  const curStatusKey = clip.status || 'todo'
+  const nextStatusKey = STATUS_CYCLE[(STATUS_CYCLE.indexOf(curStatusKey) + 1) % STATUS_CYCLE.length]
+  const nextLabel = STATUS[nextStatusKey].label
+
   const hue = hashHue(clip.name || clip.clip_id)
 
   return (
@@ -93,19 +97,26 @@ export default function ClipCard({ clip, onDub, onMeme, onDelete, onRename, onSt
           background: 'repeating-linear-gradient(0deg, transparent 0 3px, rgba(0,0,0,.18) 3px 4px)',
           pointerEvents: 'none',
         }} />
-        {/* Status pill — click to cycle */}
+        {/* Status pill — click cycles todo → dubbing → review → done.
+            Discoverability: explicit chevron + tooltip showing next state. */}
         <button
           onClick={cycleStatus}
-          title="Changer le statut"
+          title={`Statut : ${status.label} — cliquer pour passer à « ${nextLabel} »`}
           style={{
             position: 'absolute', top: 8, left: 8,
+            display: 'inline-flex', alignItems: 'center', gap: 5,
             background: status.bg, color: status.fg,
-            fontSize: 9, fontWeight: 700, letterSpacing: 1.2,
-            textTransform: 'uppercase', padding: '3px 7px',
-            borderRadius: 4, border: '1px solid rgba(255,255,255,0.06)',
+            fontSize: 9.5, fontWeight: 700, letterSpacing: 1.2,
+            textTransform: 'uppercase', padding: '4px 8px',
+            borderRadius: 4, border: '1px solid rgba(255,255,255,0.10)',
+            cursor: 'pointer',
+            minHeight: 22,
           }}
+          onMouseEnter={e => { e.currentTarget.style.background = 'var(--surface3)' }}
+          onMouseLeave={e => { e.currentTarget.style.background = status.bg }}
         >
           {status.label}
+          <span style={{ fontSize: 8, opacity: 0.8 }}>▸</span>
         </button>
         {/* Duration pill */}
         <div style={{
@@ -177,15 +188,18 @@ export default function ClipCard({ clip, onDub, onMeme, onDelete, onRename, onSt
       </div>
 
       {/* Action row */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto', borderTop: '1px solid var(--border)' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto auto', borderTop: '1px solid var(--border)' }}>
         <ActionBtn onClick={e => { e.stopPropagation(); onDub(clip) }} accent flex title="Doublage">
           Doubler
         </ActionBtn>
         <ActionBtn onClick={e => { e.stopPropagation(); setWatching(true) }} title="Voir le clip">
           <Icon d={ICONS.play} size={13} />
         </ActionBtn>
-        <ActionBtn onClick={e => { e.stopPropagation(); onMeme(clip) }} title="Créer un mème — image, GIF ou audio">
-          Mème
+        <ActionBtn onClick={e => { e.stopPropagation(); onMeme(clip, 'video') }} title="Créer un GIF depuis ce clip">
+          GIF
+        </ActionBtn>
+        <ActionBtn onClick={e => { e.stopPropagation(); onMeme(clip) }} title="Créer un meme — image, GIF ou audio">
+          Meme
         </ActionBtn>
         {confirmDelete ? (
           <ActionBtn onClick={e => { e.stopPropagation(); onDelete(clip.clip_id) }} danger title="Confirmer la suppression" last>

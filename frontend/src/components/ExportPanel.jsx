@@ -1,21 +1,25 @@
 import React, { useState } from 'react'
 import { Icon, ICONS } from '../Icons'
+import { useProgress } from '../ProgressContext'
 
 const FORMATS = [
   { id: 'srt',         label: 'SRT',        icon: ICONS.note,  desc: 'Sous-titres standard',                        color: '#4488ff', needsSubs: true },
   { id: 'ass',         label: 'ASS',        icon: ICONS.film,  desc: 'Défilement BR intégré',                       color: '#aa44ff', needsSubs: true },
   { id: 'ass-karaoke', label: 'ASS Karaoké',icon: ICONS.mic,   desc: 'Tags \\kf par mot — compatible ass2rythmo',   color: '#cc88ff', needsSubs: true },
-  { id: 'detx',        label: 'DetX',       icon: ICONS.edit,  desc: 'Standard FR — Cappella / Phonations / Joker', color: '#ff9944', needsSubs: true },
+  { id: 'detx',        label: 'DetX',       icon: ICONS.edit,  desc: 'Standard FR — Cappella / Phonations / Joker · détection incluse', color: '#ff9944', needsSubs: true },
+  { id: 'croisille',   label: 'Croisillé',  icon: ICONS.note,  desc: 'Grille personnages × boucles (planning studio)', color: '#ddaa44', needsSubs: true },
   { id: 'mp4',         label: 'MP4 + BR',   icon: ICONS.film,  desc: 'Vidéo avec bande rythmo incrustée',           color: '#44bb55', needsSubs: true },
   { id: 'gif',         label: 'GIF',        icon: ICONS.gif,   desc: 'Clip animé',                                  color: '#ff6644', needsSubs: false },
   { id: 'mp3',         label: 'MP3',        icon: ICONS.audio, desc: 'Audio — StreamDeck, Discord…',                color: '#ff6688', needsSubs: false },
   { id: 'wav',         label: 'WAV',        icon: ICONS.audio, desc: 'Audio non compressé',                         color: '#aa88ff', needsSubs: false },
 ]
 
-export default function ExportPanel({ segmentId, subtitles, pxPerSec = 180, brOffset = 0, canvasH = 64, getCanvasWidth, brFont = 'atkinson' }) {
+export default function ExportPanel({ segmentId, subtitles, boucles = [], pxPerSec = 180, brOffset = 0, canvasH = 64, getCanvasWidth, brFont = 'atkinson', brStyle = 'classique' }) {
   const [loading, setLoading] = useState(null)
   const [error, setError] = useState(null)
   const [lastExport, setLastExport] = useState(null)
+  const [detectionBurn, setDetectionBurn] = useState(false)
+  const progress = useProgress()
 
   async function handleExport(format) {
     if (!segmentId) { setError('Aucun clip sélectionné.'); return }
@@ -26,14 +30,87 @@ export default function ExportPanel({ segmentId, subtitles, pxPerSec = 180, brOf
     setError(null)
     try {
       const body = { subtitles: fmt.needsSubs ? subtitles : [], segment_id: segmentId, format }
-      // Pass canvas settings for frame-accurate server-side ASS rendering
       if (format === 'mp4') {
         body.px_per_sec = pxPerSec
         body.br_offset = brOffset
         body.canvas_w = getCanvasWidth?.() || 1200
         body.canvas_h = canvasH
         body.br_font = brFont
+        body.br_style = brStyle
+        body.detection_burn = detectionBurn
       }
+      if (format === 'croisille') {
+        body.boucles = boucles
+      }
+
+      // GIF → job mode (two-pass palette → slow).
+      if (format === 'gif') {
+        const fireJob = async () => {
+          const res = await fetch('/api/export/gif-job', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          })
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}))
+            throw new Error(err.detail || `HTTP ${res.status}`)
+          }
+          const { job_id } = await res.json()
+          return job_id
+        }
+        const jobId = await fireJob()
+        progress.start({
+          kind: 'export-gif',
+          title: 'Export GIF',
+          jobId,
+          retry: fireJob,
+          downloadOnDone: true,
+          downloadFilename: 'clip.gif',
+          onDone: () => { setLastExport(format); setLoading(null) },
+          onError: (err) => { setError('Erreur export : ' + err.message); setLoading(null) },
+          onCancel: () => { setError('Export annulé.'); setLoading(null) },
+        })
+        return
+      }
+
+      // MP4 → job-mode with live progress + cancel. Other formats stay sync.
+      if (format === 'mp4') {
+        const fireJob = async () => {
+          const res = await fetch('/api/export/mp4-job', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          })
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}))
+            throw new Error(err.detail || `HTTP ${res.status}`)
+          }
+          const { job_id } = await res.json()
+          return job_id
+        }
+        const jobId = await fireJob()
+        progress.start({
+          kind: 'export-mp4',
+          title: 'Export MP4 + BR',
+          jobId,
+          retry: fireJob,
+          downloadOnDone: true,
+          downloadFilename: 'bande_rythmo.mp4',
+          onDone: () => {
+            setLastExport(format)
+            setLoading(null)
+          },
+          onError: (err) => {
+            setError('Erreur export : ' + err.message)
+            setLoading(null)
+          },
+          onCancel: () => {
+            setError('Export annulé.')
+            setLoading(null)
+          },
+        })
+        return
+      }
+
       const res = await fetch('/api/export/export', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -47,15 +124,17 @@ export default function ExportPanel({ segmentId, subtitles, pxPerSec = 180, brOf
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      const ext = format === 'ass-karaoke' ? 'ass' : format
-      a.download = `bande_rythmo${format === 'ass-karaoke' ? '_karaoke' : ''}.${ext}`
+      const ext = format === 'ass-karaoke' ? 'ass' : format === 'croisille' ? 'html' : format
+      a.download = format === 'croisille'
+        ? 'croisille.html'
+        : `bande_rythmo${format === 'ass-karaoke' ? '_karaoke' : ''}.${ext}`
       a.click()
       URL.revokeObjectURL(url)
       setLastExport(format)
     } catch (e) {
       setError('Erreur export : ' + e.message)
     } finally {
-      setLoading(null)
+      if (format !== 'mp4' && format !== 'gif') setLoading(null)
     }
   }
 
@@ -112,6 +191,16 @@ export default function ExportPanel({ segmentId, subtitles, pxPerSec = 180, brOf
             </div>
           )
         })}
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', marginBottom: 12, background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 6 }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text2)', cursor: 'pointer' }}>
+          <input type="checkbox" checked={detectionBurn} onChange={e => setDetectionBurn(e.target.checked)} />
+          Incruster la détection (MP4)
+        </label>
+        <span style={{ fontSize: 10.5, color: 'var(--text3)' }}>
+          Par défaut désactivé — les studios préfèrent la bande propre et l'autorité dans le DetX.
+        </span>
       </div>
 
       {error && (

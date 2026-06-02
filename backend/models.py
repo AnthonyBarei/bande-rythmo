@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Float, Integer, ForeignKey, DateTime
+from sqlalchemy import Column, String, Float, Integer, ForeignKey, DateTime, Boolean
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from database import Base
@@ -16,6 +16,9 @@ class Clip(Base):
     segment_path = Column(String, nullable=False)
     thumbnail_path = Column(String, nullable=True)
     status = Column(String, nullable=False, default="todo")
+    # Source frame rate (detected via ffprobe at import) — used for SMPTE TC
+    # readouts and DetX <lipsync timecode> emission. Defaults to 25 (PAL).
+    fps = Column(Float, nullable=False, default=25.0)
     created_at = Column(DateTime, default=datetime.now)
 
     subtitles = relationship(
@@ -23,6 +26,12 @@ class Clip(Base):
         back_populates="clip",
         cascade="all, delete-orphan",
         order_by="Subtitle.order_index",
+    )
+    boucles = relationship(
+        "Boucle",
+        back_populates="clip",
+        cascade="all, delete-orphan",
+        order_by="Boucle.number",
     )
 
 
@@ -36,8 +45,30 @@ class Subtitle(Base):
     end = Column(Float, nullable=False)
     character = Column(String, default="")
     text = Column(String, nullable=False, default="")
+    # JSON array of {w, start, end, signs?: [{i,type,t0,t1}]}.
+    # `signs` (optional) = per-character détection markers (labiale/semi/…).
+    words = Column(String, nullable=True)
+    # Pro BR line flags — drawn under the line on-screen and serialised to DetX.
+    off = Column(Boolean, nullable=False, default=False)        # hors-champ → continuous trait
+    dos = Column(Boolean, nullable=False, default=False)        # bouche non vue → dotted trait
+    ambiance = Column(Boolean, nullable=False, default=False)   # ambiance ON/OFF (non-dialogue)
+    plan_cut = Column(Float, nullable=True)                     # change-of-plan timecode within line
 
     clip = relationship("Clip", back_populates="subtitles")
+
+
+class Boucle(Base):
+    """Recording loop (boucle) — studio planning unit, ≈1 minute each.
+    Numbered contiguously per clip; drives the croisillé export grid."""
+    __tablename__ = "boucles"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    clip_id = Column(String, ForeignKey("clips.clip_id", ondelete="CASCADE"), nullable=False)
+    number = Column(Integer, nullable=False)
+    start = Column(Float, nullable=False)
+    end = Column(Float, nullable=False)
+
+    clip = relationship("Clip", back_populates="boucles")
 
 
 class Take(Base):
