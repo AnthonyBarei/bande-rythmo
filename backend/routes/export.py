@@ -9,7 +9,7 @@ from services.clip_service import get_clip
 from services.subtitle_service import (
     export_srt, export_ass, export_ass_karaoke, export_detx, export_croisille,
 )
-from services.ffmpeg_service import burn_subtitles, export_gif, run_ffmpeg_with_progress
+from services.ffmpeg_service import burn_subtitles, export_gif, run_ffmpeg_with_progress, h264_encoder_args, available_hw_encoders
 from services.br_renderer import render_br_video
 from services.jobs import create_job, raise_if_cancelled, CancelledJobError, JobStartResponse
 from services.export_service import record_export, list_exports, get_export, delete_export
@@ -74,6 +74,7 @@ class ExportRequest(BaseModel):
     #   standard : supersample 3, preset medium, crf 21  (default — balanced)
     #   youtube  : supersample 4, preset slow,   crf 19  (final upload — slowest)
     quality: str = "standard"
+    gpu: str = "off"   # off | auto | nvenc | qsv | amf — HW-accelerated H.264 encode
 
 
 
@@ -468,6 +469,9 @@ async def export_mp4_job(req: ExportRequest, db: Session = Depends(get_db)):
             job.update(stage="Encodage final", pct=0.45)
 
             # Stage 2: ffmpeg vstack + encode → live progress via -progress pipe.
+            # HW encoder when requested+usable; libx264 fallback. -bf 0 kept on
+            # all paths (no B-frames → no ghosting on the scrolling text).
+            venc_args, venc_name = h264_encoder_args(req.gpu, qp["crf"], qp["x264_preset"])
             cmd = [
                 "ffmpeg", "-y",
                 "-progress", "pipe:1", "-nostats",
@@ -479,9 +483,7 @@ async def export_mp4_job(req: ExportRequest, db: Session = Depends(get_db)):
                 f"[bg][s]vstack=inputs=2:shortest=1,"
                 f"scale=1920:1080:force_original_aspect_ratio=decrease,"
                 f"pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1",
-                "-c:v", "libx264",
-                "-crf", qp["crf"],
-                "-preset", qp["x264_preset"],
+                *venc_args,
                 "-pix_fmt", "yuv420p",
                 "-bf", "0",
                 "-r", str(export_fps),
@@ -536,6 +538,19 @@ async def export_mp4_job(req: ExportRequest, db: Session = Depends(get_db)):
 
     asyncio.get_event_loop().run_in_executor(None, worker)
     return {"job_id": job.id}
+
+
+@router.get("/hw-encoders")
+async def hw_encoders():
+    """Which HW H.264 encoders are usable on this machine (for the export UI).
+    Maps ffmpeg names → short ids the frontend picker uses."""
+    avail = await asyncio.to_thread(available_hw_encoders)
+    return {
+        "nvenc": "h264_nvenc" in avail,
+        "qsv": "h264_qsv" in avail,
+        "amf": "h264_amf" in avail,
+        "any": len(avail) > 0,
+    }
 
 
 @router.get("/list")

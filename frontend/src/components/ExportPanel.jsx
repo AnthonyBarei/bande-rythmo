@@ -20,6 +20,8 @@ export default function ExportPanel({ segmentId, subtitles, boucles = [], pxPerS
   const [lastExport, setLastExport] = useState(null)
   const [detectionBurn, setDetectionBurn] = useState(false)
   const [quality, setQuality] = useState('standard')   // draft | standard | youtube
+  const [gpu, setGpu] = useState('off')                 // off | auto | nvenc | qsv | amf
+  const [hwEncoders, setHwEncoders] = useState(null)    // { nvenc, qsv, amf, any } | null
   const [history, setHistory] = useState([])
   const [autoDownload, setAutoDownload] = useState(() => {
     try { return localStorage.getItem('export-auto-dl') !== '0' } catch { return true }
@@ -41,6 +43,16 @@ export default function ExportPanel({ segmentId, subtitles, boucles = [], pxPerS
     } catch {}
   }, [segmentId])
   useEffect(() => { refreshHistory() }, [refreshHistory])
+
+  // Probe HW encoders once (cached server-side).
+  useEffect(() => {
+    let live = true
+    fetch('/api/export/hw-encoders')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (live && d) setHwEncoders(d) })
+      .catch(() => {})
+    return () => { live = false }
+  }, [])
 
   function redownload(id, filename) {
     const a = document.createElement('a')
@@ -93,6 +105,7 @@ export default function ExportPanel({ segmentId, subtitles, boucles = [], pxPerS
         body.br_style = brStyle
         body.detection_burn = detectionBurn
         body.quality = quality
+        body.gpu = gpu
       }
       if (format === 'croisille') {
         body.boucles = boucles
@@ -277,6 +290,33 @@ export default function ExportPanel({ segmentId, subtitles, boucles = [], pxPerS
           {quality === 'youtube' && 'preset slow · crf 19 · supersample 4'}
         </span>
       </div>
+
+      {/* GPU encode — shown only when a usable HW encoder is detected. */}
+      {hwEncoders?.any && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', marginBottom: 8, background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 6 }}>
+          <span style={{ fontSize: 10.5, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, fontFamily: 'var(--font-mono)' }}>Encodage</span>
+          <div style={{ display: 'flex', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, padding: 2 }}>
+            {[
+              { v: 'off',  l: 'CPU' },
+              { v: 'auto', l: 'GPU (auto)' },
+              ...(hwEncoders.nvenc ? [{ v: 'nvenc', l: 'NVENC' }] : []),
+              ...(hwEncoders.qsv ? [{ v: 'qsv', l: 'QSV' }] : []),
+              ...(hwEncoders.amf ? [{ v: 'amf', l: 'AMF' }] : []),
+            ].map(o => (
+              <button key={o.v} onClick={() => setGpu(o.v)}
+                style={{
+                  padding: '5px 12px', fontSize: 11.5, borderRadius: 4,
+                  background: gpu === o.v ? 'var(--accent)' : 'transparent',
+                  color: gpu === o.v ? '#000' : 'var(--text2)',
+                  fontWeight: gpu === o.v ? 700 : 500, border: 'none', cursor: 'pointer', minHeight: 28,
+                }}>{o.l}</button>
+            ))}
+          </div>
+          <span style={{ fontSize: 10.5, color: 'var(--text3)', flex: 1, textAlign: 'right' }}>
+            {gpu === 'off' ? 'libx264 — qualité maximale' : 'accélération matérielle — plus rapide'}
+          </span>
+        </div>
+      )}
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', marginBottom: 12, background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 6 }}>
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text2)', cursor: 'pointer' }}>

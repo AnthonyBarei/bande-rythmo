@@ -108,6 +108,65 @@ def probe_fps(path: str) -> float:
         return 25.0
 
 
+_HW_ENCODER_CACHE = None
+
+
+def available_hw_encoders() -> set:
+    """Set of usable H.264 hardware encoders. Compiled-in AND a 1-frame test
+    encode succeeds (compiled != a working GPU present). Cached per process."""
+    global _HW_ENCODER_CACHE
+    if _HW_ENCODER_CACHE is not None:
+        return _HW_ENCODER_CACHE
+    out = set()
+    try:
+        enc = subprocess.run(["ffmpeg", "-hide_banner", "-encoders"],
+                             capture_output=True, timeout=10)
+        listed = (enc.stdout or b"").decode(errors="replace")
+    except Exception:
+        listed = ""
+    for name in ("h264_nvenc", "h264_qsv", "h264_amf"):
+        if name not in listed:
+            continue
+        try:
+            r = subprocess.run(
+                ["ffmpeg", "-hide_banner", "-f", "lavfi",
+                 "-i", "testsrc=size=64x64:rate=1:duration=1",
+                 "-frames:v", "1", "-c:v", name, "-f", "null", "-"],
+                capture_output=True, timeout=20,
+            )
+            if r.returncode == 0:
+                out.add(name)
+        except Exception:
+            pass
+    _HW_ENCODER_CACHE = out
+    return out
+
+
+def h264_encoder_args(gpu: str, crf: str, x264_preset: str) -> tuple:
+    """Build ffmpeg video-encoder args for the requested mode.
+    gpu: 'off'|'auto'|'nvenc'|'qsv'|'amf'. Returns (args, encoder_name).
+    Falls back to libx264 when the requested HW encoder isn't usable."""
+    crf = str(crf)
+    cpu = (["-c:v", "libx264", "-crf", crf, "-preset", x264_preset], "libx264")
+    if gpu in (None, "", "off"):
+        return cpu
+    avail = available_hw_encoders()
+    if gpu == "auto":
+        chosen = next((e for e in ("h264_nvenc", "h264_qsv", "h264_amf") if e in avail), None)
+    else:
+        name = gpu if gpu.startswith("h264_") else f"h264_{gpu}"
+        chosen = name if name in avail else None
+    if not chosen:
+        return cpu
+    if chosen == "h264_nvenc":
+        return (["-c:v", "h264_nvenc", "-rc", "vbr", "-cq", crf, "-b:v", "0", "-preset", "p5"], chosen)
+    if chosen == "h264_qsv":
+        return (["-c:v", "h264_qsv", "-global_quality", crf, "-preset", "medium"], chosen)
+    if chosen == "h264_amf":
+        return (["-c:v", "h264_amf", "-rc", "cqp", "-qp_i", crf, "-qp_p", crf, "-quality", "balanced"], chosen)
+    return cpu
+
+
 def detect_scene_cuts(path: str, threshold: float = 0.4) -> list:
     """Return scene-change timecodes (seconds) via ffmpeg scene filter.
 
