@@ -1251,6 +1251,12 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   useEffect(() => {
     function onKey(e) {
       if (['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return
+      // Undo / redo — Ctrl+Z, Ctrl+Y, Ctrl+Shift+Z. Intercept before transport.
+      if ((e.ctrlKey || e.metaKey) && !e.altKey) {
+        const k = e.key.toLowerCase()
+        if (k === 'z' && !e.shiftKey) { e.preventDefault(); undoRedoRef.current.undo(); return }
+        if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); undoRedoRef.current.redo(); return }
+      }
       const v = videoRef.current; if (!v) return
       const t = v.currentTime
       const subs = subtitlesRef.current
@@ -1352,6 +1358,61 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
     } catch { setSaveStatus('error') }
   }, [clip.clip_id, onUpdate])
 
+  // ── Undo / redo — subtitle snapshots, capped at 50 ──
+  const historyRef = useRef(null)            // { stack: snapshot[], idx }
+  const [canUndo, setCanUndo] = useState(false)
+  const [canRedo, setCanRedo] = useState(false)
+  const HISTORY_CAP = 50
+  const snap = subs => JSON.parse(JSON.stringify(subs))
+  function syncHistoryFlags() {
+    const h = historyRef.current
+    setCanUndo(!!h && h.idx > 0)
+    setCanRedo(!!h && h.idx < h.stack.length - 1)
+  }
+  function pushHistory(subs) {
+    let h = historyRef.current
+    if (!h) { historyRef.current = { stack: [snap(subs)], idx: 0 }; syncHistoryFlags(); return }
+    // Drop the redo branch, append, cap.
+    h.stack = h.stack.slice(0, h.idx + 1)
+    h.stack.push(snap(subs))
+    if (h.stack.length > HISTORY_CAP) h.stack.shift()
+    h.idx = h.stack.length - 1
+    syncHistoryFlags()
+  }
+  function applyHistorySubs(subs) {
+    const sorted = [...subs].sort((a, b) => a.start - b.start)
+    setSubtitles(sorted)
+    setSelectedIdx(null)
+    setSaveStatus('unsaved')
+    clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => doSave(sorted), 1500)
+  }
+  function undo() {
+    const h = historyRef.current
+    if (!h || h.idx <= 0) return
+    h.idx -= 1
+    applyHistorySubs(snap(h.stack[h.idx]))
+    syncHistoryFlags()
+  }
+  function redo() {
+    const h = historyRef.current
+    if (!h || h.idx >= h.stack.length - 1) return
+    h.idx += 1
+    applyHistorySubs(snap(h.stack[h.idx]))
+    syncHistoryFlags()
+  }
+  // Keep keydown (empty-dep closure) calling the latest undo/redo.
+  const undoRedoRef = useRef({ undo, redo })
+  undoRedoRef.current = { undo, redo }
+  // Seed history with the initial subtitles once per clip.
+  const historySeedRef = useRef(null)
+  useEffect(() => {
+    if (historySeedRef.current === clip.clip_id) return
+    historySeedRef.current = clip.clip_id
+    historyRef.current = { stack: [snap(clip.subtitles || [])], idx: 0 }
+    syncHistoryFlags()
+  }, [clip.clip_id])
+
   function handleSubtitlesChange(subs) {
     const sorted = [...subs].sort((a, b) => a.start - b.start)
     // Track selectedIdx through sort (objects share references from spread-sort)
@@ -1361,6 +1422,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
       if (newIdx !== selectedIdx && newIdx >= 0) setSelectedIdx(newIdx)
     }
     setSubtitles(sorted)
+    pushHistory(sorted)
     setSaveStatus('unsaved')
     clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => doSave(sorted), 1500)
@@ -2374,6 +2436,10 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
           onDetectScenes={detectScenes}
           onClearScenes={clearScenes}
           detectingScenes={detectingScenes}
+          onUndo={undo}
+          onRedo={redo}
+          canUndo={canUndo}
+          canRedo={canRedo}
           clipFps={clipFps}
           brFont={brFont}
           setBrFont={setBrFont}
@@ -2551,6 +2617,7 @@ function BandeRythmoToolbar({
   detection, setDetection, detectionAuto, setDetectionAuto,
   boucles = [], onAddBoucle, onRemoveBoucle, clipFps = 25,
   sceneCuts = [], onDetectScenes = () => {}, onClearScenes = () => {}, detectingScenes = false,
+  onUndo = () => {}, onRedo = () => {}, canUndo = false, canRedo = false,
   brFont = 'atkinson', setBrFont = () => {},
   wordByWord = true, setWordByWord = () => {},
 }) {
@@ -2751,6 +2818,18 @@ function BandeRythmoToolbar({
       borderBottom: '1px solid var(--border)', padding: '0 12px', height: 52, flexShrink: 0,
       display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'nowrap', overflowX: 'auto',
     }}>
+      {/* Undo / redo */}
+      <div style={grp}>
+        <button onClick={onUndo} disabled={!canUndo} title="Annuler (Ctrl+Z)"
+          style={{ ...btn(canUndo), padding: '0 8px' }}>
+          <Ic d="M9 14L4 9l5-5M4 9h11a5 5 0 010 10h-3" size={15} />
+        </button>
+        <button onClick={onRedo} disabled={!canRedo} title="Rétablir (Ctrl+Y)"
+          style={{ ...btn(canRedo), padding: '0 8px' }}>
+          <Ic d="M15 14l5-5-5-5M20 9H9a5 5 0 000 10h3" size={15} />
+        </button>
+      </div>
+
       {/* Active character pill — click to reassign */}
       <div ref={charPickerRef} style={{ position: 'relative', flexShrink: 0 }}>
         <button

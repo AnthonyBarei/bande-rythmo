@@ -53,6 +53,8 @@ const GROUPS = [
   {
     title: 'Général',
     rows: [
+      { keys: ['Ctrl', 'Z'],             label: 'Annuler' },
+      { keys: ['Ctrl', 'Y'],             label: 'Rétablir' },
       { keys: ['Ctrl', 'S'],             label: 'Sauvegarder (auto-save 1,5 s)' },
       { keys: ['?'],                     label: 'Cette aide' },
     ],
