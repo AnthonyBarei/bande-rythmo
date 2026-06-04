@@ -462,6 +462,7 @@ async def export_mp4_job(req: ExportRequest, db: Session = Depends(get_db)):
                 strip_path, br_offset,
                 br_font=br_font, style=br_style,
                 supersample=qp["supersample"],
+                detection_burn=req.detection_burn,
             )
             raise_if_cancelled(job)
             job.update(stage="Encodage final", pct=0.45)
