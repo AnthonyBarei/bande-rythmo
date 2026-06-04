@@ -15,6 +15,16 @@ def _parse_words(raw):
         return None
 
 
+def _parse_scene_cuts(raw):
+    if not raw:
+        return []
+    try:
+        v = json.loads(raw)
+        return v if isinstance(v, list) else []
+    except (ValueError, TypeError):
+        return []
+
+
 def _to_dict(clip: Clip) -> dict:
     return {
         "clip_id": clip.clip_id,
@@ -27,6 +37,7 @@ def _to_dict(clip: Clip) -> dict:
         "thumbnail_path": clip.thumbnail_path,
         "status": clip.status or "todo",
         "fps": clip.fps or 25.0,
+        "scene_cuts": _parse_scene_cuts(clip.scene_cuts),
         "subtitles": [
             {
                 "start": s.start, "end": s.end, "character": s.character,
@@ -131,6 +142,16 @@ def update_fps(db: Session, clip_id, fps):
     if not clip:
         return None
     clip.fps = float(fps)
+    db.commit()
+    db.refresh(clip)
+    return _to_dict(clip)
+
+
+def update_scene_cuts(db: Session, clip_id, cuts):
+    clip = db.query(Clip).filter(Clip.clip_id == clip_id).first()
+    if not clip:
+        return None
+    clip.scene_cuts = json.dumps(list(cuts)) if cuts else None
     db.commit()
     db.refresh(clip)
     return _to_dict(clip)

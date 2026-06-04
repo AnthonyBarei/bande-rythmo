@@ -252,6 +252,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   // Waveform + scene cuts for the full-clip nav timeline (BRTimeline).
   const [waveformData, setWaveformData] = useState(null)
   const [sceneCuts, setSceneCuts] = useState(clip.scene_cuts || [])
+  useEffect(() => { setSceneCuts(clip.scene_cuts || []) }, [clip.clip_id])
   const [sidebarWidth, setSidebarWidth] = useState(400)
   const [brPanelHeight, setBrPanelHeight] = useState(280)
   const [fontScale, setFontScale] = useState(1.0)
@@ -310,6 +311,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   const detectionAutoRef = useRef(detectionAuto)
   const bouclesRef = useRef(boucles)
   const clipFpsRef = useRef(clipFps)
+  const sceneCutsRef = useRef([])
   const exportingRef = useRef(false)
   // Smooth time interpolation: video.currentTime only updates at video fps (e.g. 24fps).
   // Between updates, we interpolate using wall clock so the canvas scrolls at 60fps.
@@ -328,6 +330,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   detectionAutoRef.current = detectionAuto
   bouclesRef.current = boucles
   clipFpsRef.current = clipFps
+  sceneCutsRef.current = sceneCuts
 
   const segmentUrl = `/${clip.segment_path}`
 
@@ -438,6 +441,25 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
       .sort((a, b) => a.start - b.start)
       .map((b, i) => ({ ...b, number: i + 1 }))
     saveBoucles(next)
+  }
+
+  const [detectingScenes, setDetectingScenes] = useState(false)
+  async function detectScenes() {
+    setDetectingScenes(true)
+    try {
+      const res = await fetch(`/api/clips/${clip.clip_id}/detect-scenes?threshold=0.4`, { method: 'POST' })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+      setSceneCuts(data.scene_cuts || [])
+    } catch {
+      // silent — non-critical aid
+    } finally {
+      setDetectingScenes(false)
+    }
+  }
+  async function clearScenes() {
+    setSceneCuts([])
+    try { await fetch(`/api/clips/${clip.clip_id}/scenes`, { method: 'DELETE' }) } catch {}
   }
 
   // Auto-fit scroll rate, once per clip: pick pxPerSec so the densest réplique
@@ -938,6 +960,20 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
         ctx.setLineDash([])
         ctx.fillStyle = cal.kind === 'bip' ? '#7ec0ff' : '#fff'
         ctx.fillText(`${cal.label} ${fmtTC(cal.time, clipFpsRef.current)}`, cx + 4, H - 14)
+      }
+
+      // ── Scene cuts — dashed blue verticals (changement de plan, mirror plan_cut) ──
+      const scenesNow = sceneCutsRef.current
+      if (scenesNow && scenesNow.length) {
+        ctx.strokeStyle = '#7ec0ff'
+        ctx.lineWidth = 1.2
+        ctx.setLineDash([4, 3])
+        for (const sc of scenesNow) {
+          const sx = cursor_x + (sc - t) * pxSec
+          if (sx < -2 || sx > W + 2) continue
+          ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, H); ctx.stroke()
+        }
+        ctx.setLineDash([])
       }
 
       // ── Boucles — dashed verticals with B{n} cap ──
@@ -2334,6 +2370,10 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
           boucles={boucles}
           onAddBoucle={addBoucleAtCursor}
           onRemoveBoucle={removeBoucle}
+          sceneCuts={sceneCuts}
+          onDetectScenes={detectScenes}
+          onClearScenes={clearScenes}
+          detectingScenes={detectingScenes}
           clipFps={clipFps}
           brFont={brFont}
           setBrFont={setBrFont}
@@ -2510,6 +2550,7 @@ function BandeRythmoToolbar({
   locked, setLocked,
   detection, setDetection, detectionAuto, setDetectionAuto,
   boucles = [], onAddBoucle, onRemoveBoucle, clipFps = 25,
+  sceneCuts = [], onDetectScenes = () => {}, onClearScenes = () => {}, detectingScenes = false,
   brFont = 'atkinson', setBrFont = () => {},
   wordByWord = true, setWordByWord = () => {},
 }) {
@@ -2900,6 +2941,22 @@ function BandeRythmoToolbar({
             ))}
           </div>,
           document.body
+        )}
+      </div>
+
+      {/* Plans — auto-detect scene cuts (changements de plan) */}
+      <div style={grp}>
+        <button onClick={onDetectScenes} disabled={detectingScenes}
+          title="Détecter les changements de plan (ffmpeg)"
+          style={{ ...btn(true, sceneCuts.length > 0), padding: '0 9px', gap: 5, fontSize: 11.5, opacity: detectingScenes ? 0.5 : 1 }}>
+          <span style={{ color: '#7ea0ff' }}>▏</span>
+          {detectingScenes ? '…' : 'Plans'}
+          {sceneCuts.length > 0 && <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: '#7ea0ff' }}>{sceneCuts.length}</span>}
+        </button>
+        {sceneCuts.length > 0 && (
+          <button onClick={onClearScenes} title="Effacer les plans détectés" style={btn(true)}>
+            <Ic d={ICONS.close} size={13} />
+          </button>
         )}
       </div>
 

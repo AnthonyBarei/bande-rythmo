@@ -1,4 +1,5 @@
 import json
+import re
 import subprocess
 import os
 import time
@@ -105,6 +106,36 @@ def probe_fps(path: str) -> float:
         return float(raw) if raw else 25.0
     except Exception:
         return 25.0
+
+
+def detect_scene_cuts(path: str, threshold: float = 0.4) -> list:
+    """Return scene-change timecodes (seconds) via ffmpeg scene filter.
+
+    `select='gt(scene,threshold)'` flags frames whose content differs from the
+    previous by more than `threshold` (0..1). showinfo prints `pts_time` per
+    flagged frame; we parse those. Higher threshold = fewer, harder cuts.
+    """
+    cmd = [
+        "ffmpeg", "-i", path,
+        "-filter:v", f"select='gt(scene,{threshold})',showinfo",
+        "-f", "null", "-",
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, timeout=180)
+    except (subprocess.TimeoutExpired, Exception):
+        return []
+    # showinfo writes to stderr: "... pts_time:3.125 ..."
+    stderr = (result.stderr or b"").decode(errors="replace")
+    cuts = []
+    for m in re.finditer(r"pts_time:(\d+\.?\d*)", stderr):
+        try:
+            t = float(m.group(1))
+            # Skip a cut at t≈0 (always-different first frame) + dedupe near-equal
+            if t > 0.05 and (not cuts or abs(t - cuts[-1]) > 0.04):
+                cuts.append(round(t, 3))
+        except ValueError:
+            continue
+    return cuts
 
 
 def probe_streams(path: str) -> dict:

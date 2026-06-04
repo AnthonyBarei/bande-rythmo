@@ -1,6 +1,9 @@
 import os
+import struct
 import subprocess
 import tempfile
+import warnings
+import wave
 import torch
 from faster_whisper import WhisperModel
 from typing import Callable, List, Dict, Optional
@@ -31,7 +34,16 @@ def _get_diarize_pipeline():
         hf_token = os.getenv("HF_TOKEN")
         if not hf_token:
             return None
-        from pyannote.audio import Pipeline
+        # pyannote.audio imports torchcodec at load time; on Windows without
+        # full-shared FFmpeg DLLs it emits a long UserWarning. We decode audio
+        # ourselves via torchaudio and pass {"waveform", "sample_rate"} instead.
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message=".*torchcodec.*",
+                category=UserWarning,
+            )
+            from pyannote.audio import Pipeline
         _diarize_pipeline = Pipeline.from_pretrained(
             "pyannote/speaker-diarization-3.1",
             token=hf_token,
@@ -41,12 +53,29 @@ def _get_diarize_pipeline():
     return _diarize_pipeline
 
 
-def _build_diarization_map(path: str) -> Dict[tuple, str]:
+def _wav_as_pyannote_input(wav_path: str) -> dict:
+    """Load PCM WAV for pyannote without torchcodec (torchaudio 2.11+ requires it)."""
+    with wave.open(wav_path, "rb") as wf:
+        if wf.getsampwidth() != 2:
+            raise ValueError("expected 16-bit PCM WAV")
+        sample_rate = wf.getframerate()
+        n_channels = wf.getnchannels()
+        raw = wf.readframes(wf.getnframes())
+    samples = struct.unpack(f"<{len(raw) // 2}h", raw)
+    waveform = torch.tensor(samples, dtype=torch.float32) / 32768.0
+    if n_channels > 1:
+        waveform = waveform.view(n_channels, -1)
+    else:
+        waveform = waveform.unsqueeze(0)
+    return {"waveform": waveform, "sample_rate": sample_rate}
+
+
+def _build_diarization_map(wav_path: str) -> Dict[tuple, str]:
     try:
         pipeline = _get_diarize_pipeline()
         if not pipeline:
             return {}
-        diarization = pipeline(path)
+        diarization = pipeline(_wav_as_pyannote_input(wav_path))
         return {
             (turn.start, turn.end): speaker
             for turn, _, speaker in diarization.itertracks(yield_label=True)
@@ -165,7 +194,7 @@ def transcribe_segment(
 
         if diarize:
             emit("Diarisation", 0.85)
-            diar_map = _build_diarization_map(path)
+            diar_map = _build_diarization_map(wav_path)
     finally:
         try:
             os.remove(wav_path)

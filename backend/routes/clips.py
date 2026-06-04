@@ -16,9 +16,9 @@ from database import get_db, SessionLocal
 from services.clip_service import (
     create_clip, delete_clip, get_clip,
     list_clips, update_name, update_status, update_subtitles,
-    update_boucles, update_fps,
+    update_boucles, update_fps, update_scene_cuts,
 )
-from services.ffmpeg_service import extract_segment, extract_thumbnail, probe_streams, probe_fps
+from services.ffmpeg_service import extract_segment, extract_thumbnail, probe_streams, probe_fps, detect_scene_cuts
 from services.jobs import create_job, raise_if_cancelled, CancelledJobError, JobStartResponse
 from services.subtitle_import_service import parse_subtitle_file
 
@@ -338,6 +338,29 @@ async def set_boucles(clip_id: str, req: UpdateBouclesRequest, db: Session = Dep
     if not clip:
         raise HTTPException(404, "Clip not found")
     return clip
+
+
+@router.post("/{clip_id}/detect-scenes")
+async def detect_scenes(clip_id: str, threshold: float = 0.4, db: Session = Depends(get_db)):
+    """Detect scene-change timecodes in the clip segment and persist them.
+    threshold 0..1 — higher = fewer/harder cuts (default 0.4)."""
+    clip = get_clip(db, clip_id)
+    if not clip:
+        raise HTTPException(404, "Clip not found")
+    segment = f"segments/{clip_id}.mp4"
+    if not os.path.isfile(segment):
+        raise HTTPException(404, "Segment file missing")
+    cuts = await asyncio.to_thread(detect_scene_cuts, segment, threshold)
+    updated = update_scene_cuts(db, clip_id, cuts)
+    return {"ok": True, "count": len(cuts), "scene_cuts": cuts, "clip": updated}
+
+
+@router.delete("/{clip_id}/scenes")
+async def clear_scenes(clip_id: str, db: Session = Depends(get_db)):
+    updated = update_scene_cuts(db, clip_id, [])
+    if not updated:
+        raise HTTPException(404, "Clip not found")
+    return {"ok": True, "clip": updated}
 
 
 @router.put("/{clip_id}/fps")

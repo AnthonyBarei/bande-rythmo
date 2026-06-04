@@ -19,6 +19,9 @@ class Clip(Base):
     # Source frame rate (detected via ffprobe at import) — used for SMPTE TC
     # readouts and DetX <lipsync timecode> emission. Defaults to 25 (PAL).
     fps = Column(Float, nullable=False, default=25.0)
+    # JSON array of scene-change timecodes (seconds), detected via ffmpeg at
+    # import or on-demand. Feeds the BR canvas + nav timeline plan-cut markers.
+    scene_cuts = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
 
     subtitles = relationship(

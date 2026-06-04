@@ -91,9 +91,10 @@ export default function BRTimeline({
       ctx.fillRect(x0, y, Math.max(1, x1 - x0), bandH)
     })
 
-    // ── Scene cuts (vertical info lines) ──
-    ctx.strokeStyle = 'rgba(120,160,255,0.55)'
+    // ── Scene cuts (dashed blue verticals) ──
+    ctx.strokeStyle = 'rgba(126,192,255,0.65)'
     ctx.lineWidth = 1
+    ctx.setLineDash([3, 2])
     sceneCuts.forEach(t => {
       const x = tToX(t)
       ctx.beginPath()
@@ -101,6 +102,7 @@ export default function BRTimeline({
       ctx.lineTo(x + 0.5, H)
       ctx.stroke()
     })
+    ctx.setLineDash([])
 
     // ── Visible-window bracket (what the BR canvas currently shows) ──
     if (viewStart != null && viewEnd != null && viewEnd > viewStart) {
