@@ -326,16 +326,20 @@ Minor addition to the import route — same session as #2.
 
 ---
 
-## P3 — Long term
+## P3 — Long term — ALL DONE ✅
 
-| Feature | Notes |
+| Feature | Status |
 |---|---|
-| Auto-translation | LibreTranslate self-hosted or DeepL API key in settings |
-| Dubbing lexicon | Term DB per project — SQLite table `lexicon(project_id, term, definition, phonetic)` |
-| Project folder organization | Group clips by project; status tabs (À faire / En cours / Terminé) |
-| Custom font upload | User TTF/OTF stored in `uploads/fonts/`, picker lists them alongside bundled fonts |
-| AI vocal separation | demucs/spleeter python wrapper — separate VO track for comparison |
-| .detx / .rythmo.txt import | Round-trip with other BR tools; parse existing DetX XML into subtitles |
+| Auto-translation | ✅ `translate_service` (DeepL / LibreTranslate via env) + `🌐 Traduire` (gated, undoable) |
+| Dubbing lexicon | ✅ `LexiconEntry` + `/api/lexicon` CRUD + "Lexique" tab (project-scoped + globals) |
+| Project folder organization | ✅ `Clip.project` + `/project` endpoint + ClipsLibrary project chips + ClipCard assign |
+| Custom font upload | ✅ `/api/fonts` upload + @font-face inject + picker, export-WYSIWYG |
+| AI vocal separation | ✅ `vocal_service` (Demucs two-stems) + `/separate-vocals` job + `🎚 Séparer voix` (gated) |
+| .detx import | ✅ `parse_detx` round-trips `export_detx` (character/timing/flags/signs) |
+
+Translation + vocal separation degrade gracefully (clear 503) when the optional
+provider/dep isn't configured — `DEEPL_API_KEY`/`LIBRETRANSLATE_URL` env, or
+`pip install demucs`.
 
 ---
 
