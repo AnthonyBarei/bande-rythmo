@@ -105,3 +105,17 @@ class Take(Base):
     duration = Column(Float, nullable=False, default=0.0)
     label = Column(String, default="")
     created_at = Column(DateTime, default=datetime.now)
+
+
+class LexiconEntry(Base):
+    """Dubbing lexicon term — translation/pronunciation glossary so adapters
+    keep terms consistent. Scoped by project ('' = global)."""
+    __tablename__ = "lexicon"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    project = Column(String, nullable=False, default="")   # '' = global
+    term = Column(String, nullable=False)                  # source word/name
+    translation = Column(String, nullable=True)            # agreed rendering
+    phonetic = Column(String, nullable=True)               # pronunciation hint
+    note = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)

@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from database import init_db
-from routes import video, transcription, export, clips, meme, files, plex, takes, jobs, fonts
+from routes import video, transcription, export, clips, meme, files, plex, takes, jobs, fonts, lexicon
 from services import jobs as jobs_service
 import asyncio
 
@@ -44,6 +44,7 @@ app.include_router(plex.router, prefix="/api/plex", tags=["plex"])
 app.include_router(takes.router, prefix="/api/takes", tags=["takes"])
 app.include_router(jobs.router, prefix="/api/jobs", tags=["jobs"])
 app.include_router(fonts.router, prefix="/api/fonts", tags=["fonts"])
+app.include_router(lexicon.router, prefix="/api/lexicon", tags=["lexicon"])
 
 app.mount("/segments", StaticFiles(directory="segments"), name="segments")
 app.mount("/exports", StaticFiles(directory="exports"), name="exports")

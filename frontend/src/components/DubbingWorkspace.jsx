@@ -4,6 +4,7 @@ import SubtitleEditor from './SubtitleEditor'
 import ExportPanel from './ExportPanel'
 import RecorderPanel from './RecorderPanel'
 import BRTimeline from './BRTimeline'
+import LexiconPanel from './LexiconPanel'
 import { useSettings } from '../SettingsContext'
 import { classifyChar, SIGN_KINDS, DEFAULT_SIGN_TOGGLES } from '../detection'
 import { useProgress } from '../ProgressContext'
@@ -2367,7 +2368,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
 
           {/* Tabs */}
           <div style={{ flexShrink: 0, height: 36, borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'stretch' }}>
-            {[['repliques', `Répliques (${subtitles.length})`], ['personnage', 'Personnage'], ['distribution', 'Distribution']].map(([id, label]) => (
+            {[['repliques', `Répliques (${subtitles.length})`], ['personnage', 'Personnage'], ['distribution', 'Distribution'], ['lexique', 'Lexique']].map(([id, label]) => (
               <button key={id} onClick={() => setRightTab(id)} style={{ flex: 1, background: 'none', border: 'none', borderBottom: rightTab === id ? '2px solid var(--accent)' : '2px solid transparent', color: rightTab === id ? 'var(--text)' : 'var(--text3)', fontSize: 12, fontWeight: rightTab === id ? 600 : 400, cursor: 'pointer', padding: '0 4px', marginBottom: -1, transition: 'color 0.15s' }}>
                 {label}
               </button>
@@ -2510,6 +2511,9 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
                   </div>
                 )}
               </div>
+            )}
+            {rightTab === 'lexique' && (
+              <LexiconPanel project={clip.project || ''} />
             )}
           </div>
 
