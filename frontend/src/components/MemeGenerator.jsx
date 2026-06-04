@@ -245,6 +245,7 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
 
   function updateLayer(id, patch) {
     setTexts(prev => prev.map(t => t.id === id ? { ...t, ...patch } : t))
+    if (resultUrl) setResultUrl(null)   // editing returns to the canvas
   }
 
   function addLayer() {
@@ -546,47 +547,6 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
               </>
             )}
 
-            {/* IMAGE TAB — capture frame from video */}
-            {sourceTab === 'image' && segmentUrl && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 220px', gap: 20, alignItems: 'start' }}>
-                <div style={{ background: '#000', borderRadius: 6, overflow: 'hidden', border: '1px solid var(--border)' }}>
-                  <video
-                    ref={videoRef}
-                    src={segmentUrl}
-                    style={{ display: 'block', width: '100%' }}
-                    onLoadedMetadata={onVideoLoaded}
-                    onTimeUpdate={e => setVideoTime(e.target.currentTime)}
-                  />
-                  <div style={{ padding: '10px 12px', borderTop: '1px solid #1a1a1a' }}>
-                    <input
-                      type="range" min={0} max={videoDuration || 1} step={0.05} value={videoTime}
-                      onChange={e => seekVideo(+e.target.value)}
-                      style={{ width: '100%', color: 'var(--accent)', marginBottom: 6, '--pct': `${(videoTime / (videoDuration || 1)) * 100}%` }}
-                    />
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>
-                      <span>{fmtTime(videoTime)}</span>
-                      <span>{fmtTime(videoDuration)}</span>
-                    </div>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  <button
-                    onClick={captureFrame}
-                    disabled={!videoReady}
-                    style={{
-                      padding: '11px', fontWeight: 700, borderRadius: 4, fontSize: 13,
-                      background: videoReady ? 'var(--accent)' : 'var(--surface3)',
-                      color: videoReady ? '#000' : '#888',
-                      border: 'none', cursor: videoReady ? 'pointer' : 'default',
-                    }}
-                  >◉ Capturer ce frame</button>
-                  <p style={{ fontSize: 11, color: 'var(--text3)', lineHeight: 1.6, margin: 0 }}>
-                    Naviguez avec le curseur puis capturez le frame souhaité pour créer votre meme.
-                  </p>
-                </div>
-              </div>
-            )}
-
             {/* IMAGE TAB — no clip, show drop zone */}
             {sourceTab === 'image' && !segmentUrl && (
               <div
@@ -603,8 +563,11 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
               </div>
             )}
 
-            {/* GIF / AUDIO TAB — shared range selector */}
-            {(sourceTab === 'video' || sourceTab === 'audio') && segmentUrl && (() => {
+            {/* UNIFIED PLAYER — one transport for Image / GIF / Audio.
+                Image mode hides the IN/OUT range (capture is at the playhead);
+                GIF/Audio show the range. MEME_PLEX_HANDOFF §2.1. */}
+            {segmentUrl && (() => {
+              const imageMode = sourceTab === 'image'
               const rangePlayer = (
                 <div style={{ background: '#000', borderRadius: 6, border: '1px solid var(--border)' }}>
                   <div style={{ position: 'relative', cursor: 'pointer', overflow: 'hidden', borderRadius: '6px 6px 0 0' }} onClick={togglePlay}>
@@ -613,7 +576,7 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
                       src={segmentUrl}
                       style={{ display: 'block', width: '100%' }}
                       onLoadedMetadata={onVideoLoaded}
-                      onTimeUpdate={onGifTimeUpdate}
+                      onTimeUpdate={e => imageMode ? setVideoTime(e.target.currentTime) : onGifTimeUpdate(e)}
                       onPlay={() => setPlaying(true)}
                       onPause={() => setPlaying(false)}
                     />
@@ -649,9 +612,11 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
                         document.addEventListener('mouseup', onUp)
                       }}
                     >
-                      <div style={{ position: 'absolute', top: 0, height: '100%', background: 'rgba(245, 197, 24,0.35)', borderRadius: 3, left: `${(inPoint / (videoDuration || 1)) * 100}%`, width: `${((outPoint - inPoint) / (videoDuration || 1)) * 100}%` }} />
-                      <div style={{ position: 'absolute', top: 0, width: 3, height: '100%', background: '#4af', borderRadius: 1, left: `${(inPoint / (videoDuration || 1)) * 100}%` }} />
-                      <div style={{ position: 'absolute', top: 0, width: 3, height: '100%', background: 'var(--accent)', borderRadius: 1, left: `calc(${(outPoint / (videoDuration || 1)) * 100}% - 3px)` }} />
+                      {!imageMode && <>
+                        <div style={{ position: 'absolute', top: 0, height: '100%', background: 'rgba(245, 197, 24,0.35)', borderRadius: 3, left: `${(inPoint / (videoDuration || 1)) * 100}%`, width: `${((outPoint - inPoint) / (videoDuration || 1)) * 100}%` }} />
+                        <div style={{ position: 'absolute', top: 0, width: 3, height: '100%', background: '#4af', borderRadius: 1, left: `${(inPoint / (videoDuration || 1)) * 100}%` }} />
+                        <div style={{ position: 'absolute', top: 0, width: 3, height: '100%', background: 'var(--accent)', borderRadius: 1, left: `calc(${(outPoint / (videoDuration || 1)) * 100}% - 3px)` }} />
+                      </>}
                       <div style={{ position: 'absolute', top: -3, width: 2, height: 'calc(100% + 6px)', background: '#fff', borderRadius: 1, left: `${(videoTime / (videoDuration || 1)) * 100}%`, boxShadow: '0 0 4px rgba(255,255,255,0.6)', pointerEvents: 'none' }} />
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'center' }}>
@@ -661,15 +626,33 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
                       <button onClick={() => seekRelative(0.1)} style={SEEK_BTN} title="+0.1s (→)">›</button>
                       <button onClick={() => seekRelative(1)} style={SEEK_BTN} title="+1s (Shift+→)">»</button>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'var(--font-mono)', fontSize: 11 }}>
-                      <button onClick={() => setInPoint(Math.min(videoTime, outPoint - 0.1))} style={{ padding: '3px 7px', background: 'rgba(68,170,255,0.12)', color: '#4af', border: '1px solid rgba(68,170,255,0.3)', borderRadius: 3, fontSize: 11, cursor: 'pointer', fontFamily: 'var(--font-mono)' }}>[ IN</button>
-                      <span style={{ color: '#4af' }}>{fmtTime(inPoint)}</span>
-                      <div style={{ flex: 1, textAlign: 'center', color: 'var(--text3)' }}>{fmtTime(videoTime)} · {gifDuration}s</div>
-                      <span style={{ color: 'var(--accent)' }}>{fmtTime(outPoint)}</span>
-                      <button onClick={() => setOutPoint(Math.max(videoTime, inPoint + 0.1))} style={{ padding: '3px 7px', background: 'rgba(245, 197, 24,0.12)', color: 'var(--accent)', border: '1px solid rgba(245, 197, 24,0.3)', borderRadius: 3, fontSize: 11, cursor: 'pointer', fontFamily: 'var(--font-mono)' }}>OUT ]</button>
-                    </div>
-                    <input type="range" min={0} max={videoDuration || 1} step={0.05} value={inPoint} onChange={e => { const v = Math.min(+e.target.value, outPoint - 0.1); setInPoint(v); seekVideo(v) }} style={{ width: '100%', margin: 0, color: '#4af', '--pct': `${(inPoint / (videoDuration || 1)) * 100}%` }} />
-                    <input type="range" min={0} max={videoDuration || 1} step={0.05} value={outPoint} onChange={e => { const v = Math.max(+e.target.value, inPoint + 0.1); setOutPoint(v); seekVideo(v) }} style={{ width: '100%', margin: 0, color: 'var(--accent)', '--pct': `${(outPoint / (videoDuration || 1)) * 100}%` }} />
+                    {imageMode ? (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text3)' }}>
+                        <span>{fmtTime(videoTime)}</span>
+                        <span>{fmtTime(videoDuration)}</span>
+                      </div>
+                    ) : (<>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'var(--font-mono)', fontSize: 11 }}>
+                        <button onClick={() => setInPoint(Math.min(videoTime, outPoint - 0.1))} style={{ padding: '3px 7px', background: 'rgba(68,170,255,0.12)', color: '#4af', border: '1px solid rgba(68,170,255,0.3)', borderRadius: 3, fontSize: 11, cursor: 'pointer', fontFamily: 'var(--font-mono)' }}>[ IN</button>
+                        <span style={{ color: '#4af' }}>{fmtTime(inPoint)}</span>
+                        <div style={{ flex: 1, textAlign: 'center', color: 'var(--text3)' }}>{fmtTime(videoTime)} · {gifDuration}s</div>
+                        <span style={{ color: 'var(--accent)' }}>{fmtTime(outPoint)}</span>
+                        <button onClick={() => setOutPoint(Math.max(videoTime, inPoint + 0.1))} style={{ padding: '3px 7px', background: 'rgba(245, 197, 24,0.12)', color: 'var(--accent)', border: '1px solid rgba(245, 197, 24,0.3)', borderRadius: 3, fontSize: 11, cursor: 'pointer', fontFamily: 'var(--font-mono)' }}>OUT ]</button>
+                      </div>
+                      <input type="range" min={0} max={videoDuration || 1} step={0.05} value={inPoint} onChange={e => { const v = Math.min(+e.target.value, outPoint - 0.1); setInPoint(v); seekVideo(v) }} style={{ width: '100%', margin: 0, color: '#4af', '--pct': `${(inPoint / (videoDuration || 1)) * 100}%` }} />
+                      <input type="range" min={0} max={videoDuration || 1} step={0.05} value={outPoint} onChange={e => { const v = Math.max(+e.target.value, inPoint + 0.1); setOutPoint(v); seekVideo(v) }} style={{ width: '100%', margin: 0, color: 'var(--accent)', '--pct': `${(outPoint / (videoDuration || 1)) * 100}%` }} />
+                    </>)}
+                  </div>
+                </div>
+              )
+
+              if (imageMode) return (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 240px', gap: 20, alignItems: 'start' }}>
+                  {rangePlayer}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {error && <div style={{ padding: '8px 10px', background: 'rgba(229,69,69,0.12)', color: '#e54545', borderRadius: 4, fontSize: 12, border: '1px solid rgba(229,69,69,0.3)' }}>{error}</div>}
+                    <button onClick={captureFrame} disabled={!videoReady} style={{ padding: '11px', fontWeight: 700, borderRadius: 4, fontSize: 13, background: videoReady ? 'var(--accent)' : 'var(--surface3)', color: videoReady ? '#000' : '#888', border: 'none', cursor: videoReady ? 'pointer' : 'default' }}>◉ Capturer ce frame</button>
+                    <p style={{ fontSize: 11, color: 'var(--text3)', lineHeight: 1.6, margin: 0 }}>Naviguez puis capturez le frame souhaité — il s'ouvrira dans l'éditeur.</p>
                   </div>
                 </div>
               )
@@ -710,6 +693,22 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
           /* Canvas editor */
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 290px', gap: 20, alignItems: 'start' }}>
 
+            {/* Left column: result REPLACES the editor canvas once generated
+                (MEME_PLEX_HANDOFF §2.3 — never show source + result stacked). */}
+            {resultUrl ? (
+              <div style={{ background: '#000', borderRadius: 6, overflow: 'hidden', border: '1px solid var(--accent)' }}>
+                <div style={{ padding: '6px 10px', borderBottom: '1px solid #1a1a1a', fontSize: 11, color: 'var(--accent)', fontWeight: 600 }}>
+                  Résultat
+                </div>
+                <img src={resultUrl} alt="meme" style={{ display: 'block', width: '100%' }} />
+                <div style={{ display: 'flex', gap: 8, padding: 10, borderTop: '1px solid #1a1a1a' }}>
+                  <button onClick={() => setResultUrl(null)}
+                    style={{ flex: 1, padding: 9, background: 'var(--surface2)', color: 'var(--text)', fontWeight: 600, borderRadius: 4, fontSize: 12, border: '1px solid var(--border2)', cursor: 'pointer' }}>↩ Refaire</button>
+                  <button onClick={download}
+                    style={{ flex: 1, padding: 9, background: '#44bb55', color: '#fff', fontWeight: 700, borderRadius: 4, fontSize: 12, border: 'none', cursor: 'pointer' }}>↓ Télécharger</button>
+                </div>
+              </div>
+            ) : (
             <div style={{ background: '#000', borderRadius: 6, overflow: 'hidden', border: '1px solid var(--border)' }}>
               <div style={{ padding: '6px 10px', borderBottom: '1px solid #1a1a1a', fontSize: 11, color: '#666' }}>
                 Glissez le texte pour le repositionner
@@ -738,6 +737,7 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
                 />
               </div>
             </div>
+            )}
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
 
@@ -915,20 +915,7 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
                   color: loading ? '#888' : '#000',
                   border: 'none', cursor: loading ? 'default' : 'pointer',
                 }}
-              >{loading ? '◉ Génération…' : '◉ Générer'}</button>
-
-              {resultUrl && (
-                <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12 }}>
-                  <label style={LBL}>RÉSULTAT</label>
-                  <div style={{ background: '#000', borderRadius: 4, overflow: 'hidden', marginBottom: 8 }}>
-                    <img src={resultUrl} alt="meme" style={{ width: '100%', display: 'block' }} />
-                  </div>
-                  <button
-                    onClick={download}
-                    style={{ width: '100%', padding: 10, background: '#44bb55', color: '#fff', fontWeight: 700, borderRadius: 4, fontSize: 13, border: 'none', cursor: 'pointer' }}
-                  >↓ Télécharger</button>
-                </div>
-              )}
+              >{loading ? '◉ Génération…' : resultUrl ? '◉ Régénérer' : '◉ Générer'}</button>
             </div>
           </div>
         )}
