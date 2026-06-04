@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import VideoEditor from './VideoEditor'
 import PlexBrowser from './PlexBrowser'
 import { Icon, ICONS } from '../Icons'
+import { ScreenHeader } from '../ui'
 import { useProgress } from '../ProgressContext'
 
 const selectStyle = {
@@ -207,27 +208,17 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      {/* Header */}
-      <div style={{ padding: '20px 28px 0', flexShrink: 0 }}>
-        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text3)', letterSpacing: 1.5, marginBottom: 4 }}>
-          IMPORTER{tab === TAB.PLEX ? ' · SOURCE PLEX' : ''}
-        </div>
-        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 16 }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <h1 style={{ fontSize: 24, fontWeight: 600, letterSpacing: -0.4, color: 'var(--text)' }}>
-              {video ? video.filename : tab === TAB.PLEX ? 'Choisir un fichier dans Plex' : 'Importer une vidéo'}
-            </h1>
-            <p style={{ fontSize: 12, color: 'var(--text3)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {video ? video.sourcePath : 'Fichier local, bibliothèque Plex ou URL directe'}
-            </p>
-          </div>
-          {(picking || remuxing) && (
-            <span style={{ fontSize: 12, color: 'var(--accent)' }}>
-              {picking ? '⏳ Ouverture…' : '⏳ Changement piste…'}
-            </span>
-          )}
-        </div>
-      </div>
+      <ScreenHeader
+        kicker={`IMPORTER${tab === TAB.PLEX ? ' · SOURCE PLEX' : ''}`}
+        title={video ? video.filename : tab === TAB.PLEX ? 'Choisir un fichier dans Plex' : 'Importer une vidéo'}
+        sub={video ? video.sourcePath : 'Fichier local, bibliothèque Plex ou URL directe'}
+        right={(picking || remuxing) && (
+          <span style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, color: 'var(--accent)' }}>
+            <span style={{ width: 12, height: 12, borderRadius: '50%', border: '2px solid var(--accent)', borderTopColor: 'transparent', animation: 'brspin 0.7s linear infinite', display: 'inline-block' }} />
+            {picking ? 'Ouverture…' : 'Changement piste…'}
+          </span>
+        )}
+      />
 
       {/* Source switcher */}
       <div style={{ padding: '14px 28px', flexShrink: 0 }}>
@@ -376,7 +367,7 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
                 </label>
               )}
 
-              {remuxing && <span style={{ fontSize: 11, color: '#f5c518' }}>⏳ Remux en cours…</span>}
+              {remuxing && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--accent)' }}><span style={{ width: 10, height: 10, borderRadius: '50%', border: '2px solid var(--accent)', borderTopColor: 'transparent', animation: 'brspin 0.7s linear infinite' }} /> Remux en cours…</span>}
             </div>
           )}
 

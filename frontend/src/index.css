@@ -125,6 +125,8 @@ textarea:focus-visible {
   border-radius: var(--radius);
 }
 
+@keyframes brspin { to { transform: rotate(360deg); } }
+
 button {
   font-family: var(--font-ui);
   font-size: 13px;
