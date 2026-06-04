@@ -9,6 +9,7 @@ import { Icon, ICONS } from './Icons'
 import { ProgressProvider } from './ProgressContext'
 import { ToastProvider, useToast } from './ToastContext'
 import ShortcutsOverlay from './components/ShortcutsOverlay'
+import CommandPalette from './components/CommandPalette'
 
 const SAVE_STATUS = {
   saved:   { text: '✓ Sauvegardé', color: 'var(--success)' },
@@ -38,14 +39,19 @@ function AppInner() {
   const [dubSaveStatus, setDubSaveStatus] = useState('saved')
   const [dubExportOpen, setDubExportOpen] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
+  const [cmdOpen, setCmdOpen] = useState(false)
 
   useEffect(() => { fetchClips() }, [])
 
-  // Global "?" key opens shortcuts overlay.
+  // Global keys: "?" → shortcuts · ⌘K/Ctrl+K or "/" → command palette.
   useEffect(() => {
     function onKey(e) {
-      if (['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return
-      if (e.target.isContentEditable) return
+      const typing = ['INPUT', 'TEXTAREA'].includes(e.target.tagName) || e.target.isContentEditable
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault(); setCmdOpen(v => !v); return
+      }
+      if (typing) return
+      if (e.key === '/' && !e.shiftKey) { e.preventDefault(); setCmdOpen(true); return }
       if (e.key === '?' || (e.key === '/' && e.shiftKey)) {
         e.preventDefault(); setShortcutsOpen(v => !v)
       }
@@ -167,6 +173,17 @@ function AppInner() {
         </div>
         <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>Bande Rythmo</span>
         <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text3)' }}>v2.0</span>
+        <div style={{ width: 18 }} />
+        <button onClick={() => setCmdOpen(true)} title="Palette de commandes (⌘K)"
+          style={{ display: 'flex', alignItems: 'center', gap: 8, height: 30, padding: '0 12px', minWidth: 240, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 99, cursor: 'pointer', color: 'var(--text3)' }}>
+          <Icon d={ICONS.search} size={14} />
+          <span style={{ fontSize: 12 }}>Rechercher ou commande…</span>
+          <div style={{ flex: 1 }} />
+          <span style={{ display: 'flex', gap: 3 }}>
+            <kbd style={{ padding: '1px 5px', borderRadius: 4, background: 'var(--surface2)', border: '1px solid var(--border2)', fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text2)' }}>⌘</kbd>
+            <kbd style={{ padding: '1px 5px', borderRadius: 4, background: 'var(--surface2)', border: '1px solid var(--border2)', fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text2)' }}>K</kbd>
+          </span>
+        </button>
         <div style={{ flex: 1 }} />
         {section === 'dub' && activeClip && (() => {
           const ss = SAVE_STATUS[dubSaveStatus] || SAVE_STATUS.saved
@@ -233,6 +250,15 @@ function AppInner() {
         </main>
       </div>
       <ShortcutsOverlay open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+      <CommandPalette
+        open={cmdOpen}
+        onClose={() => setCmdOpen(false)}
+        onNavigate={setSection}
+        onNewClip={() => setSection('import')}
+        onShortcuts={() => setShortcutsOpen(true)}
+        clips={clips}
+        onOpenClip={handleDub}
+      />
     </div>
   )
 }
