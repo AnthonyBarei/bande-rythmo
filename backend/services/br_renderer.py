@@ -77,7 +77,16 @@ def _get_fonts(font_size: int, label_size: int = 10, avatar_size: int = 9,
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
     ]
-    chosen = _BR_FONT_FILES.get(br_font, _ATKINSON_BOLD)
+    chosen = _BR_FONT_FILES.get(br_font)
+    if not chosen and br_font and br_font.startswith("u-"):
+        # Uploaded font — resolve from the fonts registry.
+        try:
+            from routes.fonts import resolve_font_path
+            chosen = resolve_font_path(br_font)
+        except Exception:
+            chosen = None
+    if not chosen:
+        chosen = _ATKINSON_BOLD
     candidates = [chosen] + fallback
     return (
         _load_font(candidates, font_size),     # BR dialogue text
