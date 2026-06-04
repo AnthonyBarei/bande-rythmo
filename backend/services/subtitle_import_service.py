@@ -177,6 +177,108 @@ def parse_vtt(content: str) -> List[Dict]:
     return results
 
 
+def _detx_time(tc: str, fps: float) -> float:
+    """'HH:MM:SS:FF' → seconds. Frame field divided by fps."""
+    parts = tc.strip().split(':')
+    if len(parts) == 4:
+        h, m, s, f = parts
+        return int(h) * 3600 + int(m) * 60 + int(s) + (int(f) / max(1.0, fps))
+    if len(parts) == 3:
+        return int(parts[0]) * 3600 + int(parts[1]) * 60 + float(parts[2])
+    try:
+        return float(tc)
+    except ValueError:
+        return 0.0
+
+
+# DetX lipsync family → our sign type (reverse of _SIGN_DETX_TYPE; lossy:
+# 'closed'→labiale, 'rounded'→arrondie, 'open'→ouverte).
+_DETX_SIGN_TYPE = {"closed": "labiale", "rounded": "arrondie", "open": "ouverte"}
+
+
+def parse_detx(content: str) -> List[Dict]:
+    """Parse DetX XML → subtitle dicts. Round-trips export_detx: roles→character,
+    in_open/out_open→start/end, line attrs→off/dos/ambiance/plan_cut, and the
+    in_<fam>/out_<fam> lipsync pairs→words[].signs (best-effort)."""
+    import xml.etree.ElementTree as ET
+    try:
+        root = ET.fromstring(content)
+    except ET.ParseError:
+        return []
+
+    fps = 25.0
+    vfr = root.findtext("./header/videoframerate")
+    if vfr:
+        try:
+            fps = float(vfr)
+        except ValueError:
+            pass
+
+    roles = {r.get("id"): (r.get("name") or "") for r in root.findall("./roles/role")}
+
+    results = []
+    for line in root.findall("./body/line"):
+        role = line.get("role")
+        character = roles.get(role, "")
+        text = (line.findtext("text") or "").strip()
+
+        start = end = None
+        signs_open, signs_close = {}, {}
+        for ls in line.findall("lipsync"):
+            tc = ls.get("timecode")
+            typ = ls.get("type") or ""
+            if tc is None:
+                continue
+            t = _detx_time(tc, fps)
+            if typ == "in_open" and start is None:
+                start = t
+            elif typ == "out_open":
+                end = t
+            elif typ.startswith("in_"):
+                signs_open.setdefault(typ[3:], []).append(t)
+            elif typ.startswith("out_"):
+                signs_close.setdefault(typ[4:], []).append(t)
+
+        if start is None:
+            continue
+        if end is None or end <= start:
+            end = start + max(0.3, len(text) * 0.06)
+
+        sub = {
+            "start": round(start, 3),
+            "end": round(end, 3),
+            "character": character,
+            "text": text,
+        }
+        if line.get("off") == "true":
+            sub["off"] = True
+        if line.get("dos") == "true":
+            sub["dos"] = True
+        if line.get("type") == "amb":
+            sub["ambiance"] = True
+        plan = line.get("plan")
+        if plan:
+            sub["plan_cut"] = round(_detx_time(plan, fps), 3)
+
+        # Best-effort signs → single word spanning the line.
+        sign_list = []
+        for fam, opens in signs_open.items():
+            closes = signs_close.get(fam, [])
+            kind = _DETX_SIGN_TYPE.get(fam)
+            if not kind:
+                continue
+            for i, t0 in enumerate(opens):
+                t1 = closes[i] if i < len(closes) else t0 + 0.08
+                sign_list.append({"i": 0, "type": kind,
+                                  "t0": round(t0, 3), "t1": round(t1, 3)})
+        if sign_list and text:
+            sub["words"] = [{"w": text, "start": sub["start"], "end": sub["end"],
+                             "signs": sorted(sign_list, key=lambda s: s["t0"])}]
+        results.append(sub)
+
+    return results
+
+
 def parse_subtitle_file(filename: str, content: str) -> List[Dict]:
     """Dispatch by extension. Returns list of subtitle dicts sorted by start time."""
     ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
@@ -186,9 +288,12 @@ def parse_subtitle_file(filename: str, content: str) -> List[Dict]:
         subs = parse_ass(content)
     elif ext == 'vtt':
         subs = parse_vtt(content)
+    elif ext == 'detx':
+        subs = parse_detx(content)
     else:
-        # Try SRT first, then VTT
-        subs = parse_srt(content)
-        if not subs:
-            subs = parse_vtt(content)
+        # Sniff: DetX is XML
+        if content.lstrip().startswith('<'):
+            subs = parse_detx(content)
+        else:
+            subs = parse_srt(content) or parse_vtt(content)
     return sorted(subs, key=lambda s: s['start'])

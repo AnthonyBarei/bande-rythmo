@@ -584,7 +584,7 @@ export default function SubtitleEditor({ subtitles, onChange, currentTime = 0, o
               <input
                 ref={importInputRef}
                 type="file"
-                accept=".srt,.ass,.ssa,.vtt"
+                accept=".srt,.ass,.ssa,.vtt,.detx"
                 style={{ display: 'none' }}
                 onChange={handleImportFile}
               />
