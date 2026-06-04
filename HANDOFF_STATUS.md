@@ -86,29 +86,33 @@ _Cross-reference: design handoff package vs codebase (2026-06-04)_
 
 ## Summary — remaining work
 
-### Still open (by priority)
+### Shipped since this doc was written
 
-| # | Item | Source | Effort |
-|---|---|---|---|
-| 1 | Frame-by-frame nav (Shift+←/→) | UPGRADE_PLAN P0 | 30min |
-| 2 | SRT / ASS / VTT import | UPGRADE_PLAN P0 | 3–4h |
-| 3 | BRTimeline nav bar in Doublage | UPGRADE_PLAN P0 | 4–5h |
-| 4 | Undo/redo stack (Ctrl+Z/Y) | UPGRADE_PLAN P1 | 3h |
-| 5 | Auto scene change detection | UPGRADE_PLAN P1 | 2–3h |
-| 6 | MP4 detection burn `_draw_signs()` | PRO_BR §5 Phase 2 | 3–4h |
-| 7 | Plex browser left-sidebar restyle | MEME_PLEX Part 1 | 2h |
-| 8 | Meme unified range player | MEME_PLEX Part 2 | 2h |
-| 9 | Meme result replaces source | MEME_PLEX Part 2 | 1h |
-| 10 | Move ⟲ loop-active to transport bar | DOUBLAGE_IA §3 | 30min |
-| 11 | Focus-visible rings | UX_REVIEW §7 | 1h |
-| 12 | First-run empty state CTA button | UX_REVIEW §5 | 30min |
-| 13 | Notes per réplique (`note` column) | UPGRADE_PLAN P1 | 2h |
-| 14 | GPU export flag (NVENC/QSV) | UPGRADE_PLAN P1 | 2h |
-| 15 | Video proxy (720p/480p) | UPGRADE_PLAN P2 | 3h |
+| Item | Source | Branch |
+|---|---|---|
+| Frame-by-frame nav (Shift+←/→) | UPGRADE_PLAN P0 | merged |
+| SRT / ASS / VTT import | UPGRADE_PLAN P0 | merged |
+| BRTimeline nav bar in Doublage | UPGRADE_PLAN P0 | merged |
+| Undo/redo stack (Ctrl+Z/Y) | UPGRADE_PLAN P1 | merged |
+| Auto scene change detection | UPGRADE_PLAN P1 | merged |
+| MP4 detection burn `_draw_signs()` | PRO_BR §5 Phase 2 | merged |
+| Notes per réplique (`note` column) | UPGRADE_PLAN P1 | merged |
+| GPU export (NVENC/QSV/AMF) | UPGRADE_PLAN P1 | merged |
+| Focus-visible rings | UX_REVIEW §7 | merged |
+| Custom font upload (TTF/OTF) | PRO_BR §1 | `feat/custom-fonts` |
+| Meme unified player + result-replaces-source | MEME_PLEX Part 2 | `feat/meme-unified` |
+| Plex restyle (connect card + browser sidebar) | MEME_PLEX Part 1 | already on main ✓ |
+| Whisper language config per clip | roadmap | already wired ✓ |
+| Per-word toggle + stretch markers | UPGRADE_PLAN | merged |
+| Export history, quality presets, job-mode batch | — | merged |
 
-### Already shipped (not in inventory docs — added this session)
-- Export history + re-download (Export model + ExportPanel history section)
-- Quality presets: draft / standard / youtube
-- Job-mode batch clip cut (batch-local-job)
-- MemeGenerator GIF → job mode
-- Per-word rendering toggle (wordByWord) + stretch markers
+### Still open
+
+| Item | Source | Effort |
+|---|---|---|
+| Video proxy (720p/480p) | UPGRADE_PLAN P2 | 3h |
+| Move ⟲ loop-active to transport bar | DOUBLAGE_IA §3 | 30min |
+| First-run empty state CTA button | UX_REVIEW §5 | 30min |
+| Auto-translation (LibreTranslate/DeepL) | UPGRADE_PLAN P3 | — |
+| Dubbing lexicon | UPGRADE_PLAN P3 | — |
+| Project folder organization | UPGRADE_PLAN P3 | — |
