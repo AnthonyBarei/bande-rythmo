@@ -257,6 +257,10 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   })
   // Uploaded custom fonts — fetched + injected as @font-face for canvas/CSS.
   const [uploadedFonts, setUploadedFonts] = useState([])
+  // Auto-translation — gated on a configured provider (LibreTranslate/DeepL).
+  const [translateProvider, setTranslateProvider] = useState(null)
+  const [translateTarget, setTranslateTarget] = useState('en')
+  const [translating, setTranslating] = useState(false)
   // Waveform + scene cuts for the full-clip nav timeline (BRTimeline).
   const [waveformData, setWaveformData] = useState(null)
   const [sceneCuts, setSceneCuts] = useState(clip.scene_cuts || [])
@@ -570,6 +574,36 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
     } catch {}
   }, [])
   useEffect(() => { refreshFonts() }, [refreshFonts])
+
+  // Probe translation provider once.
+  useEffect(() => {
+    fetch('/api/translate/status').then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) setTranslateProvider(d) }).catch(() => {})
+  }, [])
+
+  async function translateAll() {
+    const subs = subtitlesRef.current
+    const texts = subs.map(s => s.text || '')
+    if (!texts.some(t => t.trim())) return
+    setTranslating(true)
+    try {
+      const res = await fetch('/api/translate', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ texts, target: translateTarget, source: 'auto' }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`)
+      const tr = data.translations || []
+      // Apply via handleSubtitlesChange → undoable + autosaved.
+      handleSubtitlesChange(subs.map((s, i) => ({ ...s, text: tr[i] ?? s.text, words: null })))
+      setToast({ msg: `Traduit en ${translateTarget.toUpperCase()} · annulable (Ctrl+Z)`, type: 'success' })
+    } catch (e) {
+      setToast({ msg: 'Traduction : ' + e.message, type: 'error' })
+    } finally {
+      setTranslating(false)
+      setTimeout(() => setToast(null), 4000)
+    }
+  }
 
   async function uploadFont(file) {
     if (!file) return
@@ -2179,6 +2213,21 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
           style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 11px', background: 'var(--surface2)', color: subtitles.length > 0 ? 'var(--text2)' : 'var(--accent)', border: `1px solid ${subtitles.length > 0 ? 'var(--border2)' : 'rgba(245,197,24,0.4)'}`, borderRadius: 6, fontSize: 11.5, fontWeight: 600, flexShrink: 0, cursor: 'pointer' }}>
           <Ic d={ICONS.mic} size={12} /> {transcribing ? '…' : 'Whisper'}
         </button>
+        {translateProvider?.available && subtitles.length > 0 && (
+          <>
+            <div style={{ width: 1, height: 20, background: 'var(--border2)', flexShrink: 0 }} />
+            <select value={translateTarget} onChange={e => setTranslateTarget(e.target.value)} disabled={translating}
+              title="Langue cible de traduction"
+              style={{ background: 'var(--surface2)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 6, padding: '4px 6px', fontSize: 11, flexShrink: 0, cursor: 'pointer' }}>
+              {LANGS.filter(l => l.code !== 'auto').map(l => <option key={l.code} value={l.code}>{l.code.toUpperCase()}</option>)}
+            </select>
+            <button onClick={translateAll} disabled={translating}
+              title={`Traduire toutes les répliques en ${translateTarget.toUpperCase()} (${translateProvider.provider}) — annulable`}
+              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 11px', background: 'var(--surface2)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 6, fontSize: 11.5, fontWeight: 600, flexShrink: 0, cursor: 'pointer', opacity: translating ? 0.5 : 1 }}>
+              🌐 {translating ? '…' : 'Traduire'}
+            </button>
+          </>
+        )}
       </div>
 
       {/* ── Body (video stage + right pane) ── */}
