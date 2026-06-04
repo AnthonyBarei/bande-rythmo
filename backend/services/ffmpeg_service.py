@@ -28,10 +28,13 @@ def run_ffmpeg_with_progress(
         # Insert right after "ffmpeg" + global flags — put before output is fine.
         full = [full[0], "-progress", "pipe:1", "-nostats"] + full[1:]
 
+    # stderr → DEVNULL: we drive progress from stdout (-progress pipe:1) and never
+    # read stderr, so a PIPE here can fill its 64KB buffer and deadlock ffmpeg on
+    # verbose encodes (e.g. scale-filter proxy). Errors still surface via returncode.
     proc = subprocess.Popen(
         full,
         stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
         bufsize=1,
         universal_newlines=True,
     )
@@ -221,6 +224,35 @@ def probe_streams(path: str) -> dict:
         elif codec_type == "audio":
             audio_streams.append({"relative_index": len(audio_streams), "label": label})
     return {"video_streams": video_streams, "audio_streams": audio_streams}
+
+
+def make_proxy(source: str, output: str, height: int = 720,
+               on_progress=None, is_cancelled=None, register_process=None,
+               duration_s: float = 0.0) -> int:
+    """Generate a lightweight proxy (scaled to `height`, fast preset, faststart).
+    Smooth scrubbing of large/4K segments without touching the master.
+    Returns ffmpeg return code (-1 if cancelled)."""
+    cmd = [
+        "ffmpeg", "-y",
+        "-progress", "pipe:1", "-nostats",
+        "-i", source,
+        "-vf", f"scale=-2:{height}",
+        "-c:v", "libx264",
+        "-crf", "28",
+        "-preset", "veryfast",
+        "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-b:a", "128k",
+        "-movflags", "+faststart",
+        output,
+    ]
+    if on_progress or is_cancelled or register_process:
+        return run_ffmpeg_with_progress(
+            cmd, duration_s or 1.0,
+            on_progress=on_progress, is_cancelled=is_cancelled,
+            register_process=register_process,
+        )
+    subprocess.run(cmd, check=True, capture_output=True)
+    return 0
 
 
 def extract_segment(source: str, start: float, end: float, output: str,

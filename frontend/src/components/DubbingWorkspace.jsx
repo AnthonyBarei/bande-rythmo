@@ -319,6 +319,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   const bouclesRef = useRef(boucles)
   const clipFpsRef = useRef(clipFps)
   const sceneCutsRef = useRef([])
+  const resumeTimeRef = useRef(null)
   const exportingRef = useRef(false)
   // Smooth time interpolation: video.currentTime only updates at video fps (e.g. 24fps).
   // Between updates, we interpolate using wall clock so the canvas scrolls at 60fps.
@@ -339,7 +340,14 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   clipFpsRef.current = clipFps
   sceneCutsRef.current = sceneCuts
 
-  const segmentUrl = `/${clip.segment_path}`
+  const masterUrl = `/${clip.segment_path}`
+  // Proxy playback (720p) for smooth scrubbing of heavy segments.
+  const [hasProxy, setHasProxy] = useState(!!clip.has_proxy)
+  const [useProxy, setUseProxy] = useState(!!clip.has_proxy)
+  const [proxyJob, setProxyJob] = useState(false)
+  const segmentUrl = (useProxy && hasProxy)
+    ? `/segments/${clip.clip_id}_proxy.mp4`
+    : masterUrl
 
   const charMap = useMemo(() => {
     const seen = []
@@ -467,6 +475,24 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   async function clearScenes() {
     setSceneCuts([])
     try { await fetch(`/api/clips/${clip.clip_id}/scenes`, { method: 'DELETE' }) } catch {}
+  }
+
+  async function generateProxy() {
+    setProxyJob(true)
+    const fireJob = async () => {
+      const res = await fetch(`/api/clips/${clip.clip_id}/proxy?height=720`, { method: 'POST' })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      return (await res.json()).job_id
+    }
+    try {
+      const jobId = await fireJob()
+      progress.start({
+        kind: 'proxy', title: 'Proxy 720p', jobId, retry: fireJob,
+        onDone: () => { setHasProxy(true); setUseProxy(true); setProxyJob(false) },
+        onError: () => { setProxyJob(false) },
+        onCancel: () => { setProxyJob(false) },
+      })
+    } catch { setProxyJob(false) }
   }
 
   // Auto-fit scroll rate, once per clip: pick pxPerSec so the densest réplique
@@ -2148,7 +2174,14 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
                 setCurrentTime(ct)
                 if (!e.target.paused) interpTimeRef.current = { videoTime: ct, wallMs: performance.now(), active: true }
               }}
-              onLoadedMetadata={e => setDuration(e.target.duration)}
+              onLoadedMetadata={e => {
+                setDuration(e.target.duration)
+                // Restore playhead after a Master/Proxy source swap.
+                if (resumeTimeRef.current != null) {
+                  try { e.target.currentTime = resumeTimeRef.current } catch {}
+                  resumeTimeRef.current = null
+                }
+              }}
               onPlay={() => { setPlaying(true); interpTimeRef.current = { videoTime: videoRef.current?.currentTime || 0, wallMs: performance.now(), active: true } }}
               onPause={() => { setPlaying(false); interpTimeRef.current = { ...interpTimeRef.current, active: false } }}
               onClick={togglePlay}
@@ -2204,6 +2237,20 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
             <button onClick={toggleMute} title={muted ? 'Activer le son' : 'Couper le son'} style={{ ...tBtn, color: muted ? 'var(--text4)' : 'var(--text2)' }}>
               <Ic d={muted ? ICONS.mute : ICONS.volume} size={14} />
             </button>
+            {/* Proxy 720p — generate once, then toggle Master / Proxy for smooth scrubbing */}
+            {hasProxy ? (
+              <button onClick={() => { const v = videoRef.current; resumeTimeRef.current = v ? v.currentTime : 0; setUseProxy(p => !p) }}
+                title="Basculer Master / Proxy 720p"
+                style={{ ...tBtn, padding: '3px 8px', fontSize: 10, fontWeight: 700, color: useProxy ? 'var(--accent)' : 'var(--text3)', border: `1px solid ${useProxy ? 'rgba(245,197,24,0.4)' : 'var(--border2)'}`, borderRadius: 5 }}>
+                {useProxy ? '720p' : 'MASTER'}
+              </button>
+            ) : (
+              <button onClick={generateProxy} disabled={proxyJob}
+                title="Générer un proxy 720p (scrubbing fluide des segments lourds)"
+                style={{ ...tBtn, padding: '3px 8px', fontSize: 10, fontWeight: 600, color: 'var(--text3)', border: '1px solid var(--border2)', borderRadius: 5, opacity: proxyJob ? 0.5 : 1 }}>
+                {proxyJob ? '…' : 'Proxy'}
+              </button>
+            )}
             <div style={{ width: 1, height: 18, background: 'var(--border)', flexShrink: 0, margin: '0 2px' }} />
             {/* Subtitle display mode — cycles play → always → never */}
             <button

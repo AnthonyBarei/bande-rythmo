@@ -18,7 +18,7 @@ from services.clip_service import (
     list_clips, update_name, update_status, update_subtitles,
     update_boucles, update_fps, update_scene_cuts,
 )
-from services.ffmpeg_service import extract_segment, extract_thumbnail, probe_streams, probe_fps, detect_scene_cuts
+from services.ffmpeg_service import extract_segment, extract_thumbnail, probe_streams, probe_fps, detect_scene_cuts, make_proxy
 from services.jobs import create_job, raise_if_cancelled, CancelledJobError, JobStartResponse
 from services.subtitle_import_service import parse_subtitle_file
 
@@ -338,6 +338,54 @@ async def set_boucles(clip_id: str, req: UpdateBouclesRequest, db: Session = Dep
     if not clip:
         raise HTTPException(404, "Clip not found")
     return clip
+
+
+@router.post("/{clip_id}/proxy", response_model=JobStartResponse)
+async def make_clip_proxy(clip_id: str, height: int = 720):
+    """Generate a 720p (default) proxy for smooth scrubbing of large segments.
+    Job-mode: poll /api/jobs/{id}. Output → segments/{clip_id}_proxy.mp4."""
+    segment = f"segments/{clip_id}.mp4"
+    if not os.path.isfile(segment):
+        raise HTTPException(404, "Segment file missing")
+    output = f"segments/{clip_id}_proxy.mp4"
+    job = create_job("proxy", title=f"Proxy {height}p")
+
+    def worker():
+        try:
+            job.update(stage=f"Encodage proxy {height}p", pct=0.02)
+            raise_if_cancelled(job)
+            def on_prog(pct, eta):
+                job.update(stage=f"Encodage proxy {height}p", pct=0.02 + 0.96 * pct, eta=eta)
+            rc = make_proxy(
+                segment, output, height,
+                on_progress=on_prog,
+                is_cancelled=lambda: job.cancelled,
+                register_process=lambda p: setattr(job, "process", p),
+            )
+            if rc == -1 or job.cancelled:
+                return
+            if rc != 0:
+                job.fail(f"ffmpeg returned {rc}")
+                return
+            job.done({"proxy_path": output, "clip_id": clip_id})
+        except CancelledJobError:
+            pass
+        except Exception as e:
+            job.fail(str(e))
+
+    asyncio.get_event_loop().run_in_executor(None, worker)
+    return {"job_id": job.id}
+
+
+@router.delete("/{clip_id}/proxy")
+async def delete_clip_proxy(clip_id: str):
+    output = f"segments/{clip_id}_proxy.mp4"
+    if os.path.isfile(output):
+        try:
+            os.remove(output)
+        except OSError:
+            pass
+    return {"ok": True}
 
 
 @router.post("/{clip_id}/detect-scenes")

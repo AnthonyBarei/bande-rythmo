@@ -38,6 +38,7 @@ def _to_dict(clip: Clip) -> dict:
         "status": clip.status or "todo",
         "fps": clip.fps or 25.0,
         "scene_cuts": _parse_scene_cuts(clip.scene_cuts),
+        "has_proxy": os.path.isfile(f"segments/{clip.clip_id}_proxy.mp4"),
         "subtitles": [
             {
                 "start": s.start, "end": s.end, "character": s.character,
