@@ -48,8 +48,8 @@ input[type="range"]::-webkit-slider-runnable-track {
   /* Text */
   --text:      #ededf0;
   --text2:     #9c9ca6;
-  --text3:     #62626c;
-  --text4:     #3e3e46;
+  --text3:     #7a7a85;   /* reviewed: lighter for legible meta (≈4.4:1 on bg) */
+  --text4:     #565660;   /* reviewed: lighter for hints/disabled */
 
   /* Yellow accent */
   --accent:      #f5c518;
