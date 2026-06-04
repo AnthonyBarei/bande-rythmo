@@ -108,6 +108,23 @@ input, textarea {
 }
 input:focus, textarea:focus { border-color: var(--accent); }
 
+/* Keyboard-only focus ring (UX_REVIEW §7). Pointer clicks don't trigger
+   :focus-visible, so this stays invisible for mouse users but gives keyboard
+   navigators a clear accent ring on every interactive element. box-shadow
+   (not outline) so it isn't suppressed by the many inline `outline:none`s and
+   doesn't shift layout. */
+button:focus-visible,
+select:focus-visible,
+a:focus-visible,
+[role="button"]:focus-visible,
+[tabindex]:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+  border-radius: var(--radius);
+}
+
 button {
   font-family: var(--font-ui);
   font-size: 13px;

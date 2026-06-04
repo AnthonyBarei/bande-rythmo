@@ -883,6 +883,16 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
             ctx.setLineDash([])
           }
         }
+        // Note marker — small filled dot top-left of the block when sub has a note.
+        if (sub.note && onScreenR > onScreenL) {
+          const nx = Math.min(onScreenL + 7, W - 4)
+          const ny = yTop + 7
+          ctx.fillStyle = '#f5c518'
+          ctx.beginPath()
+          ctx.arc(nx, ny, 3, 0, Math.PI * 2)
+          ctx.fill()
+        }
+
         // début/fin wedges at the line's own boundaries — small in-track colour
         if (detTog.startEnd) {
           const wedge = Math.max(4, trackH * 0.10)
