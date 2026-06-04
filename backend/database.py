@@ -51,4 +51,6 @@ def init_db():
             conn.execute(text("ALTER TABLE subtitles ADD COLUMN ambiance INTEGER NOT NULL DEFAULT 0"))
         if "plan_cut" not in sub_cols:
             conn.execute(text("ALTER TABLE subtitles ADD COLUMN plan_cut REAL"))
+        if "note" not in sub_cols:
+            conn.execute(text("ALTER TABLE subtitles ADD COLUMN note TEXT"))
         conn.commit()

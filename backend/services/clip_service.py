@@ -44,6 +44,7 @@ def _to_dict(clip: Clip) -> dict:
                 "text": s.text, "words": _parse_words(s.words),
                 "off": bool(s.off), "dos": bool(s.dos),
                 "ambiance": bool(s.ambiance), "plan_cut": s.plan_cut,
+                "note": s.note or "",
             }
             for s in clip.subtitles
         ],
@@ -109,6 +110,7 @@ def update_subtitles(db: Session, clip_id, subtitles):
             dos=bool(s.get("dos", False)),
             ambiance=bool(s.get("ambiance", False)),
             plan_cut=plan_cut,
+            note=(s.get("note") or None),
         ))
     db.commit()
     db.refresh(clip)

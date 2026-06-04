@@ -191,6 +191,7 @@ const ICONS = {
 function SubtitleRow({ sub, idx, active, selected, compact, charMap, charList, onChange, onDelete, onSelect, onSeek, onNewCharacter }) {
   const textInputRef = useRef(null)
   const [showNotations, setShowNotations] = useState(false)
+  const [showNote, setShowNote] = useState(false)
   const notationRef = useRef(null)
   const mouseDownPos = useRef(null)
 
@@ -326,11 +327,38 @@ function SubtitleRow({ sub, idx, active, selected, compact, charMap, charList, o
             </button>
             {showNotations && <NotationPopover tags={NOTATION_TAGS} onInsert={insertNotation} />}
           </div>
+
+          {/* Note line — free-text annotation, shown when toggled or present */}
+          {(showNote || sub.note) && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Ic d={ICONS.note} size={11} />
+              <input
+                value={sub.note || ''}
+                autoFocus={showNote && !sub.note}
+                onChange={e => onChange({ ...sub, note: e.target.value })}
+                onClick={e => e.stopPropagation()}
+                onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') { e.stopPropagation(); setShowNote(false); e.target.blur() } }}
+                placeholder="Note — intention, intonation, didascalie…"
+                style={{
+                  flex: 1, fontFamily: 'var(--font-ui)', fontSize: 11.5, fontStyle: 'italic',
+                  padding: '2px 6px', background: 'rgba(245,197,24,0.06)',
+                  border: '1px solid rgba(245,197,24,0.25)', borderRadius: 4,
+                  color: 'var(--accent)', outline: 'none', minWidth: 0,
+                }}
+              />
+              {sub.note && (
+                <button onClick={e => { e.stopPropagation(); onChange({ ...sub, note: '' }); setShowNote(false) }}
+                  title="Effacer la note"
+                  style={{ background: 'none', border: 'none', color: 'var(--text4)', cursor: 'pointer', fontSize: 12, flexShrink: 0 }}>✕</button>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Actions */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
           {icBtn('Aller au timecode', 'var(--info)', () => onSeek?.(sub.start), <Ic d={ICONS.goto} size={13} />)}
+          {icBtn(sub.note ? `Note : ${sub.note}` : 'Ajouter une note', sub.note ? 'var(--accent)' : 'var(--text4)', () => setShowNote(v => !v), <Ic d={ICONS.note} size={13} />)}
           {icBtn(sub.hidden ? 'Masqué' : 'Visible', sub.hidden ? 'var(--text4)' : 'var(--success)', () => onChange({ ...sub, hidden: !sub.hidden }), <Ic d={sub.hidden ? ICONS.eyeOff : ICONS.eye} size={13} />)}
           {icBtn('Supprimer', 'var(--danger)', onDelete, <Ic d={ICONS.trash} size={13} />)}
         </div>
@@ -408,7 +436,7 @@ function SubtitleRow({ sub, idx, active, selected, compact, charMap, charList, o
         }} title={`${cps.toFixed(1)} c/s`}>{dur.toFixed(2)}s</span>
         {icBtn('Aller au timecode', '#7ec0ff', () => onSeek?.(sub.start), <Ic d={ICONS.goto} />)}
         {icBtn(sub.hidden ? 'Masqué' : 'Visible', sub.hidden ? '#444' : '#6eb', () => onChange({ ...sub, hidden: !sub.hidden }), <Ic d={sub.hidden ? ICONS.eyeOff : ICONS.eye} />)}
-        {icBtn(sub.note || 'Note', sub.note ? '#f5c518' : '#333', () => {}, <Ic d={ICONS.note} />)}
+        {icBtn(sub.note ? `Note : ${sub.note}` : 'Ajouter une note', sub.note ? '#f5c518' : '#333', () => setShowNote(v => !v), <Ic d={ICONS.note} />)}
         {icBtn('Supprimer', '#7a3535', onDelete, <Ic d={ICONS.trash} />)}
       </div>
     </div>
