@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react'
 import ClipCard from './ClipCard'
+import { Icon, ICONS } from '../Icons'
 
 const FILTERS = [
   { key: 'all',     label: 'Tous' },
@@ -176,9 +177,10 @@ export default function ClipsLibrary({ clips, onDub, onMeme, onDelete, onRename,
                     background: active ? 'var(--accent-soft)' : 'var(--surface)',
                     color: active ? 'var(--accent)' : 'var(--text2)',
                     border: `1px solid ${active ? 'rgba(245,197,24,0.4)' : 'var(--border)'}`,
-                    borderRadius: 99, fontSize: 11.5, fontWeight: active ? 600 : 500, cursor: 'pointer', minHeight: 28,
+                    borderRadius: 99, fontSize: 11.5, fontWeight: active ? 600 : 500, cursor: 'pointer', minHeight: 32,
                   }}>
-                  {p.key === '__none' ? '○' : p.key === '__all' ? '▦' : '📁'} {p.label}
+                  <Icon d={p.key === '__all' ? ICONS.grid : ICONS.folder} size={12} />
+                  {p.label}
                   <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: 'var(--text3)' }}>{n}</span>
                 </button>
               )

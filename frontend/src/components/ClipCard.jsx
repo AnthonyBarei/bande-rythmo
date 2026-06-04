@@ -182,9 +182,11 @@ export default function ClipCard({ clip, onDub, onMeme, onDelete, onRename, onSt
                 color: clip.project ? 'var(--accent)' : 'var(--text4)',
                 border: `1px solid ${clip.project ? 'rgba(245,197,24,0.35)' : 'var(--border)'}`,
                 borderRadius: 99, fontSize: 9.5, cursor: 'pointer', fontFamily: 'var(--font-ui)',
-                maxWidth: 110, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
               }}>
-              {clip.project ? `📁 ${clip.project}` : '+ projet'}
+              {clip.project
+                ? <><Icon d={ICONS.folder} size={10} /> {clip.project}</>
+                : '+ projet'}
             </button>
           )}
           {chars.length > 0 && (

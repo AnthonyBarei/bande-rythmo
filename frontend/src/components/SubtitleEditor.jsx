@@ -240,7 +240,7 @@ function SubtitleRow({ sub, idx, active, selected, compact, charMap, charList, o
   const icBtn = (title, color, onClick, children) => (
     <button title={title} onClick={e => { e.stopPropagation(); onClick() }} style={{
       background: 'transparent', border: '1px solid transparent', color,
-      width: 24, height: 24, borderRadius: 6,
+      width: 28, height: 28, borderRadius: 6,
       cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
       opacity: 0.55, transition: 'opacity 0.12s, background 0.12s, border-color 0.12s',
     }}

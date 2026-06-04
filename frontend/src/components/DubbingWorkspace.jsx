@@ -74,6 +74,8 @@ const ICONS = {
   zoomOut:  <><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/></>,
   volume:   <><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></>,
   mute:     <><path d="M11 5L6 9H2v6h4l5 4V5z"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></>,
+  globe:    <><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 010 18 14 14 0 010-18z"/></>,
+  sliders:  <><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></>,
 }
 
 const fmt = t => {
@@ -2159,7 +2161,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   const Kbd = ({ children }) => (
     <span style={{ display: 'inline-flex', alignItems: 'center', padding: '1px 5px', border: '1px solid var(--border2)', background: 'var(--surface2)', borderRadius: 3, fontFamily: 'var(--font-mono)', fontSize: 9.5, color: 'var(--text3)' }}>{children}</span>
   )
-  const tBtn = { background: 'var(--surface2)', border: '1px solid var(--border2)', color: 'var(--text2)', borderRadius: 5, padding: '4px 7px', cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.15s, border-color 0.15s' }
+  const tBtn = { background: 'var(--surface2)', border: '1px solid var(--border2)', color: 'var(--text2)', borderRadius: 6, minWidth: 30, minHeight: 30, padding: '0 8px', cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.15s, border-color 0.15s' }
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -2249,8 +2251,8 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
             </select>
             <button onClick={translateAll} disabled={translating}
               title={`Traduire toutes les répliques en ${translateTarget.toUpperCase()} (${translateProvider.provider}) — annulable`}
-              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 11px', background: 'var(--surface2)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 6, fontSize: 11.5, fontWeight: 600, flexShrink: 0, cursor: 'pointer', opacity: translating ? 0.5 : 1 }}>
-              🌐 {translating ? '…' : 'Traduire'}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 11px', background: 'var(--surface2)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 6, fontSize: 11.5, fontWeight: 600, flexShrink: 0, cursor: 'pointer', opacity: translating ? 0.5 : 1 }}>
+              <Ic d={ICONS.globe} size={13} /> {translating ? '…' : 'Traduire'}
             </button>
           </>
         )}
@@ -2259,8 +2261,8 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
             <div style={{ width: 1, height: 20, background: 'var(--border2)', flexShrink: 0 }} />
             <button onClick={separateVocals} disabled={separatingVocals}
               title="Isoler la voix (VO) de la musique/FX — Demucs"
-              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 11px', background: 'var(--surface2)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 6, fontSize: 11.5, fontWeight: 600, flexShrink: 0, cursor: 'pointer', opacity: separatingVocals ? 0.5 : 1 }}>
-              🎚 {separatingVocals ? '…' : 'Séparer voix'}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 11px', background: 'var(--surface2)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 6, fontSize: 11.5, fontWeight: 600, flexShrink: 0, cursor: 'pointer', opacity: separatingVocals ? 0.5 : 1 }}>
+              <Ic d={ICONS.sliders} size={13} /> {separatingVocals ? '…' : 'Séparer voix'}
             </button>
           </>
         )}
