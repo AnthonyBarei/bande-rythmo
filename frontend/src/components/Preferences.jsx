@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { useSettings } from '../SettingsContext'
+import { Btn, Segmented, Select, Toggle, Chip, Dot, ScreenHeader, Icon, ICONS } from '../ui'
 
 const ACCENTS = [
   { hex: '#f5c518', name: 'Jaune' },
@@ -39,177 +40,114 @@ const BR_FONTS = [
   { id: 'jetbrains', label: 'JetBrains Mono' },
 ]
 
-function Section({ title, children }) {
+function Section({ title, desc, children }) {
   return (
-    <div style={{ marginBottom: 32 }}>
-      <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: 1.5, color: 'var(--text3)', fontFamily: 'var(--font-mono)', marginBottom: 12 }}>
-        {title}
-      </div>
+    <div style={{ marginBottom: 26, maxWidth: 760 }}>
+      <div style={{ fontSize: 16, fontWeight: 600, marginBottom: desc ? 3 : 12, color: 'var(--text)' }}>{title}</div>
+      {desc && <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 14 }}>{desc}</div>}
       {children}
     </div>
   )
 }
 
-function Card({ active, onClick, children }) {
+function Field({ label, children }) {
   return (
-    <button
-      onClick={onClick}
-      style={{
-        flex: 1, minWidth: 130, textAlign: 'left',
-        padding: '12px 14px',
-        background: active ? 'var(--accent-soft)' : 'var(--surface)',
-        border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
-        borderRadius: 'var(--radius)',
-        transition: 'border-color 0.15s, background 0.15s',
-      }}
-    >
-      {children}
-    </button>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '13px 0', borderBottom: '1px solid var(--surface2)' }}>
+      <div style={{ width: 200, flexShrink: 0, fontSize: 13, color: 'var(--text2)' }}>{label}</div>
+      <div style={{ flex: 1 }}>{children}</div>
+    </div>
   )
 }
 
 export default function Preferences() {
   const { settings, update, reset } = useSettings()
+  const [aiStatus, setAiStatus] = useState({ translate: null, vocal: null })
+
+  useEffect(() => {
+    Promise.all([
+      fetch('/api/translate/status').then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch('/api/clips/vocal-separation/status').then(r => r.ok ? r.json() : null).catch(() => null),
+    ]).then(([translate, vocal]) => setAiStatus({ translate, vocal }))
+  }, [])
+
+  const seg = (opts, value, key) => (
+    <Segmented value={value} onChange={v => update({ [key]: v })} options={opts} />
+  )
 
   return (
-    <div style={{ height: '100%', overflow: 'auto' }}>
-      <div style={{ maxWidth: 720, margin: '0 auto', padding: '32px 28px' }}>
-        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 16, marginBottom: 28 }}>
-          <div>
-            <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: 1.5, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>
-              RÉGLAGES
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--bg)' }}>
+      <ScreenHeader kicker="PRÉFÉRENCES" title="Réglages" right={<Btn variant="outline" size="sm" onClick={reset}>Réinitialiser</Btn>} />
+      <div style={{ flex: 1, overflow: 'auto', padding: '8px 32px 40px' }}>
+
+        <Section title="Apparence" desc="Identité visuelle de l'atelier.">
+          <Field label="Couleur d'accent">
+            <div style={{ display: 'flex', gap: 9, alignItems: 'center' }}>
+              {ACCENTS.map(a => {
+                const active = settings.accent.toLowerCase() === a.hex.toLowerCase()
+                return (
+                  <div key={a.hex} onClick={() => update({ accent: a.hex })} title={a.name}
+                    style={{ width: 30, height: 30, borderRadius: 8, background: a.hex, cursor: 'pointer',
+                      border: active ? '2px solid var(--text)' : '1px solid transparent',
+                      boxShadow: active ? `0 0 0 2px ${a.hex}55` : 'none' }} />
+                )
+              })}
+              <label style={{ width: 30, height: 30, borderRadius: 8, overflow: 'hidden', cursor: 'pointer', border: '1px dashed var(--border2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Personnalisé">
+                <input type="color" value={settings.accent} onChange={e => update({ accent: e.target.value })} style={{ width: 40, height: 40, padding: 0, border: 'none', background: 'none', cursor: 'pointer' }} />
+              </label>
             </div>
-            <h1 style={{ fontSize: 26, fontWeight: 600, letterSpacing: -0.4, marginTop: 2 }}>Préférences</h1>
-          </div>
-          <div style={{ flex: 1 }} />
-          <button
-            onClick={reset}
-            style={{ padding: '6px 12px', background: 'var(--surface)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 'var(--radius)', fontSize: 12 }}
-          >
-            Réinitialiser
-          </button>
-        </div>
-
-        <Section title="COULEUR D'ACCENT">
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-            {ACCENTS.map(a => {
-              const active = settings.accent.toLowerCase() === a.hex.toLowerCase()
-              return (
-                <button
-                  key={a.hex}
-                  onClick={() => update({ accent: a.hex })}
-                  title={a.name}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 8,
-                    padding: '8px 12px',
-                    background: active ? 'var(--surface2)' : 'var(--surface)',
-                    border: `1px solid ${active ? a.hex : 'var(--border)'}`,
-                    borderRadius: 'var(--radius)', fontSize: 12, color: 'var(--text2)',
-                  }}
-                >
-                  <span style={{ width: 16, height: 16, borderRadius: '50%', background: a.hex, display: 'block' }} />
-                  {a.name}
-                </button>
-              )
-            })}
-            <label style={{
-              display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px',
-              background: 'var(--surface)', border: '1px solid var(--border)',
-              borderRadius: 'var(--radius)', fontSize: 12, color: 'var(--text2)', cursor: 'pointer',
-            }}>
-              <input
-                type="color"
-                value={settings.accent}
-                onChange={e => update({ accent: e.target.value })}
-                style={{ width: 22, height: 22, padding: 0, border: 'none', background: 'none', cursor: 'pointer' }}
-              />
-              Personnalisé
-            </label>
-          </div>
+          </Field>
+          <Field label="Style de bande rythmo">
+            {seg(BR_STYLES.map(s => ({ v: s.key, l: s.label })), settings.brStyle, 'brStyle')}
+          </Field>
+          <Field label="Densité">
+            {seg(DENSITIES.map(d => ({ v: d.key, l: d.label })), settings.density, 'density')}
+          </Field>
         </Section>
 
-        <Section title="STYLE DE BANDE RYTHMO PAR DÉFAUT">
-          <div style={{ display: 'flex', gap: 10 }}>
-            {BR_STYLES.map(s => (
-              <Card key={s.key} active={settings.brStyle === s.key} onClick={() => update({ brStyle: s.key })}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: settings.brStyle === s.key ? 'var(--accent)' : 'var(--text)' }}>
-                  {s.label}
-                </div>
-                <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 3 }}>{s.desc}</div>
-              </Card>
-            ))}
-          </div>
+        <Section title="Transcription Whisper" desc="Modèle local, hors-ligne.">
+          <Field label="Langue par défaut">
+            <Select width={210} value={settings.whisperLang || 'fr'} onChange={v => update({ whisperLang: v })}
+              options={WHISPER_LANGS.map(l => ({ v: l.key, l: l.label }))} />
+          </Field>
+          <Field label="Modèle backend">
+            <Chip soft color="var(--text2)">{settings.whisperModel || 'large-v3'}</Chip>
+            <span style={{ fontSize: 11, color: 'var(--text3)', marginLeft: 10 }}>réglable via <code style={{ fontFamily: 'var(--font-mono)' }}>WHISPER_MODEL</code></span>
+          </Field>
         </Section>
 
-        <Section title="DENSITÉ DE L'INTERFACE">
-          <div style={{ display: 'flex', gap: 10 }}>
-            {DENSITIES.map(d => (
-              <Card key={d.key} active={settings.density === d.key} onClick={() => update({ density: d.key })}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: settings.density === d.key ? 'var(--accent)' : 'var(--text)' }}>
-                  {d.label}
-                </div>
-                <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 3 }}>{d.desc}</div>
-              </Card>
-            ))}
-          </div>
-        </Section>
-
-        <Section title="TRANSCRIPTION WHISPER">
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 10 }}>
-            <label style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 8 }}>
-              Langue par défaut
-              <select
-                value={settings.whisperLang || 'fr'}
-                onChange={e => update({ whisperLang: e.target.value })}
-                style={selectStyle}
-              >
-                {WHISPER_LANGS.map(l => <option key={l.key} value={l.key}>{l.label}</option>)}
-              </select>
-            </label>
-          </div>
-          <div style={{ fontSize: 11, color: 'var(--text3)' }}>
-            Modèle Whisper backend : <code style={{ fontFamily: 'var(--font-mono)' }}>{settings.whisperModel || 'large-v3'}</code> · réglable via <code>WHISPER_MODEL</code> env.
-          </div>
-        </Section>
-
-        <Section title="CONNEXION PLEX">
+        <Section title="Connexion Plex" desc="Bibliothèque locale comme source.">
           <PlexSection />
         </Section>
 
-        <Section title="EXPORT — VALEURS PAR DÉFAUT">
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-            <label style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 8 }}>
-              Police BR
-              <select
-                value={settings.exportBrFont || 'atkinson'}
-                onChange={e => update({ exportBrFont: e.target.value })}
-                style={selectStyle}
-              >
-                {BR_FONTS.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
-              </select>
-            </label>
-            <label style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 8 }}>
-              Style BR
-              <select
-                value={settings.exportBrStyle || 'classique'}
-                onChange={e => update({ exportBrStyle: e.target.value })}
-                style={selectStyle}
-              >
-                {BR_STYLES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
-              </select>
-            </label>
-            <label style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input
-                type="checkbox"
-                checked={!!settings.exportDetectionBurn}
-                onChange={e => update({ exportDetectionBurn: e.target.checked })}
-              />
-              Incruster la détection (MP4)
-            </label>
-          </div>
+        <Section title="Export" desc="Valeurs par défaut.">
+          <Field label="Police BR">
+            <Select width={210} value={settings.exportBrFont || 'atkinson'} onChange={v => update({ exportBrFont: v })}
+              options={BR_FONTS.map(f => ({ v: f.id, l: f.label }))} />
+          </Field>
+          <Field label="Style BR">
+            {seg(BR_STYLES.map(s => ({ v: s.key, l: s.label })), settings.exportBrStyle || 'classique', 'exportBrStyle')}
+          </Field>
+          <Field label="Incruster la détection (MP4)">
+            <Toggle on={!!settings.exportDetectionBurn} onClick={() => update({ exportDetectionBurn: !settings.exportDetectionBurn })} />
+          </Field>
         </Section>
 
-        <div style={{ fontSize: 11, color: 'var(--text3)', borderTop: '1px solid var(--border)', paddingTop: 14 }}>
+        <Section title="Traitement IA" desc="Outils optionnels, locaux quand possible.">
+          <Field label="Séparation vocale">
+            <Chip soft color={aiStatus.vocal?.available ? 'var(--success)' : 'var(--text3)'}>
+              <Dot color={aiStatus.vocal?.available ? 'var(--success)' : 'var(--text3)'} size={6} />
+              {aiStatus.vocal?.available ? 'Demucs disponible' : 'Non installé (pip install demucs)'}
+            </Chip>
+          </Field>
+          <Field label="Auto-traduction">
+            <Chip soft color={aiStatus.translate?.available ? 'var(--success)' : 'var(--text3)'}>
+              <Dot color={aiStatus.translate?.available ? 'var(--success)' : 'var(--text3)'} size={6} />
+              {aiStatus.translate?.available ? `${aiStatus.translate.provider}` : 'Aucun fournisseur (DEEPL_API_KEY / LIBRETRANSLATE_URL)'}
+            </Chip>
+          </Field>
+        </Section>
+
+        <div style={{ fontSize: 11, color: 'var(--text3)', borderTop: '1px solid var(--border)', paddingTop: 14, maxWidth: 760 }}>
           Les préférences sont enregistrées localement dans ce navigateur.
         </div>
       </div>
@@ -217,16 +155,7 @@ export default function Preferences() {
   )
 }
 
-const selectStyle = {
-  background: 'var(--surface2)',
-  color: 'var(--text)',
-  border: '1px solid var(--border2)',
-  borderRadius: 6,
-  padding: '5px 10px',
-  fontSize: 12,
-  minHeight: 32,
-}
-
+// legacy stub kept so any external ref doesn't break
 function PlexSection() {
   const [status, setStatus] = useState(null)    // { connected, server, url }
   const [url, setUrl]       = useState('')

@@ -247,8 +247,8 @@ function LibraryGrid({ sectionId, onSelect, selectedKey }) {
               onMouseLeave={e => { if (!selected) e.currentTarget.style.borderColor = 'var(--border)' }}
             >
               {item.thumb
-                ? <img src={item.thumb} alt={item.title} style={{ width: '100%', aspectRatio: '2/3', objectFit: 'cover', display: 'block' }} />
-                : <div style={{ width: '100%', aspectRatio: '2/3', background: 'var(--surface2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)' }}>
+                ? <img src={item.thumb} alt={item.title} style={{ width: '100%', aspectRatio: '9/16', objectFit: 'cover', display: 'block' }} />
+                : <div style={{ width: '100%', aspectRatio: '9/16', background: 'var(--surface2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)' }}>
                     <Icon d={ICONS.film} size={28} />
                   </div>
               }
