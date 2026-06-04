@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react'
 import ClipCard from './ClipCard'
 import { Icon, ICONS } from '../Icons'
+import { Btn, Select, ScreenHeader } from '../ui'
 
 const FILTERS = [
   { key: 'all',     label: 'Tous' },
@@ -73,124 +74,65 @@ export default function ClipsLibrary({ clips, onDub, onMeme, onDelete, onRename,
 
   const sortLabel = SORTS.find(s => s.key === sort)?.label || 'Récents'
 
+  const projectOptions = useMemo(() => [
+    { v: '__all', l: 'Tous les projets', icon: ICONS.grid },
+    ...projects.map((p, i) => ({ v: p, l: p, dot: ['#f5c518', '#7ec0ff', '#f08aaf', '#7ed4a8'][i % 4] })),
+    { v: '__none', l: 'Sans projet' },
+  ], [projects])
+
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      {/* Header */}
-      <div style={{ padding: '20px 24px 0', background: 'var(--bg)' }}>
-        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 16 }}>
-          <div>
-            <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: 1.5, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>
-              BIBLIOTHÈQUE
+      <ScreenHeader
+        kicker="BIBLIOTHÈQUE"
+        title="Mes clips"
+        sub={`${clips.length} clip${clips.length !== 1 ? 's' : ''} · ${Math.round(totalDur)}s`}
+        right={(
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '0 14px', height: 40, minWidth: 240, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 99 }}>
+              <Icon d={ICONS.search} size={15} stroke="var(--text3)" />
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Rechercher un clip…"
+                style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: 'var(--text)', fontSize: 13, fontFamily: 'var(--font-ui)', padding: 0, minWidth: 0 }} />
             </div>
-            <h1 style={{ fontSize: 26, fontWeight: 600, letterSpacing: -0.4, marginTop: 2 }}>Mes clips</h1>
+            <Btn variant="primary" size="lg" icon={ICONS.plus} onClick={onNewClip}>Nouveau clip</Btn>
           </div>
-          <div style={{ fontSize: 12, color: 'var(--text3)', fontFamily: 'var(--font-mono)', paddingBottom: 4 }}>
-            {clips.length} clip{clips.length !== 1 ? 's' : ''} · {Math.round(totalDur)}s total
-          </div>
-          <div style={{ flex: 1 }} />
-          <input
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Rechercher un clip…"
-            style={{ minWidth: 240, fontFamily: 'var(--font-mono)', fontSize: 12, borderRadius: 99, background: 'var(--surface)' }}
-          />
-          <button
-            onClick={onNewClip}
-            style={{ padding: '8px 14px', background: 'var(--accent)', color: '#000', fontWeight: 600, fontSize: 12.5, borderRadius: 'var(--radius)' }}
-          >
-            + Nouveau clip
-          </button>
-        </div>
+        )}
+      />
 
-        {/* Filter tabs */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 2, marginTop: 14, borderBottom: '1px solid var(--border)' }}>
+      {/* Filter row — project select · status tabs · sort */}
+      <div style={{ padding: '14px 32px 0', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, borderBottom: '1px solid var(--border)', height: 44 }}>
+          {projects.length > 0 && (
+            <>
+              <Select size="sm" width={170} value={projectFilter} onChange={setProjectFilter} options={projectOptions} />
+              <div style={{ width: 1, height: 20, background: 'var(--border)', margin: '0 6px' }} />
+            </>
+          )}
           {FILTERS.map(f => {
             const active = filter === f.key
             return (
-              <button
-                key={f.key}
-                onClick={() => setFilter(f.key)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 6,
-                  padding: '8px 12px', background: 'transparent',
-                  color: active ? 'var(--accent)' : 'var(--text2)',
-                  fontWeight: active ? 600 : 400, fontSize: 12.5,
-                  borderRadius: 0,
-                  borderBottom: `2px solid ${active ? 'var(--accent)' : 'transparent'}`,
-                  marginBottom: -1,
-                }}
-              >
+              <button key={f.key} onClick={() => setFilter(f.key)} style={{
+                height: 44, padding: '0 14px', background: 'transparent', border: 'none', cursor: 'pointer',
+                color: active ? 'var(--text)' : 'var(--text2)', fontSize: 13, fontWeight: active ? 600 : 500,
+                borderBottom: `2px solid ${active ? 'var(--accent)' : 'transparent'}`, marginBottom: -1,
+                display: 'flex', alignItems: 'center', gap: 7, fontFamily: 'var(--font-ui)',
+              }}>
                 {f.label}
                 <span style={{
-                  fontSize: 10, fontFamily: 'var(--font-mono)',
-                  background: 'var(--surface2)', color: 'var(--text3)',
-                  padding: '1px 5px', borderRadius: 4,
-                }}>
-                  {counts[f.key] || 0}
-                </span>
+                  fontSize: 10.5, padding: '1px 6px', borderRadius: 99, fontFamily: 'var(--font-mono)',
+                  background: active ? 'rgba(245,197,24,0.13)' : 'var(--surface2)', color: active ? 'var(--accent)' : 'var(--text3)',
+                }}>{counts[f.key] || 0}</span>
               </button>
             )
           })}
           <div style={{ flex: 1 }} />
-          <div style={{ position: 'relative', paddingBottom: 6 }}>
-            <span style={{ fontSize: 11, color: 'var(--text3)', marginRight: 6 }}>Trier par</span>
-            <button
-              onClick={() => setSortOpen(o => !o)}
-              onBlur={() => setTimeout(() => setSortOpen(false), 120)}
-              style={{ padding: '5px 10px', background: 'var(--surface)', color: 'var(--text2)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', fontFamily: 'var(--font-mono)', fontSize: 11.5 }}
-            >
-              {sortLabel} ▾
-            </button>
-            {sortOpen && (
-              <div style={{ position: 'absolute', right: 0, top: '100%', background: 'var(--surface2)', border: '1px solid var(--border2)', borderRadius: 'var(--radius)', zIndex: 50, minWidth: 120, marginTop: 2 }}>
-                {SORTS.map(s => (
-                  <div
-                    key={s.key}
-                    onMouseDown={() => { setSort(s.key); setSortOpen(false) }}
-                    style={{ padding: '7px 12px', fontSize: 12, cursor: 'pointer', color: sort === s.key ? 'var(--accent)' : 'var(--text2)' }}
-                  >
-                    {s.label}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          <span style={{ fontSize: 12, color: 'var(--text3)' }}>Trier</span>
+          <Select size="sm" width={140} value={sort} onChange={setSort}
+            options={SORTS.map(s => ({ v: s.key, l: s.label }))} />
         </div>
-
-        {/* Project chips — only when at least one clip is grouped */}
-        {projects.length > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 0 10px', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 10.5, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, fontFamily: 'var(--font-mono)', marginRight: 2 }}>Projets</span>
-            {[
-              { key: '__all', label: 'Tous' },
-              ...projects.map(p => ({ key: p, label: p })),
-              { key: '__none', label: 'Sans projet' },
-            ].map(p => {
-              const active = projectFilter === p.key
-              const n = p.key === '__all' ? clips.length
-                : p.key === '__none' ? clips.filter(c => !c.project).length
-                : clips.filter(c => c.project === p.key).length
-              return (
-                <button key={p.key} onClick={() => setProjectFilter(p.key)}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px',
-                    background: active ? 'var(--accent-soft)' : 'var(--surface)',
-                    color: active ? 'var(--accent)' : 'var(--text2)',
-                    border: `1px solid ${active ? 'rgba(245,197,24,0.4)' : 'var(--border)'}`,
-                    borderRadius: 99, fontSize: 11.5, fontWeight: active ? 600 : 500, cursor: 'pointer', minHeight: 32,
-                  }}>
-                  <Icon d={p.key === '__all' ? ICONS.grid : ICONS.folder} size={12} />
-                  {p.label}
-                  <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: 'var(--text3)' }}>{n}</span>
-                </button>
-              )
-            })}
-          </div>
-        )}
       </div>
 
       {/* Grid */}
-      <div style={{ flex: 1, overflow: 'auto', padding: 24 }}>
+      <div style={{ flex: 1, overflow: 'auto', padding: 28 }}>
         {visible.length === 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60%', gap: 14, color: 'var(--text3)' }}>
             <div style={{ fontSize: 40, opacity: 0.25 }}>▤</div>
@@ -213,7 +155,7 @@ export default function ClipsLibrary({ clips, onDub, onMeme, onDelete, onRename,
             )}
           </div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gridAutoRows: 'max-content', gap: 18, alignContent: 'flex-start' }}>
             {visible.map(clip => (
               <ClipCard
                 key={clip.clip_id}

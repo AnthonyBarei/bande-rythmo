@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Icon, ICONS } from '../Icons'
+import { Avatar } from '../ui'
 
 const fmt = t => {
   const m = Math.floor(t / 60)
@@ -76,12 +77,13 @@ export default function ClipCard({ clip, onDub, onMeme, onDelete, onRename, onSt
       style={{
         background: 'var(--surface)',
         border: `1px solid ${hover ? 'var(--border2)' : 'var(--border)'}`,
-        borderRadius: 'var(--radius-lg)',
+        borderRadius: 14,
         overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
-        transition: 'border-color 0.15s, transform 0.15s',
-        transform: hover ? 'translateY(-2px)' : 'none',
+        transition: 'border-color 0.15s, transform 0.15s, box-shadow 0.15s',
+        transform: hover ? 'translateY(-3px)' : 'none',
+        boxShadow: hover ? '0 8px 30px rgba(0,0,0,0.4)' : 'none',
         cursor: 'pointer',
       }}
       onClick={() => onDub(clip)}
@@ -134,11 +136,12 @@ export default function ClipCard({ clip, onDub, onMeme, onDelete, onRename, onSt
           opacity: hover ? 1 : 0.85, transition: 'opacity 0.15s',
         }}>
           <div style={{
-            width: 44, height: 44, borderRadius: '50%',
-            background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.2)',
-            backdropFilter: 'blur(6px)',
+            width: 48, height: 48, borderRadius: '50%',
+            background: 'rgba(0,0,0,0.45)', border: '1px solid rgba(255,255,255,0.22)',
+            backdropFilter: 'blur(8px)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             color: '#fff', paddingLeft: 3,
+            transform: hover ? 'scale(1.08)' : 'scale(1)', transition: 'transform 0.15s',
           }}>
             <Icon d={ICONS.play} size={18} fill="#fff" />
           </div>
@@ -192,12 +195,9 @@ export default function ClipCard({ clip, onDub, onMeme, onDelete, onRename, onSt
           {chars.length > 0 && (
             <div style={{ display: 'flex', alignItems: 'center' }}>
               {chars.slice(0, 4).map((c, i) => (
-                <div key={c} title={c} style={{
-                  width: 14, height: 14, borderRadius: '50%',
-                  background: TRACK_HEX[i % TRACK_HEX.length],
-                  border: '1.5px solid var(--surface)',
-                  marginLeft: i === 0 ? 0 : -5,
-                }} />
+                <div key={c} title={c} style={{ marginLeft: i === 0 ? 0 : -6 }}>
+                  <Avatar name={c} color={TRACK_HEX[i % TRACK_HEX.length]} size={22} />
+                </div>
               ))}
             </div>
           )}
