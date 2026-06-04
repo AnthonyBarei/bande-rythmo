@@ -107,7 +107,12 @@ const BR_FONTS = [
   { id: 'inter',     label: 'Inter',                 stack: "'Inter', sans-serif" },
   { id: 'jetbrains', label: 'JetBrains Mono',        stack: "'JetBrains Mono', 'Courier New', monospace" },
 ]
-const brFontStack = id => (BR_FONTS.find(f => f.id === id) || BR_FONTS[0]).stack
+// Uploaded fonts (id starts 'u-') resolve to the @font-face family injected
+// by the fonts loader; bundled ids look up the static stack.
+const brFontStack = id => {
+  if (id && id.startsWith('u-')) return `'bru-${id}', 'Atkinson Hyperlegible', sans-serif`
+  return (BR_FONTS.find(f => f.id === id) || BR_FONTS[0]).stack
+}
 
 // SMPTE HH:MM:SS:FF — replaces decimal `fmt` everywhere a frame-accurate
 // readout is wanted (cursor, grid majors, list timecodes). Negative time is
@@ -249,6 +254,8 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   const [wordByWord, setWordByWord] = useState(() => {
     try { return localStorage.getItem('br-word-by-word') !== 'false' } catch { return true }
   })
+  // Uploaded custom fonts — fetched + injected as @font-face for canvas/CSS.
+  const [uploadedFonts, setUploadedFonts] = useState([])
   // Waveform + scene cuts for the full-clip nav timeline (BRTimeline).
   const [waveformData, setWaveformData] = useState(null)
   const [sceneCuts, setSceneCuts] = useState(clip.scene_cuts || [])
@@ -491,6 +498,51 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [showExport, onToggleExport])
+
+  // Load uploaded fonts + inject their @font-face so canvas + CSS can render them.
+  const refreshFonts = useCallback(async () => {
+    try {
+      const r = await fetch('/api/fonts')
+      if (!r.ok) return
+      const list = await r.json()
+      setUploadedFonts(list)
+      const css = list.map(f =>
+        `@font-face{font-family:'bru-${f.id}';src:url('/uploads-fonts/${f.file}');font-display:swap;}`
+      ).join('\n')
+      let el = document.getElementById('br-uploaded-fonts')
+      if (!el) { el = document.createElement('style'); el.id = 'br-uploaded-fonts'; document.head.appendChild(el) }
+      el.textContent = css
+      // Nudge the FontFace set so the canvas (which reads resolved fonts) repaints.
+      if (document.fonts && list.length) {
+        list.forEach(f => { try { document.fonts.load(`16px 'bru-${f.id}'`) } catch {} })
+      }
+    } catch {}
+  }, [])
+  useEffect(() => { refreshFonts() }, [refreshFonts])
+
+  async function uploadFont(file) {
+    if (!file) return
+    const fd = new FormData()
+    fd.append('file', file)
+    fd.append('name', file.name.replace(/\.(ttf|otf)$/i, ''))
+    try {
+      const r = await fetch('/api/fonts/upload', { method: 'POST', body: fd })
+      const data = await r.json()
+      if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`)
+      await refreshFonts()
+      setBrFont(data.id)   // select the freshly uploaded font
+    } catch (e) {
+      setToast({ msg: 'Police : ' + e.message, type: 'error' })
+      setTimeout(() => setToast(null), 4000)
+    }
+  }
+  async function deleteFont(id) {
+    try {
+      await fetch(`/api/fonts/${id}`, { method: 'DELETE' })
+      if (brFont === id) setBrFont('atkinson')
+      await refreshFonts()
+    } catch {}
+  }
 
   // Fetch waveform once on mount
   useEffect(() => {
@@ -2179,6 +2231,9 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
             <select value={brFont} onChange={e => setBrFont(e.target.value)} title="Police de la bande rythmo"
               style={{ background: 'var(--surface2)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 6, padding: '4px 6px', fontSize: 10.5, flexShrink: 0, cursor: 'pointer' }}>
               {BR_FONTS.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
+              {uploadedFonts.length > 0 && <optgroup label="Mes polices">
+                {uploadedFonts.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+              </optgroup>}
             </select>
           </div>
         </div>
@@ -2453,6 +2508,9 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
           clipFps={clipFps}
           brFont={brFont}
           setBrFont={setBrFont}
+          uploadedFonts={uploadedFonts}
+          onUploadFont={uploadFont}
+          onDeleteFont={deleteFont}
           wordByWord={wordByWord}
           setWordByWord={setWordByWord}
         />
@@ -2629,6 +2687,7 @@ function BandeRythmoToolbar({
   sceneCuts = [], onDetectScenes = () => {}, onClearScenes = () => {}, detectingScenes = false,
   onUndo = () => {}, onRedo = () => {}, canUndo = false, canRedo = false,
   brFont = 'atkinson', setBrFont = () => {},
+  uploadedFonts = [], onUploadFont = () => {}, onDeleteFont = () => {},
   wordByWord = true, setWordByWord = () => {},
 }) {
   const [showDetection, setShowDetection] = React.useState(false)
@@ -3299,7 +3358,26 @@ function BandeRythmoToolbar({
               <option value="cursive">Cursive (Caveat)</option>
               <option value="inter">Inter</option>
               <option value="jetbrains">JetBrains Mono</option>
+              {uploadedFonts.length > 0 && <optgroup label="Mes polices">
+                {uploadedFonts.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+              </optgroup>}
             </select>
+          </div>
+
+          {/* Police — import / suppression */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <span style={{ width: 80 }} />
+            <label style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 11, color: 'var(--accent)', cursor: 'pointer', padding: '5px 8px', border: '1px dashed rgba(245,197,24,0.4)', borderRadius: 5 }}>
+              <Ic d={ICONS.plus} size={12} /> Importer TTF/OTF
+              <input type="file" accept=".ttf,.otf" style={{ display: 'none' }}
+                onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) onUploadFont(f) }} />
+            </label>
+            {brFont.startsWith('u-') && (
+              <button onClick={() => onDeleteFont(brFont)} title="Supprimer cette police"
+                style={{ ...btnBase, height: 28, width: 28, minWidth: 28, padding: 0, color: 'var(--danger)' }}>
+                <Ic d={ICONS.trash} size={13} />
+              </button>
+            )}
           </div>
 
           {/* Zoom */}
