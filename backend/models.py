@@ -19,6 +19,9 @@ class Clip(Base):
     # Source frame rate (detected via ffprobe at import) — used for SMPTE TC
     # readouts and DetX <lipsync timecode> emission. Defaults to 25 (PAL).
     fps = Column(Float, nullable=False, default=25.0)
+    # JSON array of scene-change timecodes (seconds), detected via ffmpeg at
+    # import or on-demand. Feeds the BR canvas + nav timeline plan-cut markers.
+    scene_cuts = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
 
     subtitles = relationship(
@@ -69,6 +72,23 @@ class Boucle(Base):
     end = Column(Float, nullable=False)
 
     clip = relationship("Clip", back_populates="boucles")
+
+
+class Export(Base):
+    """Persisted export artifact. Created when a job finishes successfully.
+    Lets users re-download past exports + audit what was produced."""
+    __tablename__ = "exports"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    clip_id = Column(String, ForeignKey("clips.clip_id", ondelete="CASCADE"), nullable=False)
+    format = Column(String, nullable=False)        # srt|ass|detx|mp4|gif|mp3|wav|croisille
+    path = Column(String, nullable=False)          # local file path under exports/
+    filename = Column(String, nullable=False)      # download filename
+    media_type = Column(String, nullable=False, default="application/octet-stream")
+    size_bytes = Column(Integer, nullable=False, default=0)
+    quality = Column(String, nullable=True)        # MP4 only: draft|standard|youtube
+    params = Column(String, nullable=True)         # JSON snapshot of ExportRequest knobs
+    created_at = Column(DateTime, default=datetime.now)
 
 
 class Take(Base):

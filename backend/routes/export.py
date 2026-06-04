@@ -11,7 +11,9 @@ from services.subtitle_service import (
 )
 from services.ffmpeg_service import burn_subtitles, export_gif, run_ffmpeg_with_progress
 from services.br_renderer import render_br_video
-from services.jobs import create_job, raise_if_cancelled, CancelledJobError
+from services.jobs import create_job, raise_if_cancelled, CancelledJobError, JobStartResponse
+from services.export_service import record_export, list_exports, get_export, delete_export
+from database import SessionLocal
 import asyncio
 import uuid
 import os
@@ -67,6 +69,11 @@ class ExportRequest(BaseModel):
     br_font: str = "atkinson"   # BR font picker id — keeps export WYSIWYG with preview
     br_style: str = "classique"  # rythmo style: classique | neon | minimal
     detection_burn: bool = False  # burn graphite détection signs into MP4 — pro option, default off
+    # Quality preset — trades render time for fidelity.
+    #   draft    : supersample 2, preset fast,   crf 23  (≈3× faster, preview-quality)
+    #   standard : supersample 3, preset medium, crf 21  (default — balanced)
+    #   youtube  : supersample 4, preset slow,   crf 19  (final upload — slowest)
+    quality: str = "standard"
 
 
 
@@ -86,6 +93,11 @@ async def export(req: ExportRequest, db: Session = Depends(get_db)):
         ss = req.in_point if req.in_point is not None else None
         dur = (req.out_point - req.in_point) if (req.in_point is not None and req.out_point is not None) else None
         await asyncio.to_thread(export_gif, segment, output, 12, 480, ss, dur)
+        try:
+            record_export(db, clip_id=req.segment_id, format="gif",
+                          path=output, filename="clip.gif", media_type="image/gif")
+        except Exception:
+            pass
         return FileResponse(output, filename="clip.gif", media_type="image/gif")
 
     subs = [
@@ -103,24 +115,35 @@ async def export(req: ExportRequest, db: Session = Depends(get_db)):
         for s in req.subtitles
     ]
 
+    def _persist(fmt: str, path: str, filename: str, media_type: str):
+        try:
+            record_export(db, clip_id=req.segment_id, format=fmt,
+                          path=path, filename=filename, media_type=media_type)
+        except Exception:
+            pass
+
     if req.format == "srt":
         path = f"exports/{export_id}.srt"
         export_srt(subs, path)
+        _persist("srt", path, "bande_rythmo.srt", "text/plain")
         return FileResponse(path, filename="bande_rythmo.srt", media_type="text/plain")
 
     elif req.format == "ass":
         path = f"exports/{export_id}.ass"
         export_ass(subs, path)
+        _persist("ass", path, "bande_rythmo.ass", "text/plain")
         return FileResponse(path, filename="bande_rythmo.ass", media_type="text/plain")
 
     elif req.format == "ass-karaoke":
         path = f"exports/{export_id}.ass"
         export_ass_karaoke(subs, path)
+        _persist("ass-karaoke", path, "bande_rythmo_karaoke.ass", "text/plain")
         return FileResponse(path, filename="bande_rythmo_karaoke.ass", media_type="text/plain")
 
     elif req.format == "detx":
         path = f"exports/{export_id}.detx"
         export_detx(subs, path, fps=clip_fps, video_path=segment)
+        _persist("detx", path, "bande_rythmo.detx", "application/xml")
         return FileResponse(path, filename="bande_rythmo.detx", media_type="application/xml")
 
     elif req.format == "croisille":
@@ -129,6 +152,7 @@ async def export(req: ExportRequest, db: Session = Depends(get_db)):
         if not boucles:
             boucles = clip_row.get("boucles", []) or []
         export_croisille(subs, boucles, path, title=clip_row.get("name", "Bande Rythmo"), fps=clip_fps)
+        _persist("croisille", path, "croisille.html", "text/html")
         return FileResponse(path, filename="croisille.html", media_type="text/html")
 
     elif req.format == "mp4":
@@ -246,13 +270,14 @@ async def export(req: ExportRequest, db: Session = Depends(get_db)):
         cmd.append(output)
         await asyncio.to_thread(subprocess.run, cmd, check=True, capture_output=True)
         media = "audio/mpeg" if ext == "mp3" else "audio/wav"
+        _persist(ext, output, f"clip.{ext}", media)
         return FileResponse(output, filename=f"clip.{ext}", media_type=media)
 
     else:
         raise HTTPException(400, "format must be srt, ass, ass-karaoke, detx, mp4, gif, mp3, or wav")
 
 
-@router.post("/gif-job")
+@router.post("/gif-job", response_model=JobStartResponse)
 async def export_gif_job(req: ExportRequest, db: Session = Depends(get_db)):
     """GIF export (two-pass palette) wrapped as a cancellable job.
     Returns {job_id}; result file is fetched via /api/jobs/{id}/result."""
@@ -317,6 +342,17 @@ async def export_gif_job(req: ExportRequest, db: Session = Depends(get_db)):
             try: os.remove(palette)
             except OSError: pass
 
+            db = SessionLocal()
+            try:
+                record_export(
+                    db, clip_id=req.segment_id, format="gif",
+                    path=output, filename="clip.gif",
+                    media_type="image/gif",
+                    params={"in_point": req.in_point, "out_point": req.out_point},
+                )
+            finally:
+                db.close()
+
             job.done({
                 "kind": "file",
                 "path": output,
@@ -332,7 +368,7 @@ async def export_gif_job(req: ExportRequest, db: Session = Depends(get_db)):
     return {"job_id": job.id}
 
 
-@router.post("/mp4-job")
+@router.post("/mp4-job", response_model=JobStartResponse)
 async def export_mp4_job(req: ExportRequest, db: Session = Depends(get_db)):
     """MP4 burn with progress + cancel. Returns {job_id}; client polls /api/jobs/{id}
     and fetches the file via /api/jobs/{id}/result when status=done."""
@@ -368,6 +404,14 @@ async def export_mp4_job(req: ExportRequest, db: Session = Depends(get_db)):
     canvas_h = req.canvas_h
     br_font = req.br_font
     br_style = req.br_style
+
+    # Quality preset — single source of truth for render + encode knobs.
+    QUALITY_PRESETS = {
+        "draft":    {"supersample": 2, "x264_preset": "fast",   "crf": "23"},
+        "standard": {"supersample": 3, "x264_preset": "medium", "crf": "21"},
+        "youtube":  {"supersample": 4, "x264_preset": "slow",   "crf": "19"},
+    }
+    qp = QUALITY_PRESETS.get((req.quality or "standard").lower(), QUALITY_PRESETS["standard"])
 
     def worker():
         try:
@@ -417,6 +461,8 @@ async def export_mp4_job(req: ExportRequest, db: Session = Depends(get_db)):
                 px_per_sec_video, export_fps, duration_s,
                 strip_path, br_offset,
                 br_font=br_font, style=br_style,
+                supersample=qp["supersample"],
+                detection_burn=req.detection_burn,
             )
             raise_if_cancelled(job)
             job.update(stage="Encodage final", pct=0.45)
@@ -434,8 +480,8 @@ async def export_mp4_job(req: ExportRequest, db: Session = Depends(get_db)):
                 f"scale=1920:1080:force_original_aspect_ratio=decrease,"
                 f"pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1",
                 "-c:v", "libx264",
-                "-crf", "21",
-                "-preset", "slow",
+                "-crf", qp["crf"],
+                "-preset", qp["x264_preset"],
                 "-pix_fmt", "yuv420p",
                 "-bf", "0",
                 "-r", str(export_fps),
@@ -462,6 +508,21 @@ async def export_mp4_job(req: ExportRequest, db: Session = Depends(get_db)):
                 job.fail(f"ffmpeg returned {rc}")
                 return
 
+            # Persist to exports table so the user can re-download later.
+            db = SessionLocal()
+            try:
+                record_export(
+                    db, clip_id=req.segment_id, format="mp4",
+                    path=output, filename="bande_rythmo.mp4",
+                    media_type="video/mp4", quality=req.quality,
+                    params={"px_per_sec": px_per_sec, "br_offset": br_offset,
+                            "canvas_w": canvas_w, "canvas_h": canvas_h,
+                            "br_font": br_font, "br_style": br_style,
+                            "detection_burn": req.detection_burn},
+                )
+            finally:
+                db.close()
+
             job.done({
                 "kind": "file",
                 "path": output,
@@ -475,6 +536,30 @@ async def export_mp4_job(req: ExportRequest, db: Session = Depends(get_db)):
 
     asyncio.get_event_loop().run_in_executor(None, worker)
     return {"job_id": job.id}
+
+
+@router.get("/list")
+async def list_exports_route(clip_id: str = None, db: Session = Depends(get_db)):
+    """List persisted exports, optionally filtered by clip_id (most recent first)."""
+    return list_exports(db, clip_id)
+
+
+@router.get("/download/{export_id}")
+async def download_export(export_id: int, db: Session = Depends(get_db)):
+    """Re-download a previously produced export."""
+    e = get_export(db, export_id)
+    if not e:
+        raise HTTPException(404, "Export not found")
+    if not os.path.exists(e.path):
+        raise HTTPException(410, "Export file missing on disk")
+    return FileResponse(e.path, filename=e.filename, media_type=e.media_type)
+
+
+@router.delete("/{export_id}")
+async def delete_export_route(export_id: int, db: Session = Depends(get_db)):
+    if not delete_export(db, export_id):
+        raise HTTPException(404, "Export not found")
+    return {"ok": True}
 
 
 @router.post("/mp4-canvas")

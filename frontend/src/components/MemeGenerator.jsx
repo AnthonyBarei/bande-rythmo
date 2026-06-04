@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { Icon, ICONS } from '../Icons'
+import { useProgress } from '../ProgressContext'
 
 const FONTS = [
   { id: 'impact',   label: 'Impact',  css: 'Impact, "Arial Black", sans-serif' },
@@ -39,6 +40,7 @@ const fmtTime = t => {
 
 export default function MemeGenerator({ clip = null, onBack = null, initialTab = null }) {
   const segmentUrl = clip?.segment_path ? `/${clip.segment_path}` : null
+  const progress = useProgress()
 
   // MEME_PLEX_HANDOFF §2 entry intent:
   //   ClipCard "GIF" → initialTab='video' (GIF tab)
@@ -383,30 +385,43 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
 
   async function createGif() {
     if (!clip) return
+    const duration = outPoint - inPoint
+    if (duration <= 0) { setError('OUT doit être après IN'); return }
     setGifLoading(true)
     setError(null)
-    try {
-      const duration = outPoint - inPoint
-      if (duration <= 0) throw new Error('OUT doit être après IN')
-      const res = await fetch('/api/export/export', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          segment_id: clip.clip_id,
-          subtitles: [],
-          format: 'gif',
-          in_point: inPoint,
-          out_point: outPoint,
-        }),
+    const body = {
+      segment_id: clip.clip_id, subtitles: [],
+      format: 'gif', in_point: inPoint, out_point: outPoint,
+    }
+    const fireJob = async () => {
+      const res = await fetch('/api/export/gif-job', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
       })
       if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail || `HTTP ${res.status}`) }
-      const blob = await res.blob()
-      setImageName(`${clip.name}_${inPoint.toFixed(1)}s-${outPoint.toFixed(1)}s.gif`)
-      setImageUrl(URL.createObjectURL(blob))
-      setResultUrl(null)
+      const { job_id } = await res.json()
+      return job_id
+    }
+    try {
+      const jobId = await fireJob()
+      progress.start({
+        kind: 'export-gif',
+        title: 'GIF — génération',
+        jobId,
+        retry: fireJob,
+        onDone: (blob) => {
+          if (blob && blob instanceof Blob) {
+            setImageName(`${clip.name}_${inPoint.toFixed(1)}s-${outPoint.toFixed(1)}s.gif`)
+            setImageUrl(URL.createObjectURL(blob))
+            setResultUrl(null)
+          }
+          setGifLoading(false)
+        },
+        onError: (err) => { setError('Erreur GIF : ' + err.message); setGifLoading(false) },
+        onCancel: () => { setError('GIF annulé.'); setGifLoading(false) },
+      })
     } catch (e) {
       setError('Erreur GIF : ' + e.message)
-    } finally {
       setGifLoading(false)
     }
   }

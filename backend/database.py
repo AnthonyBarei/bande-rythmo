@@ -20,7 +20,7 @@ def get_db():
 
 
 def init_db():
-    from models import Clip, Subtitle, Take, Boucle  # noqa: F401
+    from models import Clip, Subtitle, Take, Boucle, Export  # noqa: F401
     Base.metadata.create_all(bind=engine)
     from sqlalchemy import text
     with engine.connect() as conn:
@@ -36,6 +36,9 @@ def init_db():
         # Source fps for SMPTE display + DetX export. Backfill 25 (PAL).
         if "fps" not in cols:
             conn.execute(text("ALTER TABLE clips ADD COLUMN fps REAL NOT NULL DEFAULT 25.0"))
+        # Scene-change timecodes (JSON array of seconds). Null until detected.
+        if "scene_cuts" not in cols:
+            conn.execute(text("ALTER TABLE clips ADD COLUMN scene_cuts TEXT"))
         sub_cols = [r[1] for r in conn.execute(text("PRAGMA table_info(subtitles)")).fetchall()]
         if "words" not in sub_cols:
             conn.execute(text("ALTER TABLE subtitles ADD COLUMN words TEXT"))

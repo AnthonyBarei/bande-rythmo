@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react'
 import TimelineBar from './TimelineBar'
 import VideoPlayer from './VideoPlayer'
 import { Icon, ICONS } from '../Icons'
+import { useProgress } from '../ProgressContext'
 
 let _pendingId = 0
 const newId = () => ++_pendingId
@@ -26,6 +27,7 @@ const Kbd = ({ children }) => (
 
 export default function VideoEditor({ video, onClipsCreated, videoStream, audioStream, audioSrc }) {
   const videoRef = useRef(null)
+  const progress = useProgress()
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
   const [pendingClips, setPendingClips] = useState([])
@@ -50,39 +52,67 @@ export default function VideoEditor({ video, onClipsCreated, videoStream, audioS
     if (pending.length === 0) return
     setSaving(true)
     setError(null)
-    try {
-      let res
-      const sourcePath = video?.sourcePath
-      if (sourcePath) {
-        res = await fetch('/api/clips/batch-local', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            path: sourcePath,
-            source_filename: video.filename,
-            clips: pending.map(c => ({
-              name: c.name,
-              start: c.start,
-              end: c.end,
-              ...(videoStream != null && { video_stream: videoStream }),
-              ...(audioStream != null && { audio_stream: audioStream }),
-            })),
-          }),
-        })
-      } else {
-        const form = new FormData()
-        form.append('file', video.file, video.filename)
-        form.append('clips_json', JSON.stringify(
-          pending.map(c => ({
-            name: c.name,
-            start: c.start,
-            end: c.end,
-            ...(videoStream != null && { video_stream: videoStream }),
-            ...(audioStream != null && { audio_stream: audioStream }),
-          }))
-        ))
-        res = await fetch('/api/clips/batch', { method: 'POST', body: form })
+    const sourcePath = video?.sourcePath
+
+    // Local/Plex source → job mode (per-segment progress + cancel).
+    if (sourcePath) {
+      const body = {
+        path: sourcePath,
+        source_filename: video.filename,
+        clips: pending.map(c => ({
+          name: c.name, start: c.start, end: c.end,
+          ...(videoStream != null && { video_stream: videoStream }),
+          ...(audioStream != null && { audio_stream: audioStream }),
+        })),
       }
+      const fireJob = async () => {
+        const res = await fetch('/api/clips/batch-local-job', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+        if (!res.ok) {
+          const e = await res.json().catch(() => ({}))
+          throw new Error(e.detail || `HTTP ${res.status}`)
+        }
+        const { job_id } = await res.json()
+        return job_id
+      }
+      try {
+        const jobId = await fireJob()
+        progress.start({
+          kind: 'import-batch',
+          title: `Découpe ${pending.length} clip${pending.length > 1 ? 's' : ''}`,
+          jobId,
+          retry: fireJob,
+          onDone: (result) => {
+            const results = (result && result.clips) || []
+            setSavedClips(prev => [...results, ...prev])
+            setPendingClips([])
+            onClipsCreated(results)
+            setSaving(false)
+          },
+          onError: (err) => { setError('Erreur : ' + err.message); setSaving(false) },
+          onCancel: () => { setError('Découpe annulée.'); setSaving(false) },
+        })
+      } catch (e) {
+        setError('Erreur : ' + e.message)
+        setSaving(false)
+      }
+      return
+    }
+
+    // Uploaded file → sync (upload stream tied to request).
+    try {
+      const form = new FormData()
+      form.append('file', video.file, video.filename)
+      form.append('clips_json', JSON.stringify(
+        pending.map(c => ({
+          name: c.name, start: c.start, end: c.end,
+          ...(videoStream != null && { video_stream: videoStream }),
+          ...(audioStream != null && { audio_stream: audioStream }),
+        }))
+      ))
+      const res = await fetch('/api/clips/batch', { method: 'POST', body: form })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const results = await res.json()
       setSavedClips(prev => [...results, ...prev])
@@ -93,7 +123,7 @@ export default function VideoEditor({ video, onClipsCreated, videoStream, audioS
     } finally {
       setSaving(false)
     }
-  }, [video?.url, video?.file, video?.filename, video?.sourcePath, onClipsCreated, videoStream, audioStream])
+  }, [video?.url, video?.file, video?.filename, video?.sourcePath, onClipsCreated, videoStream, audioStream, progress])
 
   useEffect(() => {
     function onKey(e) {

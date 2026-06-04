@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import SubtitleEditor from './SubtitleEditor'
 import ExportPanel from './ExportPanel'
 import RecorderPanel from './RecorderPanel'
+import BRTimeline from './BRTimeline'
 import { useSettings } from '../SettingsContext'
 import { classifyChar, SIGN_KINDS, DEFAULT_SIGN_TOGGLES } from '../detection'
 import { useProgress } from '../ProgressContext'
@@ -245,6 +246,13 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   const [detectionAuto, setDetectionAuto] = useState(() => {
     try { return localStorage.getItem('br-detection-auto') !== 'false' } catch { return true }
   })
+  const [wordByWord, setWordByWord] = useState(() => {
+    try { return localStorage.getItem('br-word-by-word') !== 'false' } catch { return true }
+  })
+  // Waveform + scene cuts for the full-clip nav timeline (BRTimeline).
+  const [waveformData, setWaveformData] = useState(null)
+  const [sceneCuts, setSceneCuts] = useState(clip.scene_cuts || [])
+  useEffect(() => { setSceneCuts(clip.scene_cuts || []) }, [clip.clip_id])
   const [sidebarWidth, setSidebarWidth] = useState(400)
   const [brPanelHeight, setBrPanelHeight] = useState(280)
   const [fontScale, setFontScale] = useState(1.0)
@@ -298,10 +306,12 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   const playingRef = useRef(false)
   const fontScaleRef = useRef(1.0)
   const brFontRef = useRef('atkinson')
+  const wordByWordRef = useRef(true)
   const detectionRef = useRef(detection)
   const detectionAutoRef = useRef(detectionAuto)
   const bouclesRef = useRef(boucles)
   const clipFpsRef = useRef(clipFps)
+  const sceneCutsRef = useRef([])
   const exportingRef = useRef(false)
   // Smooth time interpolation: video.currentTime only updates at video fps (e.g. 24fps).
   // Between updates, we interpolate using wall clock so the canvas scrolls at 60fps.
@@ -315,10 +325,12 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   playingRef.current = playing
   fontScaleRef.current = fontScale
   brFontRef.current = brFont
+  wordByWordRef.current = wordByWord
   detectionRef.current = detection
   detectionAutoRef.current = detectionAuto
   bouclesRef.current = boucles
   clipFpsRef.current = clipFps
+  sceneCutsRef.current = sceneCuts
 
   const segmentUrl = `/${clip.segment_path}`
 
@@ -376,6 +388,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   // Persist détection toggles
   useEffect(() => { try { localStorage.setItem('br-detection', JSON.stringify(detection)) } catch {} }, [detection])
   useEffect(() => { try { localStorage.setItem('br-detection-auto', String(detectionAuto)) } catch {} }, [detectionAuto])
+  useEffect(() => { try { localStorage.setItem('br-word-by-word', String(wordByWord)) } catch {} }, [wordByWord])
 
   // Sync boucles in from clip whenever clip swaps
   useEffect(() => { setBoucles(clip.boucles || []) }, [clip.clip_id])
@@ -430,6 +443,25 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
     saveBoucles(next)
   }
 
+  const [detectingScenes, setDetectingScenes] = useState(false)
+  async function detectScenes() {
+    setDetectingScenes(true)
+    try {
+      const res = await fetch(`/api/clips/${clip.clip_id}/detect-scenes?threshold=0.4`, { method: 'POST' })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+      setSceneCuts(data.scene_cuts || [])
+    } catch {
+      // silent — non-critical aid
+    } finally {
+      setDetectingScenes(false)
+    }
+  }
+  async function clearScenes() {
+    setSceneCuts([])
+    try { await fetch(`/api/clips/${clip.clip_id}/scenes`, { method: 'DELETE' }) } catch {}
+  }
+
   // Auto-fit scroll rate, once per clip: pick pxPerSec so the densest réplique
   // sits near its natural width and lighter ones stretch out — the airy
   // VoxDub-style layout, without the user having to touch the zoom.
@@ -468,6 +500,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
         if (data && data.samples.length) {
           waveformRef.current = data
           onsetsRef.current = data.onsets || []
+          setWaveformData(data)
         }
       })
       .catch(() => {})
@@ -692,7 +725,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
           if (canvas) canvas._brFontResolved = ctx.font
           ctx.textBaseline = 'middle'
 
-          const words = validWords(sub)
+          const words = (wordByWordRef.current ? validWords(sub) : null)
             || [{ w: sub.text, start: sub.start, end: sub.end }]
 
           for (const wd of words) {
@@ -738,6 +771,23 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
             }
             ctx.restore()
             ctx.shadowBlur = 0
+
+            // ── Stretch marker — 2px bar at bottom of word block ──
+            // Color-codes compression (amber/red) and sparse hold (blue).
+            // Only drawn in word-by-word mode when scaleX deviates from natural.
+            if (wordByWordRef.current && words.length > 1) {
+              const mc = scaleX < 0.45
+                ? 'rgba(229,69,69,0.80)'
+                : scaleX < 0.75
+                ? 'rgba(245,197,24,0.70)'
+                : scaleX >= 1.05
+                ? 'rgba(126,192,255,0.55)'
+                : null
+              if (mc) {
+                ctx.fillStyle = mc
+                ctx.fillRect(wbx, yTop + trackH - 2, wbw, 2)
+              }
+            }
 
             // ── Détection signs — graphite, pinned to letter x-positions ──
             // Drawn AFTER the glyphs (so they sit visually on top), inside the
@@ -910,6 +960,20 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
         ctx.setLineDash([])
         ctx.fillStyle = cal.kind === 'bip' ? '#7ec0ff' : '#fff'
         ctx.fillText(`${cal.label} ${fmtTC(cal.time, clipFpsRef.current)}`, cx + 4, H - 14)
+      }
+
+      // ── Scene cuts — dashed blue verticals (changement de plan, mirror plan_cut) ──
+      const scenesNow = sceneCutsRef.current
+      if (scenesNow && scenesNow.length) {
+        ctx.strokeStyle = '#7ec0ff'
+        ctx.lineWidth = 1.2
+        ctx.setLineDash([4, 3])
+        for (const sc of scenesNow) {
+          const sx = cursor_x + (sc - t) * pxSec
+          if (sx < -2 || sx > W + 2) continue
+          ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, H); ctx.stroke()
+        }
+        ctx.setLineDash([])
       }
 
       // ── Boucles — dashed verticals with B{n} cap ──
@@ -1187,6 +1251,12 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   useEffect(() => {
     function onKey(e) {
       if (['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return
+      // Undo / redo — Ctrl+Z, Ctrl+Y, Ctrl+Shift+Z. Intercept before transport.
+      if ((e.ctrlKey || e.metaKey) && !e.altKey) {
+        const k = e.key.toLowerCase()
+        if (k === 'z' && !e.shiftKey) { e.preventDefault(); undoRedoRef.current.undo(); return }
+        if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); undoRedoRef.current.redo(); return }
+      }
       const v = videoRef.current; if (!v) return
       const t = v.currentTime
       const subs = subtitlesRef.current
@@ -1200,7 +1270,9 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
             const prev = [...subs].reverse().find(s => s.start < t - 0.05)
             if (prev) v.currentTime = prev.start
           } else {
-            v.currentTime = Math.max(0, t - (e.shiftKey ? 0.1 : 1))
+            // Shift+← = one frame back; ← = 1s back
+            const step = e.shiftKey ? 1 / (clipFpsRef.current || 25) : 1
+            v.currentTime = Math.max(0, t - step)
           }
           break
         case 'ArrowRight':
@@ -1209,7 +1281,9 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
             const next = subs.find(s => s.start > t + 0.05)
             if (next) v.currentTime = next.start
           } else {
-            v.currentTime = Math.min(v.duration || 0, t + (e.shiftKey ? 0.1 : 1))
+            // Shift+→ = one frame forward; → = 1s forward
+            const step = e.shiftKey ? 1 / (clipFpsRef.current || 25) : 1
+            v.currentTime = Math.min(v.duration || 0, t + step)
           }
           break
         case ',': e.preventDefault(); v.pause(); v.currentTime = Math.max(0, t - 0.04); break
@@ -1284,6 +1358,61 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
     } catch { setSaveStatus('error') }
   }, [clip.clip_id, onUpdate])
 
+  // ── Undo / redo — subtitle snapshots, capped at 50 ──
+  const historyRef = useRef(null)            // { stack: snapshot[], idx }
+  const [canUndo, setCanUndo] = useState(false)
+  const [canRedo, setCanRedo] = useState(false)
+  const HISTORY_CAP = 50
+  const snap = subs => JSON.parse(JSON.stringify(subs))
+  function syncHistoryFlags() {
+    const h = historyRef.current
+    setCanUndo(!!h && h.idx > 0)
+    setCanRedo(!!h && h.idx < h.stack.length - 1)
+  }
+  function pushHistory(subs) {
+    let h = historyRef.current
+    if (!h) { historyRef.current = { stack: [snap(subs)], idx: 0 }; syncHistoryFlags(); return }
+    // Drop the redo branch, append, cap.
+    h.stack = h.stack.slice(0, h.idx + 1)
+    h.stack.push(snap(subs))
+    if (h.stack.length > HISTORY_CAP) h.stack.shift()
+    h.idx = h.stack.length - 1
+    syncHistoryFlags()
+  }
+  function applyHistorySubs(subs) {
+    const sorted = [...subs].sort((a, b) => a.start - b.start)
+    setSubtitles(sorted)
+    setSelectedIdx(null)
+    setSaveStatus('unsaved')
+    clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => doSave(sorted), 1500)
+  }
+  function undo() {
+    const h = historyRef.current
+    if (!h || h.idx <= 0) return
+    h.idx -= 1
+    applyHistorySubs(snap(h.stack[h.idx]))
+    syncHistoryFlags()
+  }
+  function redo() {
+    const h = historyRef.current
+    if (!h || h.idx >= h.stack.length - 1) return
+    h.idx += 1
+    applyHistorySubs(snap(h.stack[h.idx]))
+    syncHistoryFlags()
+  }
+  // Keep keydown (empty-dep closure) calling the latest undo/redo.
+  const undoRedoRef = useRef({ undo, redo })
+  undoRedoRef.current = { undo, redo }
+  // Seed history with the initial subtitles once per clip.
+  const historySeedRef = useRef(null)
+  useEffect(() => {
+    if (historySeedRef.current === clip.clip_id) return
+    historySeedRef.current = clip.clip_id
+    historyRef.current = { stack: [snap(clip.subtitles || [])], idx: 0 }
+    syncHistoryFlags()
+  }, [clip.clip_id])
+
   function handleSubtitlesChange(subs) {
     const sorted = [...subs].sort((a, b) => a.start - b.start)
     // Track selectedIdx through sort (objects share references from spread-sort)
@@ -1293,6 +1422,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
       if (newIdx !== selectedIdx && newIdx >= 0) setSelectedIdx(newIdx)
     }
     setSubtitles(sorted)
+    pushHistory(sorted)
     setSaveStatus('unsaved')
     clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => doSave(sorted), 1500)
@@ -1398,7 +1528,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
       const left = c.cursor_x + (sub.start - c.t) * c.pxSec
       const right = c.cursor_x + (sub.end - c.t) * c.pxSec
       if (c.x < left || c.x > right) continue
-      const words = validWords(sub) || (sub.words || [{ w: sub.text || '', start: sub.start, end: sub.end }])
+      const words = (wordByWord ? validWords(sub) : null) || [{ w: sub.text || '', start: sub.start, end: sub.end }]
       for (let wIdx = 0; wIdx < words.length; wIdx++) {
         const wd = words[wIdx]
         if (!wd.w) continue
@@ -2115,7 +2245,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
                       <button onClick={transcribe} style={{ padding: '6px 16px', background: '#f5c518', color: '#000', fontWeight: 600, borderRadius: 4, fontSize: 12 }}>◉ Transcrire</button>
                     </div>
                   ) : (
-                    <SubtitleEditor subtitles={subtitles} onChange={handleSubtitlesChange} onDelete={deleteReplicaWithUndo} currentTime={currentTime} onSeek={seekTo} selectedIdx={selectedIdx} setSelectedIdx={setSelectedIdx} compact={true} charFilter={charFilter} />
+                    <SubtitleEditor subtitles={subtitles} onChange={handleSubtitlesChange} onDelete={deleteReplicaWithUndo} currentTime={currentTime} onSeek={seekTo} selectedIdx={selectedIdx} setSelectedIdx={setSelectedIdx} compact={true} charFilter={charFilter} clipId={clip.clip_id} />
                   )}
                 </div>
                 {showRecorder && (
@@ -2302,9 +2432,19 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
           boucles={boucles}
           onAddBoucle={addBoucleAtCursor}
           onRemoveBoucle={removeBoucle}
+          sceneCuts={sceneCuts}
+          onDetectScenes={detectScenes}
+          onClearScenes={clearScenes}
+          detectingScenes={detectingScenes}
+          onUndo={undo}
+          onRedo={redo}
+          canUndo={canUndo}
+          canRedo={canRedo}
           clipFps={clipFps}
           brFont={brFont}
           setBrFont={setBrFont}
+          wordByWord={wordByWord}
+          setWordByWord={setWordByWord}
         />
         {/* Canvas */}
         <div style={{ position: 'relative', flex: 1, minHeight: 0, overflow: 'hidden' }}>
@@ -2398,6 +2538,25 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
             )
           })()}
         </div>
+        {/* Full-clip nav timeline — whole clip at a glance, click/drag to seek */}
+        {(() => {
+          const span = ((canvasRef.current?.width || 800) / (pxPerSec || 1))
+          const vStart = (currentTime + brOffset) - CURSOR_X_RATIO * span
+          return (
+            <BRTimeline
+              duration={duration}
+              currentTime={currentTime}
+              boucles={boucles}
+              waveform={waveformData}
+              sceneCuts={sceneCuts}
+              subtitles={subtitles}
+              charMap={charMap}
+              viewStart={vStart}
+              viewEnd={vStart + span}
+              onSeek={seekTo}
+            />
+          )
+        })()}
       </div>
 
       {/* ── Export modal ── */}
@@ -2457,7 +2616,10 @@ function BandeRythmoToolbar({
   locked, setLocked,
   detection, setDetection, detectionAuto, setDetectionAuto,
   boucles = [], onAddBoucle, onRemoveBoucle, clipFps = 25,
+  sceneCuts = [], onDetectScenes = () => {}, onClearScenes = () => {}, detectingScenes = false,
+  onUndo = () => {}, onRedo = () => {}, canUndo = false, canRedo = false,
   brFont = 'atkinson', setBrFont = () => {},
+  wordByWord = true, setWordByWord = () => {},
 }) {
   const [showDetection, setShowDetection] = React.useState(false)
   const [showBoucles, setShowBoucles] = React.useState(false)
@@ -2656,6 +2818,18 @@ function BandeRythmoToolbar({
       borderBottom: '1px solid var(--border)', padding: '0 12px', height: 52, flexShrink: 0,
       display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'nowrap', overflowX: 'auto',
     }}>
+      {/* Undo / redo */}
+      <div style={grp}>
+        <button onClick={onUndo} disabled={!canUndo} title="Annuler (Ctrl+Z)"
+          style={{ ...btn(canUndo), padding: '0 8px' }}>
+          <Ic d="M9 14L4 9l5-5M4 9h11a5 5 0 010 10h-3" size={15} />
+        </button>
+        <button onClick={onRedo} disabled={!canRedo} title="Rétablir (Ctrl+Y)"
+          style={{ ...btn(canRedo), padding: '0 8px' }}>
+          <Ic d="M15 14l5-5-5-5M20 9H9a5 5 0 000 10h3" size={15} />
+        </button>
+      </div>
+
       {/* Active character pill — click to reassign */}
       <div ref={charPickerRef} style={{ position: 'relative', flexShrink: 0 }}>
         <button
@@ -2846,6 +3020,22 @@ function BandeRythmoToolbar({
             ))}
           </div>,
           document.body
+        )}
+      </div>
+
+      {/* Plans — auto-detect scene cuts (changements de plan) */}
+      <div style={grp}>
+        <button onClick={onDetectScenes} disabled={detectingScenes}
+          title="Détecter les changements de plan (ffmpeg)"
+          style={{ ...btn(true, sceneCuts.length > 0), padding: '0 9px', gap: 5, fontSize: 11.5, opacity: detectingScenes ? 0.5 : 1 }}>
+          <span style={{ color: '#7ea0ff' }}>▏</span>
+          {detectingScenes ? '…' : 'Plans'}
+          {sceneCuts.length > 0 && <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: '#7ea0ff' }}>{sceneCuts.length}</span>}
+        </button>
+        {sceneCuts.length > 0 && (
+          <button onClick={onClearScenes} title="Effacer les plans détectés" style={btn(true)}>
+            <Ic d={ICONS.close} size={13} />
+          </button>
         )}
       </div>
 
@@ -3130,6 +3320,20 @@ function BandeRythmoToolbar({
             <button onClick={() => setFontScale(s => Math.max(0.6, s - 0.1))} style={btn(true)}>A−</button>
             <span style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--font-mono)', flex: 1, textAlign: 'center' }}>{Math.round(fontScale * 100)} %</span>
             <button onClick={() => setFontScale(s => Math.min(2.0, s + 0.1))} style={btn(true)}>A+</button>
+          </div>
+
+          {/* Rendu mot-à-mot */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <span style={{ fontSize: 10.5, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, width: 80 }}>Rythmo</span>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 12, color: 'var(--text2)' }}>
+              <input type="checkbox" checked={wordByWord} onChange={e => setWordByWord(e.target.checked)} />
+              Rendu mot par mot
+            </label>
+            <span style={{ fontSize: 10.5, color: 'var(--text4)', flex: 1, textAlign: 'right' }}>
+              {wordByWord
+                ? <span style={{ color: 'var(--accent)' }}>▌ marqueurs d'étirement</span>
+                : 'ligne entière'}
+            </span>
           </div>
 
           {/* Incrustation vidéo (BR in player) */}

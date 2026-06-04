@@ -6,8 +6,13 @@ from typing import Dict, List, Optional
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
+from services.detection import classify_char
+
 CURSOR_X_RATIO = 0.30
 BG = (5, 5, 5)
+
+# Détection signs — graphite, mirrors DubbingWorkspace SIGN_COLOR (#c7ccd4).
+SIGN_RGB = (199, 204, 212)
 
 # Band background per rythmo style (matches the editor canvas).
 _STYLE_BG = {
@@ -87,16 +92,28 @@ def _text_rgb(is_active: bool) -> tuple:
 
 def _merge_words(ws):
     """Merge contraction fragments — Whisper splits "t'as" → "t" + "'as".
-    A token starting with ' / ’ / - (or following one) joins the previous."""
+    A token starting with ' / ’ / - (or following one) joins the previous.
+    Per-char `signs` are preserved; merged-in fragment sign indices shift by
+    the previous fragment length so they stay pinned to the right letter."""
     out = []
     for w in ws:
         wt = w.get("w") or ""
+        sg = w.get("signs") or []
         if out and wt and (wt[0] in "'’-"
                             or (out[-1]["w"] and out[-1]["w"][-1] in "'’-")):
-            out[-1] = {"w": out[-1]["w"] + wt,
-                       "start": out[-1]["start"], "end": w["end"]}
+            prev = out[-1]
+            offset = len(prev["w"])
+            shifted = [{**s, "i": s.get("i", 0) + offset} for s in sg]
+            prev["w"] = prev["w"] + wt
+            prev["end"] = w["end"]
+            merged = (prev.get("signs") or []) + shifted
+            if merged:
+                prev["signs"] = merged
         else:
-            out.append({"w": wt, "start": w["start"], "end": w["end"]})
+            nw = {"w": wt, "start": w["start"], "end": w["end"]}
+            if sg:
+                nw["signs"] = sg
+            out.append(nw)
     return out
 
 
@@ -176,6 +193,96 @@ def _draw_word(img, word_text, bl, br_, y_top, track_h, y_center, is_active,
     img.paste(crop, (dst, y_top), crop)
 
 
+def _resolve_signs(wd: Dict, auto: bool) -> list:
+    """Mirror of resolveSigns (detection.js): persisted signs win; else auto-
+    classify from letters. Auto skips 'ouverte' (rest state, too noisy to burn)."""
+    signs = wd.get("signs")
+    if isinstance(signs, list) and signs:
+        return signs
+    if not auto:
+        return []
+    text = wd.get("w") or ""
+    dur = max(0.05, (wd.get("end", 0) - wd.get("start", 0)))
+    out = []
+    n = max(1, len(text))
+    for i, ch in enumerate(text):
+        kind = classify_char(ch)
+        if not kind or kind == "ouverte":
+            continue
+        t0 = wd["start"] + (i / n) * dur
+        t1 = wd["start"] + ((i + 1) / n) * dur
+        out.append({"i": i, "type": kind, "t0": t0, "t1": t1})
+    return out
+
+
+def _draw_signs(draw, wd, wbl, wbr, y_top, track_h, t, cursor_x, px_per_sec,
+                font_main, font_size, detection_auto, W):
+    """Burn détection signs for one word — graphite, mirroring the editor canvas
+    geometry (labiale bar / semi dashed / fricative caret / arrondie circle /
+    ouverte arc). x positions follow the same stretched-letter math as _draw_word."""
+    signs = _resolve_signs(wd, detection_auto)
+    if not signs:
+        return
+    core = (wd.get("w") or "").replace("*", "○")
+    word_text = core + " "
+    stroke_w = max(1, round(font_size / 18))
+    try:
+        natural_w = max(1, font_main.getlength(word_text) + stroke_w * 2)
+    except Exception:
+        natural_w = max(1, len(word_text) * font_size / 2)
+    block_w = wbr - wbl
+    scale_x = max(0.05, min(block_w / natural_w if block_w > 0 else 1.0, _STRETCH_CAP))
+
+    w_active = wd["start"] <= t <= wd["end"]
+    color = SIGN_RGB if w_active else tuple(int(c * 0.55) + 4 for c in SIGN_RGB)
+
+    def measure(s):
+        try:
+            return font_main.getlength(s)
+        except Exception:
+            return len(s) * font_size / 2
+
+    for sign in signs:
+        i = sign.get("i", 0)
+        stype = sign.get("type")
+        prefix = word_text[:max(0, i)]
+        char_x0 = wbl + measure(prefix) * scale_x
+        ch = word_text[i] if i < len(word_text) else ""
+        char_w = measure(ch) * scale_x
+
+        if stype == "labiale":
+            # Frame-anchored span [t0, t1] — independent of letter stretch.
+            lx = cursor_x + (sign.get("t0", wd["start"]) - t) * px_per_sec
+            rx = cursor_x + (sign.get("t1", wd["end"]) - t) * px_per_sec
+            if rx > 0 and lx < W:
+                sy = y_top + track_h - max(7, int(track_h * 0.10))
+                draw.line([(max(0, lx), sy), (min(W, rx), sy)], fill=color, width=2)
+        elif stype == "semi":
+            sy = y_top + track_h - max(6, int(track_h * 0.09))
+            x = char_x0
+            end = char_x0 + char_w
+            # Emulate dashed [3,2].
+            while x < end:
+                draw.line([(x, sy), (min(x + 3, end), sy)], fill=color, width=2)
+                x += 5
+        elif stype == "fricative":
+            cx0 = char_x0 + char_w / 2
+            sy = y_top + max(4, int(track_h * 0.10))
+            r = max(3, int(track_h * 0.06))
+            draw.line([(cx0 - r, sy + r), (cx0, sy), (cx0 + r, sy + r)], fill=color, width=1, joint="curve")
+        elif stype == "arrondie":
+            cx0 = char_x0 + char_w / 2
+            sy = y_top + max(5, int(track_h * 0.12))
+            r = max(3, int(track_h * 0.07))
+            draw.ellipse([cx0 - r, sy - r, cx0 + r, sy + r], outline=color, width=2)
+        elif stype == "ouverte":
+            cx0 = char_x0 + char_w / 2
+            sy = y_top + max(5, int(track_h * 0.12))
+            r = max(3, int(track_h * 0.08))
+            # Canvas arc π*1.15..π*1.85 → PIL degrees 207..333 (clockwise, y-down).
+            draw.arc([cx0 - r, sy - r, cx0 + r, sy + r], 207, 333, fill=color, width=1)
+
+
 def _render_frame(
     t: float,
     subtitles: List[Dict],
@@ -189,6 +296,8 @@ def _render_frame(
     font_avatar: ImageFont.FreeTypeFont,
     font_size: int,
     style: str = "classique",
+    detection_burn: bool = False,
+    detection_auto: bool = True,
 ) -> Image.Image:
     # Opaque BR band — glued below the picture (vstack), not over it.
     bg = _STYLE_BG.get(style, _STYLE_BG["classique"])
@@ -281,6 +390,9 @@ def _render_frame(
             w_active = wd["start"] <= t <= wd["end"]
             _draw_word(img, core + " ", wbl, wbr, y_top, track_h, text_y_center,
                        w_active, color, style, font_main, font_size, W)
+            if detection_burn:
+                _draw_signs(draw, wd, wbl, wbr, y_top, track_h, t, cursor_x,
+                            px_per_sec, font_main, font_size, detection_auto, W)
     draw = ImageDraw.Draw(img)
 
     # Track labels (fixed left, always on top)
@@ -323,6 +435,8 @@ def render_br_video(
     supersample: int = 4,
     shutter: float = 0.25,
     style: str = "classique",
+    detection_burn: bool = False,
+    detection_auto: bool = True,
 ):
     """Render BR strip frames to a lossless video file at exact video fps.
 
@@ -378,6 +492,7 @@ def render_br_video(
             t, subtitles, char_map, num_tracks,
             W, H, px_per_sec,
             font_main, font_label, font_avatar, font_size, style,
+            detection_burn, detection_auto,
         )
         return np.asarray(img.convert("RGB"), dtype=np.float32)
 

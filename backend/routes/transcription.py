@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from services.whisper_service import transcribe_segment
-from services.jobs import create_job, get_job, raise_if_cancelled, CancelledJobError
+from services.jobs import create_job, get_job, raise_if_cancelled, CancelledJobError, JobStartResponse
 import asyncio
 import os
 
@@ -25,7 +25,7 @@ async def transcribe(req: TranscribeRequest):
     return {"subtitles": subtitles}
 
 
-@router.post("/transcribe-job")
+@router.post("/transcribe-job", response_model=JobStartResponse)
 async def transcribe_job(req: TranscribeRequest):
     """Fire-and-poll: returns {job_id}. Poll /api/jobs/{id}, fetch result with /api/jobs/{id}/result."""
     path = f"segments/{req.segment_id}.mp4"

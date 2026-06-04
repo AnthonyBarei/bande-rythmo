@@ -236,9 +236,14 @@ Backend: `_BR_FONT_FILES["lisible"]` → fallback atkinson si fichier absent.
 - Clic sur une lettre dans le canvas → cycle signe (null → labiale → semi → … → null)
 - Persisté dans `words[].signs` via auto-save
 
-#### Phase 2 : burn détection dans MP4
-- `br_renderer.py` `_draw_signs()` miroir du canvas (graphite, mêmes géométries)
-- Flag `detection_burn` déjà câblé jusqu'au backend, no-op pour l'instant
+#### Phase 2 : burn détection dans MP4 — FAIT
+- `br_renderer.py` `_draw_signs()` miroir du canvas (graphite #c7ccd4, mêmes
+  géométries : labiale barre / semi pointillé / fricative chevron / arrondie
+  cercle / ouverte arc). `_resolve_signs()` miroir de `resolveSigns` (persistés
+  gagnent ; auto-classif saute `ouverte`). `_merge_words` préserve+décale les
+  `signs` sur fusion de contraction. Câblé via `render_br_video(detection_burn,
+  detection_auto)` ← `ExportRequest.detection_burn` (case « Incruster la
+  détection », défaut off).
 
 #### Whisper — config langue
 - UI pour choisir la langue de transcription par clip

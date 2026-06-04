@@ -13,6 +13,31 @@ import time
 import uuid
 from typing import Any, Dict, List, Optional
 
+from pydantic import BaseModel
+
+
+class JobStartResponse(BaseModel):
+    """Standard response from any endpoint that kicks off a background job.
+    Client polls GET /api/jobs/{id} or opens WS /api/jobs/{id}/ws; downloads
+    final artifact (if any) from GET /api/jobs/{id}/result."""
+    job_id: str
+
+
+class JobStatus(BaseModel):
+    id: str
+    kind: str
+    title: str
+    stage: str
+    pct: float
+    eta: Optional[float] = None
+    status: str  # running | done | error | cancelled
+    error: Optional[str] = None
+    created_at: float
+    updated_at: float
+    elapsed: float
+    has_result: bool
+
+
 JOBS: Dict[str, "Job"] = {}
 _lock = threading.Lock()
 
