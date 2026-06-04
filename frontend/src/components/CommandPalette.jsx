@@ -16,6 +16,7 @@ export default function CommandPalette({ open, onClose, onNavigate, onNewClip, o
       { id: 'nav-import',   icon: ICONS.upload,   label: 'Aller à — Importer',  run: () => onNavigate('import') },
       { id: 'nav-clips',    icon: ICONS.grid,     label: 'Aller à — Mes Clips',  run: () => onNavigate('clips') },
       { id: 'nav-memes',    icon: ICONS.smile,    label: 'Aller à — Memes',      run: () => onNavigate('memes') },
+      { id: 'nav-activity', icon: ICONS.activity, label: 'Aller à — Activité',    run: () => onNavigate('activity') },
       { id: 'nav-settings', icon: ICONS.settings, label: 'Aller à — Réglages',   run: () => onNavigate('settings') },
       { id: 'act-new',      icon: ICONS.plus,     label: 'Nouveau clip — importer une vidéo', run: () => onNewClip?.() },
       { id: 'act-help',     icon: ICONS.kbd,      label: 'Raccourcis clavier',   run: () => onShortcuts?.() },

@@ -7,6 +7,7 @@ const NAV = [
   { id: 'memes',    icon: ICONS.smile,    label: 'Memes' },
 ]
 const NAV2 = [
+  { id: 'activity', icon: ICONS.activity, label: 'Activité' },
   { id: 'settings', icon: ICONS.settings, label: 'Réglages' },
 ]
 

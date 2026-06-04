@@ -10,6 +10,7 @@ import { ProgressProvider } from './ProgressContext'
 import { ToastProvider, useToast } from './ToastContext'
 import ShortcutsOverlay from './components/ShortcutsOverlay'
 import CommandPalette from './components/CommandPalette'
+import ActivityCenter from './components/ActivityCenter'
 
 const SAVE_STATUS = {
   saved:   { text: '✓ Sauvegardé', color: 'var(--success)' },
@@ -204,6 +205,10 @@ function AppInner() {
           style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px', background: 'var(--surface2)', border: '1px solid var(--border2)', color: 'var(--text2)', borderRadius: 6, fontSize: 12, fontWeight: 500, cursor: 'pointer' }}>
           <Icon d={ICONS.kbd} size={14} /> Raccourcis
         </button>
+        <button onClick={() => setSection('activity')} title="Activité — jobs & exports"
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 32, height: 30, background: section === 'activity' ? 'var(--accent-soft)' : 'var(--surface2)', border: '1px solid var(--border2)', color: section === 'activity' ? 'var(--accent)' : 'var(--text2)', borderRadius: 6, cursor: 'pointer' }}>
+          <Icon d={ICONS.activity} size={15} />
+        </button>
         <div style={{ width: 1, height: 20, background: 'var(--border2)' }} />
         <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--surface3)', border: '1px solid var(--border2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text2)' }}>
           <Icon d={ICONS.user} size={15} />
@@ -233,6 +238,7 @@ function AppInner() {
             onSetProject={handleSetProject}
           />
         )}
+        {section === 'activity' && <ActivityCenter />}
         {section === 'dub' && activeClip && (
           <DubbingWorkspace
             clip={activeClip}
