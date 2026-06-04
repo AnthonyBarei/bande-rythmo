@@ -16,7 +16,7 @@ from database import get_db, SessionLocal
 from services.clip_service import (
     create_clip, delete_clip, get_clip,
     list_clips, update_name, update_status, update_subtitles,
-    update_boucles, update_fps, update_scene_cuts,
+    update_boucles, update_fps, update_scene_cuts, update_project,
 )
 from services.ffmpeg_service import extract_segment, extract_thumbnail, probe_streams, probe_fps, detect_scene_cuts, make_proxy
 from services.jobs import create_job, raise_if_cancelled, CancelledJobError, JobStartResponse
@@ -35,6 +35,10 @@ class UpdateBouclesRequest(BaseModel):
 
 class RenameRequest(BaseModel):
     name: str
+
+
+class ProjectRequest(BaseModel):
+    project: str = ""
 
 
 class StatusRequest(BaseModel):
@@ -416,6 +420,14 @@ async def set_fps(clip_id: str, req: FpsRequest, db: Session = Depends(get_db)):
     if req.fps <= 0:
         raise HTTPException(400, "fps must be positive")
     clip = update_fps(db, clip_id, req.fps)
+    if not clip:
+        raise HTTPException(404, "Clip not found")
+    return clip
+
+
+@router.put("/{clip_id}/project")
+async def set_project(clip_id: str, req: ProjectRequest, db: Session = Depends(get_db)):
+    clip = update_project(db, clip_id, req.project)
     if not clip:
         raise HTTPException(404, "Clip not found")
     return clip

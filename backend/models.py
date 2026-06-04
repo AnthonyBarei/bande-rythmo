@@ -22,6 +22,8 @@ class Clip(Base):
     # JSON array of scene-change timecodes (seconds), detected via ffmpeg at
     # import or on-demand. Feeds the BR canvas + nav timeline plan-cut markers.
     scene_cuts = Column(String, nullable=True)
+    # Optional project/folder grouping (free-text). Null = ungrouped.
+    project = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
 
     subtitles = relationship(

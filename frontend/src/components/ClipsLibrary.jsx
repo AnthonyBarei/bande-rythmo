@@ -15,12 +15,26 @@ const SORTS = [
   { key: 'duration', label: 'Durée' },
 ]
 
-export default function ClipsLibrary({ clips, onDub, onMeme, onDelete, onRename, onStatusChange, onNewClip }) {
+export default function ClipsLibrary({ clips, onDub, onMeme, onDelete, onRename, onStatusChange, onNewClip, onSetProject }) {
   const [toast, setToast] = useState(null)
   const [filter, setFilter] = useState('all')
   const [sort, setSort] = useState('recent')
   const [search, setSearch] = useState('')
   const [sortOpen, setSortOpen] = useState(false)
+  const [projectFilter, setProjectFilter] = useState('__all')   // __all | __none | <name>
+
+  const projects = useMemo(() => {
+    const set = new Set()
+    for (const c of clips) if (c.project) set.add(c.project)
+    return [...set].sort((a, b) => a.localeCompare(b))
+  }, [clips])
+
+  async function assignProject(clipId) {
+    const name = window.prompt('Nom du projet (vide = retirer du projet) :')
+    if (name == null) return
+    await onSetProject?.(clipId, name.trim())
+    showToast(name.trim() ? `Déplacé vers « ${name.trim()} »` : 'Retiré du projet')
+  }
 
   function showToast(msg, type = 'info') {
     setToast({ msg, type })
@@ -35,6 +49,8 @@ export default function ClipsLibrary({ clips, onDub, onMeme, onDelete, onRename,
 
   const visible = useMemo(() => {
     let list = clips
+    if (projectFilter === '__none') list = list.filter(c => !c.project)
+    else if (projectFilter !== '__all') list = list.filter(c => c.project === projectFilter)
     if (filter !== 'all') list = list.filter(c => (c.status || 'todo') === filter)
     if (search.trim()) {
       const q = search.trim().toLowerCase()
@@ -45,7 +61,7 @@ export default function ClipsLibrary({ clips, onDub, onMeme, onDelete, onRename,
     else if (sort === 'duration') list.sort((a, b) => (b.end - b.start) - (a.end - a.start))
     else list.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
     return list
-  }, [clips, filter, search, sort])
+  }, [clips, filter, search, sort, projectFilter])
 
   const totalDur = useMemo(() => clips.reduce((s, c) => s + (c.end - c.start), 0), [clips])
 
@@ -139,6 +155,36 @@ export default function ClipsLibrary({ clips, onDub, onMeme, onDelete, onRename,
             )}
           </div>
         </div>
+
+        {/* Project chips — only when at least one clip is grouped */}
+        {projects.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 0 10px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 10.5, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, fontFamily: 'var(--font-mono)', marginRight: 2 }}>Projets</span>
+            {[
+              { key: '__all', label: 'Tous' },
+              ...projects.map(p => ({ key: p, label: p })),
+              { key: '__none', label: 'Sans projet' },
+            ].map(p => {
+              const active = projectFilter === p.key
+              const n = p.key === '__all' ? clips.length
+                : p.key === '__none' ? clips.filter(c => !c.project).length
+                : clips.filter(c => c.project === p.key).length
+              return (
+                <button key={p.key} onClick={() => setProjectFilter(p.key)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px',
+                    background: active ? 'var(--accent-soft)' : 'var(--surface)',
+                    color: active ? 'var(--accent)' : 'var(--text2)',
+                    border: `1px solid ${active ? 'rgba(245,197,24,0.4)' : 'var(--border)'}`,
+                    borderRadius: 99, fontSize: 11.5, fontWeight: active ? 600 : 500, cursor: 'pointer', minHeight: 28,
+                  }}>
+                  {p.key === '__none' ? '○' : p.key === '__all' ? '▦' : '📁'} {p.label}
+                  <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: 'var(--text3)' }}>{n}</span>
+                </button>
+              )
+            })}
+          </div>
+        )}
       </div>
 
       {/* Grid */}
@@ -175,6 +221,7 @@ export default function ClipsLibrary({ clips, onDub, onMeme, onDelete, onRename,
                 onDelete={handleDelete}
                 onRename={onRename}
                 onStatusChange={onStatusChange}
+                onAssignProject={assignProject}
               />
             ))}
           </div>

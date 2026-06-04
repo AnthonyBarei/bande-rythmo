@@ -38,6 +38,7 @@ def _to_dict(clip: Clip) -> dict:
         "status": clip.status or "todo",
         "fps": clip.fps or 25.0,
         "scene_cuts": _parse_scene_cuts(clip.scene_cuts),
+        "project": clip.project or "",
         "has_proxy": os.path.isfile(f"segments/{clip.clip_id}_proxy.mp4"),
         "subtitles": [
             {
@@ -155,6 +156,16 @@ def update_scene_cuts(db: Session, clip_id, cuts):
     if not clip:
         return None
     clip.scene_cuts = json.dumps(list(cuts)) if cuts else None
+    db.commit()
+    db.refresh(clip)
+    return _to_dict(clip)
+
+
+def update_project(db: Session, clip_id, project):
+    clip = db.query(Clip).filter(Clip.clip_id == clip_id).first()
+    if not clip:
+        return None
+    clip.project = (project or "").strip() or None
     db.commit()
     db.refresh(clip)
     return _to_dict(clip)

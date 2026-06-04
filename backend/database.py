@@ -39,6 +39,9 @@ def init_db():
         # Scene-change timecodes (JSON array of seconds). Null until detected.
         if "scene_cuts" not in cols:
             conn.execute(text("ALTER TABLE clips ADD COLUMN scene_cuts TEXT"))
+        # Project/folder grouping (free-text, nullable).
+        if "project" not in cols:
+            conn.execute(text("ALTER TABLE clips ADD COLUMN project TEXT"))
         sub_cols = [r[1] for r in conn.execute(text("PRAGMA table_info(subtitles)")).fetchall()]
         if "words" not in sub_cols:
             conn.execute(text("ALTER TABLE subtitles ADD COLUMN words TEXT"))
