@@ -196,7 +196,7 @@ async def create_batch_local_job(req: BatchLocalRequest):
         finally:
             db.close()
 
-    asyncio.get_event_loop().run_in_executor(None, worker)
+    asyncio.get_running_loop().run_in_executor(None, worker)
     return {"job_id": job.id}
 
 
@@ -373,7 +373,7 @@ async def make_clip_proxy(clip_id: str, height: int = 720):
         except Exception as e:
             job.fail(str(e))
 
-    asyncio.get_event_loop().run_in_executor(None, worker)
+    asyncio.get_running_loop().run_in_executor(None, worker)
     return {"job_id": job.id}
 
 

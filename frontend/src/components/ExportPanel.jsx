@@ -14,12 +14,16 @@ const FORMATS = [
   { id: 'wav',         label: 'WAV',        icon: ICONS.audio, desc: 'Audio non compressé',                         color: '#aa88ff', needsSubs: false },
 ]
 
-export default function ExportPanel({ segmentId, subtitles, boucles = [], pxPerSec = 180, brOffset = 0, canvasH = 64, getCanvasWidth, brFont = 'atkinson', brStyle = 'classique' }) {
+export default function ExportPanel({ segmentId, subtitles, boucles = [], pxPerSec = 180, brOffset = 0, canvasH = 64, getCanvasWidth, brFont = 'atkinson', brStyle = 'classique', duration = 0, getCurrentTime, loopRegion = null }) {
   const [loading, setLoading] = useState(null)
   const [error, setError] = useState(null)
   const [lastExport, setLastExport] = useState(null)
   const [detectionBurn, setDetectionBurn] = useState(false)
   const [quality, setQuality] = useState('standard')   // draft | standard | youtube
+  // Custom export range — off = whole clip. Applies to every format.
+  const [rangeOn, setRangeOn] = useState(false)
+  const [rangeIn, setRangeIn] = useState(0)
+  const [rangeOut, setRangeOut] = useState(0)
   const [gpu, setGpu] = useState('off')                 // off | auto | nvenc | qsv | amf
   const [hwEncoders, setHwEncoders] = useState(null)    // { nvenc, qsv, amf, any } | null
   const [history, setHistory] = useState([])
@@ -43,6 +47,11 @@ export default function ExportPanel({ segmentId, subtitles, boucles = [], pxPerS
     } catch {}
   }, [segmentId])
   useEffect(() => { refreshHistory() }, [refreshHistory])
+
+  // Default the range end to the clip duration when it arrives.
+  useEffect(() => {
+    if (duration > 0 && rangeOut === 0) setRangeOut(duration)
+  }, [duration]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Probe HW encoders once (cached server-side).
   useEffect(() => {
@@ -68,6 +77,12 @@ export default function ExportPanel({ segmentId, subtitles, boucles = [], pxPerS
     } catch {}
   }
 
+  function fmtSec(t) {
+    if (!t && t !== 0) return '--'
+    const m = Math.floor(t / 60)
+    const s = (t % 60).toFixed(1).padStart(4, '0')
+    return `${m}:${s}`
+  }
   function fmtBytes(n) {
     if (!n) return '—'
     if (n < 1024) return `${n} B`
@@ -109,6 +124,11 @@ export default function ExportPanel({ segmentId, subtitles, boucles = [], pxPerS
       }
       if (format === 'croisille') {
         body.boucles = boucles
+      }
+      // Custom range → applies to every format (subs trimmed/shifted, media cut).
+      if (rangeOn && rangeOut > rangeIn) {
+        body.in_point = rangeIn
+        body.out_point = rangeOut
       }
 
       // GIF → job mode (two-pass palette → slow).
@@ -263,6 +283,46 @@ export default function ExportPanel({ segmentId, subtitles, boucles = [], pxPerS
             </div>
           )
         })}
+      </div>
+
+      {/* Custom export range — applies to all formats. */}
+      <div style={{ padding: '10px 12px', marginBottom: 8, background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 6 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text2)', cursor: 'pointer' }}>
+            <input type="checkbox" checked={rangeOn} onChange={e => setRangeOn(e.target.checked)} />
+            Plage personnalisée
+          </label>
+          {loopRegion && (
+            <button onClick={() => { setRangeIn(loopRegion.start); setRangeOut(loopRegion.end); setRangeOn(true) }}
+              style={{ fontSize: 10.5, color: 'var(--accent)', background: 'rgba(245,197,24,0.1)', border: '1px solid rgba(245,197,24,0.3)', borderRadius: 4, padding: '3px 8px', cursor: 'pointer' }}>
+              ⟲ Utiliser la boucle
+            </button>
+          )}
+          <div style={{ flex: 1 }} />
+          <span style={{ fontSize: 10.5, color: 'var(--text3)' }}>
+            {rangeOn ? `${fmtSec(rangeIn)} → ${fmtSec(rangeOut)} · ${fmtSec(Math.max(0, rangeOut - rangeIn))}` : 'clip entier'}
+          </span>
+        </div>
+        {rangeOn && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+            <span style={{ fontSize: 10, color: '#4af', fontFamily: 'var(--font-mono)', width: 28 }}>IN</span>
+            <input type="range" min={0} max={duration || 1} step={0.05} value={rangeIn}
+              onChange={e => setRangeIn(Math.min(+e.target.value, rangeOut - 0.1))}
+              style={{ flex: 1, color: '#4af', '--pct': `${(rangeIn / (duration || 1)) * 100}%` }} />
+            <button onClick={() => setRangeIn(Math.min(getCurrentTime?.() || 0, rangeOut - 0.1))}
+              style={{ fontSize: 10, color: '#4af', background: 'rgba(68,170,255,0.1)', border: '1px solid rgba(68,170,255,0.3)', borderRadius: 4, padding: '3px 7px', cursor: 'pointer', fontFamily: 'var(--font-mono)' }}>[ ici</button>
+          </div>
+        )}
+        {rangeOn && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+            <span style={{ fontSize: 10, color: 'var(--accent)', fontFamily: 'var(--font-mono)', width: 28 }}>OUT</span>
+            <input type="range" min={0} max={duration || 1} step={0.05} value={rangeOut}
+              onChange={e => setRangeOut(Math.max(+e.target.value, rangeIn + 0.1))}
+              style={{ flex: 1, color: 'var(--accent)', '--pct': `${(rangeOut / (duration || 1)) * 100}%` }} />
+            <button onClick={() => setRangeOut(Math.max(getCurrentTime?.() || 0, rangeIn + 0.1))}
+              style={{ fontSize: 10, color: 'var(--accent)', background: 'rgba(245,197,24,0.1)', border: '1px solid rgba(245,197,24,0.3)', borderRadius: 4, padding: '3px 7px', cursor: 'pointer', fontFamily: 'var(--font-mono)' }}>ici ]</button>
+          </div>
+        )}
       </div>
 
       {/* MP4 quality preset — trade render time for fidelity. */}

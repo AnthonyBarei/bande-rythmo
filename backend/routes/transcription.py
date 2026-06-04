@@ -56,5 +56,5 @@ async def transcribe_job(req: TranscribeRequest):
         except Exception as e:
             job.fail(str(e))
 
-    asyncio.get_event_loop().run_in_executor(None, worker)
+    asyncio.get_running_loop().run_in_executor(None, worker)
     return {"job_id": job.id}

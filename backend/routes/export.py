@@ -79,6 +79,38 @@ class ExportRequest(BaseModel):
 
 
 
+def _trim_subs_to_range(subs: list, a: float, b: float) -> list:
+    """Keep subs overlapping [a,b], clamp to it, shift so a → 0. Words + sign
+    timespans shift too. plan_cut kept only if inside the range."""
+    out = []
+    for s in subs:
+        if s["end"] <= a or s["start"] >= b:
+            continue
+        ns = dict(s)
+        ns["start"] = max(0.0, s["start"] - a)
+        ns["end"] = max(0.0, min(s["end"], b) - a)
+        words = s.get("words")
+        if words:
+            nw = []
+            for w in words:
+                if w["end"] <= a or w["start"] >= b:
+                    continue
+                ww = dict(w)
+                ww["start"] = max(0.0, w["start"] - a)
+                ww["end"] = max(0.0, min(w["end"], b) - a)
+                if w.get("signs"):
+                    ww["signs"] = [
+                        {**sg, "t0": max(0.0, sg["t0"] - a), "t1": max(0.0, sg["t1"] - a)}
+                        for sg in w["signs"]
+                    ]
+                nw.append(ww)
+            ns["words"] = nw or None
+        pc = s.get("plan_cut")
+        ns["plan_cut"] = (pc - a) if (pc is not None and a <= pc <= b) else None
+        out.append(ns)
+    return out
+
+
 @router.post("/export")
 async def export(req: ExportRequest, db: Session = Depends(get_db)):
     export_id = str(uuid.uuid4())
@@ -115,6 +147,11 @@ async def export(req: ExportRequest, db: Session = Depends(get_db)):
         }
         for s in req.subtitles
     ]
+
+    # Custom time-range: keep subs overlapping [in,out], clamp + shift to 0.
+    # Applies to every subtitle format (SRT/ASS/DetX/croisillé).
+    if req.in_point is not None and req.out_point is not None and req.out_point > req.in_point:
+        subs = _trim_subs_to_range(subs, req.in_point, req.out_point)
 
     def _persist(fmt: str, path: str, filename: str, media_type: str):
         try:
@@ -365,7 +402,7 @@ async def export_gif_job(req: ExportRequest, db: Session = Depends(get_db)):
         except Exception as e:
             job.fail(str(e))
 
-    asyncio.get_event_loop().run_in_executor(None, worker)
+    asyncio.get_running_loop().run_in_executor(None, worker)
     return {"job_id": job.id}
 
 
@@ -444,6 +481,16 @@ async def export_mp4_job(req: ExportRequest, db: Session = Depends(get_db)):
             if duration_s <= 0:
                 duration_s = 60.0
 
+            # Custom time-range — trim subs to [in,out], render only that span;
+            # the segment input is seeked/limited in the vstack cmd below.
+            range_ss = None
+            if req.in_point is not None and req.out_point is not None and req.out_point > req.in_point:
+                range_ss = req.in_point
+                duration_s = req.out_point - req.in_point
+                subs_local = _trim_subs_to_range(subs_data, req.in_point, req.out_point)
+            else:
+                subs_local = subs_data
+
             export_fps = 60.0 if src_fps <= 60 else src_fps
             scale = vw / max(canvas_w, 1)
             px_per_sec_video = px_per_sec * scale
@@ -458,7 +505,7 @@ async def export_mp4_job(req: ExportRequest, db: Session = Depends(get_db)):
             job.update(stage="Rendu bande rythmo", pct=0.05)
             raise_if_cancelled(job)
             render_br_video(
-                subs_data, vw, br_h_video,
+                subs_local, vw, br_h_video,
                 px_per_sec_video, export_fps, duration_s,
                 strip_path, br_offset,
                 br_font=br_font, style=br_style,
@@ -472,9 +519,13 @@ async def export_mp4_job(req: ExportRequest, db: Session = Depends(get_db)):
             # HW encoder when requested+usable; libx264 fallback. -bf 0 kept on
             # all paths (no B-frames → no ghosting on the scrolling text).
             venc_args, venc_name = h264_encoder_args(req.gpu, qp["crf"], qp["x264_preset"])
+            # Seek/limit the segment input to the export range (strip is already
+            # rendered for exactly [in,out]). -ss before -i = fast keyframe seek.
+            seg_in = (["-ss", str(range_ss), "-t", str(duration_s)] if range_ss is not None else [])
             cmd = [
                 "ffmpeg", "-y",
                 "-progress", "pipe:1", "-nostats",
+                *seg_in,
                 "-i", segment,
                 "-i", strip_path,
                 "-filter_complex",
@@ -536,7 +587,7 @@ async def export_mp4_job(req: ExportRequest, db: Session = Depends(get_db)):
         except Exception as e:
             job.fail(str(e))
 
-    asyncio.get_event_loop().run_in_executor(None, worker)
+    asyncio.get_running_loop().run_in_executor(None, worker)
     return {"job_id": job.id}
 
 
