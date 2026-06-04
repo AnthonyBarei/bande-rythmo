@@ -25,56 +25,68 @@ npm run dev -- --port 5173
 backend/
   main.py                  # FastAPI app, lifespan init_db, static mounts
   database.py              # SQLite init + accès + idempotent ALTER TABLE guards
-  models.py                # Clip (fps), Subtitle (words,off,dos,ambiance,plan_cut), Boucle, Take
+  models.py                # Clip (fps,scene_cuts,project), Subtitle (words,off,dos,ambiance,plan_cut,note), Boucle, Take, Export, LexiconEntry
   routes/
     video.py               # upload + découpe ffmpeg
-    transcription.py       # Whisper (extrait audio WAV avant transcription)
-    clips.py               # CRUD clips + thumbnails + status + boucles + fps
-    export.py              # SRT / ASS / DetX / Croisillé / MP4 / GIF / MP3 / WAV
+    transcription.py       # Whisper (extrait audio WAV avant transcription) — language par requête
+    clips.py               # CRUD + status + boucles + fps + import-subtitles + detect-scenes + proxy + project + separate-vocals
+    export.py              # SRT/ASS/DetX/Croisillé/MP4/GIF/MP3/WAV + quality presets + GPU + plage perso + historique
     meme.py                # génération memes (image/GIF)
     files.py               # upload vidéos source
     plex.py                # intégration Plex
     takes.py               # prises d'enregistrement (recording)
+    jobs.py                # statut/cancel/result/ws des jobs (fire-and-poll)
+    fonts.py               # upload TTF/OTF + registry + resolve_font_path
+    lexicon.py             # CRUD lexique de doublage (scope projet + globaux)
+    translate.py           # /status + traduction (DeepL/LibreTranslate)
   services/
-    ffmpeg_service.py      # extract_segment, extract_thumbnail, export_gif, burn_subtitles, probe_fps
+    ffmpeg_service.py      # extract_segment, extract_thumbnail, export_gif, probe_fps, run_ffmpeg_with_progress, detect_scene_cuts, make_proxy, h264_encoder_args/available_hw_encoders
     whisper_service.py     # transcribe_segment (singleton model)
-    subtitle_service.py    # export_srt, export_ass, export_detx (pro BR), export_croisille
-    clip_service.py        # store clips + update_boucles + update_fps
-    br_renderer.py         # rendu bande rythmo (font: atkinson/lisible/cursive/inter/jetbrains)
-    detection.py           # classify_char() — classifieur phonétique BR pro (miroir de detection.js)
+    subtitle_service.py    # export_srt/ass/detx (pro BR)/croisille
+    subtitle_import_service.py # parse_srt/ass/vtt/detx → dicts
+    clip_service.py        # store clips + update_boucles/fps/scene_cuts/project/...
+    br_renderer.py         # rendu bande rythmo + _draw_signs (burn détection) + polices uploadées
+    detection.py           # classify_char() (miroir detection.js)
     plex_service.py        # client Plex
     take_service.py        # store prises
-  fonts/
-    AtkinsonHyperlegible-Bold.ttf
-    Caveat.ttf
-    Inter.ttf
-    JetBrainsMono-Bold.ttf
-    ShantellSans.ttf       # ← à bundler si dispo (lisible = manuscrite lisible)
+    export_service.py      # record_export/list/get/delete (historique)
+    translate_service.py   # provider_status + translate (DeepL/LibreTranslate, env)
+    vocal_service.py       # separation_status + separate (Demucs two-stems)
+    jobs.py                # Job, JOBS dict, create_job, progress/cancel, JobStartResponse/JobStatus
+  fonts/                   # AtkinsonHyperlegible-Bold, Caveat, Inter, JetBrainsMono-Bold, ShantellSans
+  uploads/fonts/           # polices uploadées (gitignored) + _registry.json
+  segments/                # {id}.mp4, {id}_proxy.mp4, stems/ (séparation vocale)
 
 frontend/src/
-  App.jsx                  # top bar + nav rail + routing sections
+  App.jsx                  # top bar + nav rail + routing + handlers (rename/status/project/...)
   Icons.jsx                # set SVG unifié (Icon, ICONS)
   SettingsContext.jsx      # contexte préférences (accent, BR style, densité)
-  detection.js             # classifyChar() + SIGN_KINDS + DEFAULT_SIGN_TOGGLES (miroir de detection.py)
+  ProgressContext.jsx      # jobs[] + ProgressToasts (file de cartes empilées) + WS/poll
+  ToastContext.jsx         # undo-toast (suppression réplique)
+  detection.js             # classifyChar() + SIGN_KINDS + DEFAULT_SIGN_TOGGLES (miroir detection.py)
   components/
     Sidebar.jsx            # nav rail: Importer / Mes Clips / Memes / Réglages
-    ImportSection.jsx      # upload + timeline drag-to-create multi-clips
-    VideoEditor.jsx        # éditeur clip
-    TimelineBar.jsx        # timeline zoom + minimap
+    ImportSection.jsx      # upload + timeline drag-to-create + Plex tab
+    VideoEditor.jsx        # éditeur clip (job-mode batch)
+    TimelineBar.jsx        # timeline zoom + minimap (import)
+    BRTimeline.jsx         # nav plein-clip sous canvas BR (waveform/boucles/scenes/playhead)
     VideoPlayer.jsx        # player custom réutilisable
-    ClipsLibrary.jsx       # grille clips + filtres status
-    ClipCard.jsx           # card: thumbnail, rename, Doubler / ▶ / MP3 / GIF / ✕
-    DubbingWorkspace.jsx   # BR pro: SMPTE, détection layer, START/BIP/PI, boucles, auto-save 1.5s
-    SubtitleEditor.jsx     # tableau timecode + personnage + texte
+    ClipsLibrary.jsx       # grille clips + filtres status + chips projet
+    ClipCard.jsx           # card: thumbnail, rename, projet, Doubler / ▶ / MP3 / GIF / ✕
+    DubbingWorkspace.jsx   # BR pro: SMPTE, détection, boucles, undo/redo, proxy, traduction, scènes, auto-save
+    SubtitleEditor.jsx     # tableau timecode+perso+texte+note + import SRT/ASS/VTT/DetX
+    LexiconPanel.jsx       # lexique (onglet right pane)
     RecorderPanel.jsx      # enregistrement, take queue, A/B compare
-    ExportPanel.jsx        # SRT / ASS / DetX / Croisillé / MP4+BR / GIF / MP3 / WAV
-    MemeGenerator.jsx      # générateur memes
-    Preferences.jsx        # réglages (accent, BR style, densité)
-    PlexBrowser.jsx        # navigation bibliothèque Plex
+    ExportPanel.jsx        # exports + quality + GPU + plage perso + historique re-download
+    ShortcutsOverlay.jsx   # modal raccourcis (?)
+    MemeGenerator.jsx      # memes — player unifié, résultat remplace source
+    Preferences.jsx        # réglages (accent, BR style, densité, Whisper, Plex)
+    PlexBrowser.jsx        # connexion + navigation bibliothèque Plex (restylé)
 ```
 
-## Bugs connus
-- BR décalée ~1s après audio — cause probable: pré-roll AAC à l'extraction segment (`-ss` avant `-i` = snap keyframe). Fix à confirmer: `-ss` après `-i`. Slider `brOffset` (-2s à +2s) = échappatoire user.
+## Bugs connus / résolus
+- ~~BR décalée ~1s~~ : `-ss` après `-i` dans extract_segment (fix appliqué). Slider `brOffset` (-2s/+2s) = échappatoire.
+- ~~Deadlock jobs ffmpeg~~ : `run_ffmpeg_with_progress` stderr PIPE non drainé → DEVNULL (fix).
 - Vite proxy doit cibler `http://127.0.0.1:8000` (pas `localhost`) — Windows IPv6
 
 ## Export MP4 + BR — bonnes pratiques (texte défilant lisible)
@@ -150,11 +162,15 @@ off      INTEGER     # 0/1 — hors-champ → trait continu sous la ligne
 dos      INTEGER     # 0/1 — de dos → trait pointillé
 ambiance INTEGER     # 0/1 — ambiance ON/OFF → ▸◂ + couleur désaturée
 plan_cut REAL        # timecode d'un changement de plan dans la ligne (nullable)
+note     TEXT        # annotation libre par réplique (point accent sur canvas)
 ```
 
 ### Clip (colonnes ajoutées)
 ```python
-fps  REAL  # frame rate source détecté via ffprobe à l'import (PAL=25 défaut)
+fps        REAL  # frame rate source détecté via ffprobe à l'import (PAL=25 défaut)
+scene_cuts TEXT  # JSON [sec] — changements de plan détectés (ffmpeg scene filter)
+project    TEXT  # dossier/projet (nullable) — groupement ClipsLibrary
+# has_proxy = dérivé (os.path.isfile segments/{id}_proxy.mp4), pas une colonne
 ```
 
 ### Boucle (table créée)
@@ -162,6 +178,22 @@ fps  REAL  # frame rate source détecté via ffprobe à l'import (PAL=25 défaut
 id, clip_id FK, number INT, start FLOAT, end FLOAT
 # PUT /api/clips/{id}/boucles — remplace tout le tableau
 ```
+
+### Export (table créée) — historique re-download
+```python
+id, clip_id FK, format, path, filename, media_type, size_bytes, quality, params(JSON), created_at
+# GET /api/export/list?clip_id= · GET /download/{id} · DELETE /{id}
+```
+
+### LexiconEntry (table créée) — lexique de doublage
+```python
+id, project, term, translation, phonetic, note, created_at   # project='' = global
+# GET/POST /api/lexicon (scope projet + globaux) · PUT/DELETE /{id}
+```
+
+### Migrations
+Toutes via guards idempotents `ALTER TABLE ... ADD COLUMN` dans `database.py init_db()`
+(pas d'Alembic). Nouvelles tables via `Base.metadata.create_all`.
 
 ### Signs (extension de words[].signs)
 ```jsonc
@@ -215,7 +247,7 @@ Backend: `_BR_FONT_FILES["lisible"]` → fallback atkinson si fichier absent.
 
 ## Roadmap
 
-### Fait
+### Fait — base
 - Import timeline drag-to-create multi-clips + zoom/minimap + source URL
 - Préférences (accent, BR style, densité) + SettingsContext
 - Enregistrement: RecorderPanel, take queue, A/B compare
@@ -223,43 +255,51 @@ Backend: `_BR_FONT_FILES["lisible"]` → fallback atkinson si fichier absent.
 - Set d'icônes SVG unifié (Icons.jsx)
 - Export MP3/WAV
 - VideoPlayer custom (composant)
-- Intégration Plex (PlexBrowser + route)
+- Intégration Plex (PlexBrowser + route, restyle complet)
 - Générateur de memes
-- **BR Pro (session 2026-05-30)** : SMPTE fmtTC, détection layer (signes phonétiques), START/BIP/PI, boucles, line flags (off/dos/ambiance/plan_cut), Clip.fps, DetX pro (signes + fps + flags), Croisillé, police Shantell lisible
+- **BR Pro (2026-05-30)** : SMPTE fmtTC, détection layer, START/BIP/PI, boucles, line flags, Clip.fps, DetX pro, Croisillé, police Shantell
 
-### Priorité haute — prochaine session
+### Fait — UPGRADE_PLAN intégral (P0 → P3) + handoff (2026-06-04)
 
-#### Bug délai BR ~1s
-- `-ss` déjà passé après `-i` dans extract_segment (fix appliqué) — vérifier en production
+**P0 — parité workflow BR**
+- Navigation image par image (⇧←/→ = 1/clip.fps)
+- Import SRT / ASS / VTT / **DetX** (`subtitle_import_service`, `POST /api/clips/{id}/import-subtitles`)
+- **BRTimeline** (`BRTimeline.jsx`) : barre nav plein-clip sous le canvas — waveform, ticks répliques, bandes boucles, scene cuts, bracket fenêtre visible, clic-pour-seek
+- Marqueurs d'étirement (barres compression colorées sous les blocs mots)
 
-#### Édition manuelle des signes de détection
-- Clic sur une lettre dans le canvas → cycle signe (null → labiale → semi → … → null)
-- Persisté dans `words[].signs` via auto-save
+**P1 — qualité de vie**
+- Undo/redo (pile 50 snapshots, Ctrl+Z / Ctrl+Y / Ctrl+⇧Z, boutons ↶/↷ transport)
+- Détection auto changements de plan (`detect_scene_cuts`, `Clip.scene_cuts`, cluster « Plans »)
+- Notes par réplique (`Subtitle.note`, éditeur inline, point accent canvas)
+- Export GPU (NVENC/QSV/AMF, `h264_encoder_args`, détection + repli libx264)
+- Toggle rendu mot-par-mot (`wordByWord`)
+- Burn détection MP4 (Phase 2 — `_draw_signs`/`_resolve_signs`/`_merge_words`)
 
-#### Phase 2 : burn détection dans MP4 — FAIT
-- `br_renderer.py` `_draw_signs()` miroir du canvas (graphite #c7ccd4, mêmes
-  géométries : labiale barre / semi pointillé / fricative chevron / arrondie
-  cercle / ouverte arc). `_resolve_signs()` miroir de `resolveSigns` (persistés
-  gagnent ; auto-classif saute `ouverte`). `_merge_words` préserve+décale les
-  `signs` sur fusion de contraction. Câblé via `render_br_video(detection_burn,
-  detection_auto)` ← `ExportRequest.detection_burn` (case « Incruster la
-  détection », défaut off).
+**P2 — plateforme**
+- Proxy vidéo 720p (`make_proxy`, `POST /{id}/proxy` job, toggle Master/720p, has_proxy)
+- Export plage perso (toutes formats : `_trim_subs_to_range` + MP4 -ss/-t, « Plage personnalisée » dans ExportPanel)
+- File d'export = cartes de progression empilées (`ProgressToasts`) + historique re-download (`Export` model)
 
-#### Whisper — config langue
-- UI pour choisir la langue de transcription par clip
+**P3 — long terme**
+- Dossiers projet (`Clip.project`, `/project`, chips ClipsLibrary, assign ClipCard)
+- Lexique de doublage (`LexiconEntry`, `/api/lexicon`, onglet « Lexique », scope projet + globaux)
+- Traduction auto (`translate_service` — DeepL/LibreTranslate via env, `🌐 Traduire` gated, undoable)
+- Upload polices TTF/OTF (`/api/fonts`, @font-face, picker, export WYSIWYG)
+- Séparation vocale IA (`vocal_service` Demucs, `/separate-vocals` job, `🎚 Séparer voix` gated)
 
-#### UI polish
-- Conteneur sous-titres redimensionnable (right pane Doublage)
+**UX / divers**
+- Anneaux focus clavier (`:focus-visible`)
+- ⟲ loop-active déplacé dans la barre transport (DOUBLAGE_IA §3)
+- Whisper config langue par clip
+- Meme : player unifié (1 video, IN/OUT gated) + résultat remplace la source
+- Fix deadlock `run_ffmpeg_with_progress` (stderr PIPE → DEVNULL)
+- Fix dépréciation `asyncio.get_event_loop` → `get_running_loop` (5 endroits)
 
-### Priorité moyenne
+### Dégradation gracieuse (deps optionnelles)
+- **Traduction** : `DEEPL_API_KEY` ou `LIBRETRANSLATE_URL` (+ `LIBRETRANSLATE_API_KEY`). Sinon `GET /api/translate/status` → `available:false`, contrôle masqué, `POST` → 503.
+- **Séparation vocale** : `pip install demucs`. Sinon `GET /api/clips/vocal-separation/status` → `available:false`, contrôle masqué, `POST` → 503.
 
-#### Gestion utilisateurs
-- Auth (JWT ou session)
-- Chaque user gère son contenu
-- Multi-user support
-
-### Priorité basse — long terme
-
-#### Intégrations tierces
-- **Stremio** : API Stremio locale pour lire vidéos
-- **qBittorrent** : Web UI API → télécharger → importer automatiquement
+### Reste à faire (non démarré)
+- **Gestion utilisateurs** : auth (JWT/session), multi-user, contenu par user
+- **Intégrations tierces** : Stremio (lecture vidéo), qBittorrent (download → import auto)
+- `.rythmo.txt` import (DetX XML déjà couvert)
