@@ -261,6 +261,9 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   const [translateProvider, setTranslateProvider] = useState(null)
   const [translateTarget, setTranslateTarget] = useState('en')
   const [translating, setTranslating] = useState(false)
+  // AI vocal separation — gated on Demucs availability.
+  const [vocalAvailable, setVocalAvailable] = useState(false)
+  const [separatingVocals, setSeparatingVocals] = useState(false)
   // Waveform + scene cuts for the full-clip nav timeline (BRTimeline).
   const [waveformData, setWaveformData] = useState(null)
   const [sceneCuts, setSceneCuts] = useState(clip.scene_cuts || [])
@@ -579,7 +582,30 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   useEffect(() => {
     fetch('/api/translate/status').then(r => r.ok ? r.json() : null)
       .then(d => { if (d) setTranslateProvider(d) }).catch(() => {})
+    fetch('/api/clips/vocal-separation/status').then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) setVocalAvailable(!!d.available) }).catch(() => {})
   }, [])
+
+  async function separateVocals() {
+    setSeparatingVocals(true)
+    const fireJob = async () => {
+      const res = await fetch(`/api/clips/${clip.clip_id}/separate-vocals`, { method: 'POST' })
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail || `HTTP ${res.status}`) }
+      return (await res.json()).job_id
+    }
+    try {
+      const jobId = await fireJob()
+      progress.start({
+        kind: 'vocals', title: 'Séparation vocale (Demucs)', jobId, retry: fireJob,
+        onDone: () => { setSeparatingVocals(false); setToast({ msg: 'Voix isolée — pistes prêtes dans segments/stems', type: 'success' }); setTimeout(() => setToast(null), 4000) },
+        onError: (err) => { setSeparatingVocals(false); setToast({ msg: 'Séparation : ' + err.message, type: 'error' }); setTimeout(() => setToast(null), 5000) },
+        onCancel: () => setSeparatingVocals(false),
+      })
+    } catch (e) {
+      setSeparatingVocals(false)
+      setToast({ msg: 'Séparation : ' + e.message, type: 'error' }); setTimeout(() => setToast(null), 5000)
+    }
+  }
 
   async function translateAll() {
     const subs = subtitlesRef.current
@@ -2225,6 +2251,16 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
               title={`Traduire toutes les répliques en ${translateTarget.toUpperCase()} (${translateProvider.provider}) — annulable`}
               style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 11px', background: 'var(--surface2)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 6, fontSize: 11.5, fontWeight: 600, flexShrink: 0, cursor: 'pointer', opacity: translating ? 0.5 : 1 }}>
               🌐 {translating ? '…' : 'Traduire'}
+            </button>
+          </>
+        )}
+        {vocalAvailable && (
+          <>
+            <div style={{ width: 1, height: 20, background: 'var(--border2)', flexShrink: 0 }} />
+            <button onClick={separateVocals} disabled={separatingVocals}
+              title="Isoler la voix (VO) de la musique/FX — Demucs"
+              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 11px', background: 'var(--surface2)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 6, fontSize: 11.5, fontWeight: 600, flexShrink: 0, cursor: 'pointer', opacity: separatingVocals ? 0.5 : 1 }}>
+              🎚 {separatingVocals ? '…' : 'Séparer voix'}
             </button>
           </>
         )}

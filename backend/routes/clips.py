@@ -21,6 +21,7 @@ from services.clip_service import (
 from services.ffmpeg_service import extract_segment, extract_thumbnail, probe_streams, probe_fps, detect_scene_cuts, make_proxy
 from services.jobs import create_job, raise_if_cancelled, CancelledJobError, JobStartResponse
 from services.subtitle_import_service import parse_subtitle_file
+from services.vocal_service import separate as separate_vocals, separation_status, VocalSeparationUnavailable
 
 router = APIRouter()
 
@@ -390,6 +391,53 @@ async def delete_clip_proxy(clip_id: str):
         except OSError:
             pass
     return {"ok": True}
+
+
+@router.get("/vocal-separation/status")
+async def vocal_status():
+    """Is Demucs available for vocal separation (UI gates the feature)."""
+    return separation_status()
+
+
+@router.post("/{clip_id}/separate-vocals", response_model=JobStartResponse)
+async def separate_clip_vocals(clip_id: str):
+    """Isolate vocals (VO) from the music/FX bed via Demucs. Job-mode.
+    Outputs under segments/stems/; result paths returned in the job."""
+    segment = f"segments/{clip_id}.mp4"
+    if not os.path.isfile(segment):
+        raise HTTPException(404, "Segment file missing")
+    if not separation_status()["available"]:
+        raise HTTPException(503, "Demucs n'est pas installé (pip install demucs)")
+    job = create_job("vocals", title="Séparation vocale")
+
+    def worker():
+        try:
+            job.update(stage="Séparation (Demucs)", pct=0.05)
+            out_dir = "segments/stems"
+
+            def on_prog(pct, eta):
+                job.update(stage="Séparation (Demucs)", pct=0.05 + 0.92 * pct, eta=eta)
+
+            res = separate_vocals(segment, out_dir,
+                                  on_progress=on_prog,
+                                  is_cancelled=lambda: job.cancelled)
+            if job.cancelled:
+                return
+            # Expose web paths (segments/ is statically mounted).
+            job.done({
+                "vocals": res["vocals"].replace("\\", "/"),
+                "no_vocals": res["no_vocals"].replace("\\", "/"),
+                "clip_id": clip_id,
+            })
+        except VocalSeparationUnavailable as e:
+            job.fail(str(e))
+        except CancelledJobError:
+            pass
+        except Exception as e:
+            job.fail(str(e))
+
+    asyncio.get_running_loop().run_in_executor(None, worker)
+    return {"job_id": job.id}
 
 
 @router.post("/{clip_id}/detect-scenes")
