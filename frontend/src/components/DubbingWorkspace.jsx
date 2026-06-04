@@ -268,6 +268,10 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   const [hoverHint, setHoverHint] = useState(null)
   const [ctxMenu, setCtxMenu] = useState(null)
   const [loopRegion, setLoopRegion] = useState(null)
+  // Loop-active-réplique — lives in the transport bar (navigation aid),
+  // not the band toolbar (DOUBLAGE_IA §3). Target snapshotted on toggle.
+  const [loopActive, setLoopActive] = useState(false)
+  const loopSubRef = useRef(null)
   const [locked, setLocked] = useState(false)
   // DOUBLAGE_IA_REVIEW §6.2 — header character pills FILTER the band.
   // Empty set = no filter (show all). Multi-select toggle: click adds/removes.
@@ -369,6 +373,26 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
     const t = currentTime + brOffset
     return subtitles.find(s => t >= s.start && t <= s.end) || null
   }, [subtitles, currentTime, brOffset])
+
+  function toggleLoopActive() {
+    if (loopActive) { setLoopActive(false); return }
+    const sub = (selectedIdx != null ? subtitles[selectedIdx] : null) || activeSubtitle
+    if (!sub) return
+    loopSubRef.current = sub
+    const v = videoRef.current
+    if (v && (v.currentTime < sub.start || v.currentTime > sub.end)) v.currentTime = sub.start
+    setLoopActive(true)
+  }
+  useEffect(() => {
+    if (!loopActive) return
+    const v = videoRef.current; if (!v) return
+    const check = () => {
+      const s = loopSubRef.current
+      if (s && v.currentTime > s.end + 0.05) v.currentTime = s.start
+    }
+    v.addEventListener('timeupdate', check)
+    return () => v.removeEventListener('timeupdate', check)
+  }, [loopActive])
 
   // Load comédien names (per-clip, local)
   useEffect(() => {
@@ -2224,6 +2248,10 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
             </button>
             <button onClick={gotoNextSub} style={tBtn}><Ic d={ICONS.next} size={14} /></button>
             <button onClick={() => { const v = videoRef.current; if (v) v.currentTime = v.duration }} style={tBtn}><Ic d={ICONS.end} size={14} /></button>
+            <button onClick={toggleLoopActive} title="Boucler sur la réplique active/sélectionnée"
+              style={{ ...tBtn, color: loopActive ? 'var(--accent)' : 'var(--text2)', background: loopActive ? 'var(--accent-soft)' : undefined }}>
+              <Ic d={ICONS.loop} size={14} />
+            </button>
             <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, color: 'var(--text2)', flexShrink: 0, marginLeft: 4 }}>
               {fmt(currentTime)} / {fmt(duration)}
             </span>
@@ -2762,7 +2790,6 @@ function BandeRythmoToolbar({
   const [detAnchor, setDetAnchor] = React.useState({ bottom: 60, left: 200 })
   const [boucleAnchor, setBoucleAnchor] = React.useState({ bottom: 60, left: 200 })
   const toolbarRef = React.useRef(null)
-  const [loop, setLoop] = React.useState(false)
   const charPickerRef = React.useRef(null)
 
   // Anchor a portaled dropdown above its trigger button. Tags the trigger with
@@ -2801,15 +2828,6 @@ function BandeRythmoToolbar({
     const id = setTimeout(() => document.addEventListener('mousedown', onDown), 0)
     return () => { clearTimeout(id); document.removeEventListener('mousedown', onDown) }
   }, [showCharPicker, showDetection, showBoucles, showResp, showReact, showNote, showInserer, showAffichage])
-
-  // Loop the active sub when loop is on
-  React.useEffect(() => {
-    if (!loop || !target || !videoRef.current) return
-    const v = videoRef.current
-    const check = () => { if (v.currentTime > target.end + 0.05) v.currentTime = target.start }
-    v.addEventListener('timeupdate', check)
-    return () => v.removeEventListener('timeupdate', check)
-  }, [loop, target, videoRef])
 
   function updateTarget(patch) {
     if (targetIdx == null) return
@@ -3046,12 +3064,8 @@ function BandeRythmoToolbar({
         </button>
       </div>
 
-      {/* Boucle / Lock */}
+      {/* Lock */}
       <div style={grp}>
-        <button onClick={() => setLoop(l => !l)} title="Boucler sur la réplique active"
-          style={{ ...btn(target != null, loop), padding: '0 9px', gap: 5, fontSize: 11.5 }}>
-          <Ic d={ICONS.loop} size={14} />Boucle<Hint>L</Hint>
-        </button>
         <button onClick={() => setLocked(l => !l)} title={locked ? 'Déverrouiller la BR' : 'Verrouiller la BR (empêche les éditions accidentelles)'}
           style={btn(true, locked)}><Ic d={locked ? ICONS.lock : ICONS.lockOpen} size={14} /></button>
       </div>
