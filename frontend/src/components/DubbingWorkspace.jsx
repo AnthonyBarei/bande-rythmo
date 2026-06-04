@@ -2734,6 +2734,9 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
                 getCanvasWidth={() => canvasRef.current?.width || 1200}
                 brFont={brFont}
                 brStyle={rythmoStyle}
+                duration={duration}
+                getCurrentTime={() => videoRef.current?.currentTime || 0}
+                loopRegion={loopRegion}
               />
             </div>
           </div>
