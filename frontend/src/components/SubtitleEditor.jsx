@@ -452,12 +452,15 @@ const toolBtn = {
   display: 'inline-flex', alignItems: 'center', gap: 4,
 }
 
-export default function SubtitleEditor({ subtitles, onChange, currentTime = 0, onSeek, selectedIdx, setSelectedIdx, compact = false, onDelete, charFilter }) {
+export default function SubtitleEditor({ subtitles, onChange, currentTime = 0, onSeek, selectedIdx, setSelectedIdx, compact = false, onDelete, charFilter, clipId }) {
   // charFilter (optional Set of character names): when non-empty, hide rows whose
   // character isn't in the set. Indices stay aligned with the unfiltered array
   // so update/delete callbacks still work.
   const activeRef = useRef(null)
   const prevActiveIdx = useRef(-1)
+  const importInputRef = useRef(null)
+  const [importing, setImporting] = useState(false)
+  const [importError, setImportError] = useState(null)
 
   const charList = Array.from(new Set(subtitles.map(s => s.character || '')))
   const charMap = Object.fromEntries(charList.map((c, i) => [c, i]))
@@ -508,22 +511,70 @@ export default function SubtitleEditor({ subtitles, onChange, currentTime = 0, o
     onChange([...subtitles].sort((a, b) => a.start - b.start))
   }
 
+  async function handleImportFile(e) {
+    const file = e.target.files?.[0]
+    if (!file || !clipId) return
+    e.target.value = ''
+    setImporting(true)
+    setImportError(null)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      fd.append('mode', subtitles.length > 0 ? 'replace' : 'replace')
+      const res = await fetch(`/api/clips/${clipId}/import-subtitles`, { method: 'POST', body: fd })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`)
+      // data.clip.subtitles is the full updated list
+      onChange(data.clip?.subtitles || [])
+    } catch (err) {
+      setImportError(err.message)
+    } finally {
+      setImporting(false)
+    }
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      {/* Toolbar — full editor only; compact pane adds via ⇧↵ */}
-      {!compact && (
+      {/* Toolbar — full editor shows all controls; compact only shows import */}
+      {(!compact || clipId) && (
         <div style={{ display: 'flex', gap: 4, padding: '6px 10px', flexWrap: 'wrap', alignItems: 'center', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)' }}>
-          <button onClick={addNew} style={{ ...toolBtn, color: 'var(--accent)', borderColor: 'rgba(245,197,24,0.35)', background: 'rgba(245,197,24,0.06)' }}>
-            + Réplique
-          </button>
-          <button onClick={sortByTime} style={toolBtn}>⇅ Trier</button>
-          <div style={{ width: 1, height: 16, background: 'var(--border2)', margin: '0 2px' }} />
-          <span style={{ fontSize: 10, color: 'var(--text3)' }}>Décaler</span>
-          <button onClick={() => shiftAll(-1)} style={toolBtn}>−1s</button>
-          <button onClick={() => shiftAll(0.1)} style={toolBtn}>+.1</button>
-          <button onClick={() => shiftAll(-0.1)} style={toolBtn}>−.1</button>
-          <button onClick={() => shiftAll(1)} style={toolBtn}>+1s</button>
+          {!compact && <>
+            <button onClick={addNew} style={{ ...toolBtn, color: 'var(--accent)', borderColor: 'rgba(245,197,24,0.35)', background: 'rgba(245,197,24,0.06)' }}>
+              + Réplique
+            </button>
+            <button onClick={sortByTime} style={toolBtn}>⇅ Trier</button>
+            <div style={{ width: 1, height: 16, background: 'var(--border2)', margin: '0 2px' }} />
+            <span style={{ fontSize: 10, color: 'var(--text3)' }}>Décaler</span>
+            <button onClick={() => shiftAll(-1)} style={toolBtn}>−1s</button>
+            <button onClick={() => shiftAll(0.1)} style={toolBtn}>+.1</button>
+            <button onClick={() => shiftAll(-0.1)} style={toolBtn}>−.1</button>
+            <button onClick={() => shiftAll(1)} style={toolBtn}>+1s</button>
+          </>}
           <div style={{ flex: 1 }} />
+          {clipId && (
+            <>
+              <input
+                ref={importInputRef}
+                type="file"
+                accept=".srt,.ass,.ssa,.vtt"
+                style={{ display: 'none' }}
+                onChange={handleImportFile}
+              />
+              <button
+                onClick={() => importInputRef.current?.click()}
+                disabled={importing}
+                title="Importer sous-titres (SRT / ASS / VTT) — remplace les répliques existantes"
+                style={{ ...toolBtn, color: 'var(--text2)', opacity: importing ? 0.5 : 1 }}>
+                {importing ? '…' : '⇑ Import'}
+              </button>
+            </>
+          )}
+          {importError && (
+            <span style={{ fontSize: 10, color: 'var(--danger)', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+              title={importError}>
+              ✕ {importError}
+            </span>
+          )}
           <span style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>
             {subtitles.length} répl.
           </span>

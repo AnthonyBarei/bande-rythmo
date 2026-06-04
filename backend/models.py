@@ -71,6 +71,23 @@ class Boucle(Base):
     clip = relationship("Clip", back_populates="boucles")
 
 
+class Export(Base):
+    """Persisted export artifact. Created when a job finishes successfully.
+    Lets users re-download past exports + audit what was produced."""
+    __tablename__ = "exports"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    clip_id = Column(String, ForeignKey("clips.clip_id", ondelete="CASCADE"), nullable=False)
+    format = Column(String, nullable=False)        # srt|ass|detx|mp4|gif|mp3|wav|croisille
+    path = Column(String, nullable=False)          # local file path under exports/
+    filename = Column(String, nullable=False)      # download filename
+    media_type = Column(String, nullable=False, default="application/octet-stream")
+    size_bytes = Column(Integer, nullable=False, default=0)
+    quality = Column(String, nullable=True)        # MP4 only: draft|standard|youtube
+    params = Column(String, nullable=True)         # JSON snapshot of ExportRequest knobs
+    created_at = Column(DateTime, default=datetime.now)
+
+
 class Take(Base):
     __tablename__ = "takes"
 

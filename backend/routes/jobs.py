@@ -10,6 +10,13 @@ from services.jobs import get_job, cleanup_old_jobs
 router = APIRouter()
 
 
+@router.get("/")
+async def list_jobs():
+    """List all known jobs (running + recently finished). Diagnostic."""
+    from services.jobs import JOBS
+    return [j.to_dict() for j in JOBS.values()]
+
+
 @router.get("/{job_id}")
 async def status(job_id: str):
     job = get_job(job_id)

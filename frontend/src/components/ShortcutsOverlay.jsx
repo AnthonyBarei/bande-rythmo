@@ -21,9 +21,9 @@ const GROUPS = [
       { keys: ['J'],                     label: 'Vitesse 0,5×' },
       { keys: ['L'],                     label: 'Vitesse 1,5×' },
       { keys: ['M'],                     label: 'Mute' },
-      { keys: ['←', '→'],                label: '±5 s' },
-      { keys: ['⇧←', '⇧→'],              label: '±1 s' },
-      { keys: [',', '.'],                label: '±1 frame (24 fps)' },
+      { keys: ['←', '→'],                label: '±1 s' },
+      { keys: ['⇧←', '⇧→'],              label: '±1 image (fps clip)' },
+      { keys: [',', '.'],                label: '±40 ms (~1 image 25 fps)' },
     ],
   },
   {

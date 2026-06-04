@@ -245,6 +245,9 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   const [detectionAuto, setDetectionAuto] = useState(() => {
     try { return localStorage.getItem('br-detection-auto') !== 'false' } catch { return true }
   })
+  const [wordByWord, setWordByWord] = useState(() => {
+    try { return localStorage.getItem('br-word-by-word') !== 'false' } catch { return true }
+  })
   const [sidebarWidth, setSidebarWidth] = useState(400)
   const [brPanelHeight, setBrPanelHeight] = useState(280)
   const [fontScale, setFontScale] = useState(1.0)
@@ -298,6 +301,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   const playingRef = useRef(false)
   const fontScaleRef = useRef(1.0)
   const brFontRef = useRef('atkinson')
+  const wordByWordRef = useRef(true)
   const detectionRef = useRef(detection)
   const detectionAutoRef = useRef(detectionAuto)
   const bouclesRef = useRef(boucles)
@@ -315,6 +319,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   playingRef.current = playing
   fontScaleRef.current = fontScale
   brFontRef.current = brFont
+  wordByWordRef.current = wordByWord
   detectionRef.current = detection
   detectionAutoRef.current = detectionAuto
   bouclesRef.current = boucles
@@ -376,6 +381,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   // Persist détection toggles
   useEffect(() => { try { localStorage.setItem('br-detection', JSON.stringify(detection)) } catch {} }, [detection])
   useEffect(() => { try { localStorage.setItem('br-detection-auto', String(detectionAuto)) } catch {} }, [detectionAuto])
+  useEffect(() => { try { localStorage.setItem('br-word-by-word', String(wordByWord)) } catch {} }, [wordByWord])
 
   // Sync boucles in from clip whenever clip swaps
   useEffect(() => { setBoucles(clip.boucles || []) }, [clip.clip_id])
@@ -692,7 +698,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
           if (canvas) canvas._brFontResolved = ctx.font
           ctx.textBaseline = 'middle'
 
-          const words = validWords(sub)
+          const words = (wordByWordRef.current ? validWords(sub) : null)
             || [{ w: sub.text, start: sub.start, end: sub.end }]
 
           for (const wd of words) {
@@ -738,6 +744,23 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
             }
             ctx.restore()
             ctx.shadowBlur = 0
+
+            // ── Stretch marker — 2px bar at bottom of word block ──
+            // Color-codes compression (amber/red) and sparse hold (blue).
+            // Only drawn in word-by-word mode when scaleX deviates from natural.
+            if (wordByWordRef.current && words.length > 1) {
+              const mc = scaleX < 0.45
+                ? 'rgba(229,69,69,0.80)'
+                : scaleX < 0.75
+                ? 'rgba(245,197,24,0.70)'
+                : scaleX >= 1.05
+                ? 'rgba(126,192,255,0.55)'
+                : null
+              if (mc) {
+                ctx.fillStyle = mc
+                ctx.fillRect(wbx, yTop + trackH - 2, wbw, 2)
+              }
+            }
 
             // ── Détection signs — graphite, pinned to letter x-positions ──
             // Drawn AFTER the glyphs (so they sit visually on top), inside the
@@ -1200,7 +1223,9 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
             const prev = [...subs].reverse().find(s => s.start < t - 0.05)
             if (prev) v.currentTime = prev.start
           } else {
-            v.currentTime = Math.max(0, t - (e.shiftKey ? 0.1 : 1))
+            // Shift+← = one frame back; ← = 1s back
+            const step = e.shiftKey ? 1 / (clipFpsRef.current || 25) : 1
+            v.currentTime = Math.max(0, t - step)
           }
           break
         case 'ArrowRight':
@@ -1209,7 +1234,9 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
             const next = subs.find(s => s.start > t + 0.05)
             if (next) v.currentTime = next.start
           } else {
-            v.currentTime = Math.min(v.duration || 0, t + (e.shiftKey ? 0.1 : 1))
+            // Shift+→ = one frame forward; → = 1s forward
+            const step = e.shiftKey ? 1 / (clipFpsRef.current || 25) : 1
+            v.currentTime = Math.min(v.duration || 0, t + step)
           }
           break
         case ',': e.preventDefault(); v.pause(); v.currentTime = Math.max(0, t - 0.04); break
@@ -1398,7 +1425,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
       const left = c.cursor_x + (sub.start - c.t) * c.pxSec
       const right = c.cursor_x + (sub.end - c.t) * c.pxSec
       if (c.x < left || c.x > right) continue
-      const words = validWords(sub) || (sub.words || [{ w: sub.text || '', start: sub.start, end: sub.end }])
+      const words = (wordByWord ? validWords(sub) : null) || [{ w: sub.text || '', start: sub.start, end: sub.end }]
       for (let wIdx = 0; wIdx < words.length; wIdx++) {
         const wd = words[wIdx]
         if (!wd.w) continue
@@ -2115,7 +2142,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
                       <button onClick={transcribe} style={{ padding: '6px 16px', background: '#f5c518', color: '#000', fontWeight: 600, borderRadius: 4, fontSize: 12 }}>◉ Transcrire</button>
                     </div>
                   ) : (
-                    <SubtitleEditor subtitles={subtitles} onChange={handleSubtitlesChange} onDelete={deleteReplicaWithUndo} currentTime={currentTime} onSeek={seekTo} selectedIdx={selectedIdx} setSelectedIdx={setSelectedIdx} compact={true} charFilter={charFilter} />
+                    <SubtitleEditor subtitles={subtitles} onChange={handleSubtitlesChange} onDelete={deleteReplicaWithUndo} currentTime={currentTime} onSeek={seekTo} selectedIdx={selectedIdx} setSelectedIdx={setSelectedIdx} compact={true} charFilter={charFilter} clipId={clip.clip_id} />
                   )}
                 </div>
                 {showRecorder && (
@@ -2305,6 +2332,8 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
           clipFps={clipFps}
           brFont={brFont}
           setBrFont={setBrFont}
+          wordByWord={wordByWord}
+          setWordByWord={setWordByWord}
         />
         {/* Canvas */}
         <div style={{ position: 'relative', flex: 1, minHeight: 0, overflow: 'hidden' }}>
@@ -2458,6 +2487,7 @@ function BandeRythmoToolbar({
   detection, setDetection, detectionAuto, setDetectionAuto,
   boucles = [], onAddBoucle, onRemoveBoucle, clipFps = 25,
   brFont = 'atkinson', setBrFont = () => {},
+  wordByWord = true, setWordByWord = () => {},
 }) {
   const [showDetection, setShowDetection] = React.useState(false)
   const [showBoucles, setShowBoucles] = React.useState(false)
@@ -3130,6 +3160,20 @@ function BandeRythmoToolbar({
             <button onClick={() => setFontScale(s => Math.max(0.6, s - 0.1))} style={btn(true)}>A−</button>
             <span style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--font-mono)', flex: 1, textAlign: 'center' }}>{Math.round(fontScale * 100)} %</span>
             <button onClick={() => setFontScale(s => Math.min(2.0, s + 0.1))} style={btn(true)}>A+</button>
+          </div>
+
+          {/* Rendu mot-à-mot */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <span style={{ fontSize: 10.5, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, width: 80 }}>Rythmo</span>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 12, color: 'var(--text2)' }}>
+              <input type="checkbox" checked={wordByWord} onChange={e => setWordByWord(e.target.checked)} />
+              Rendu mot par mot
+            </label>
+            <span style={{ fontSize: 10.5, color: 'var(--text4)', flex: 1, textAlign: 'right' }}>
+              {wordByWord
+                ? <span style={{ color: 'var(--accent)' }}>▌ marqueurs d'étirement</span>
+                : 'ligne entière'}
+            </span>
           </div>
 
           {/* Incrustation vidéo (BR in player) */}

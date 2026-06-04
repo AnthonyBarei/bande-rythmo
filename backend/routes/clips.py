@@ -12,13 +12,15 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from typing import Any, Dict, List
 
-from database import get_db
+from database import get_db, SessionLocal
 from services.clip_service import (
     create_clip, delete_clip, get_clip,
     list_clips, update_name, update_status, update_subtitles,
     update_boucles, update_fps,
 )
 from services.ffmpeg_service import extract_segment, extract_thumbnail, probe_streams, probe_fps
+from services.jobs import create_job, raise_if_cancelled, CancelledJobError, JobStartResponse
+from services.subtitle_import_service import parse_subtitle_file
 
 router = APIRouter()
 
@@ -134,6 +136,70 @@ async def create_batch(
     ]
 
 
+@router.post("/batch-local-job", response_model=JobStartResponse)
+async def create_batch_local_job(req: BatchLocalRequest):
+    """Job-mode batch clip cut from a local/HTTP source.
+    Per-clip progress: pct = (i + sub_pct) / total. Cancel = job.cancel_event.
+    Worker owns its own DB session — request session is closed by the time
+    the BG task runs."""
+    if not req.path.startswith("http") and not os.path.isfile(req.path):
+        raise HTTPException(400, f"File not found: {req.path}")
+    if not req.clips:
+        raise HTTPException(400, "No clips provided")
+
+    source_filename = req.source_filename or os.path.basename(req.path)
+    total = len(req.clips)
+    clips_data = [c.dict() for c in req.clips]
+    path = req.path
+    job = create_job("import-batch", title=f"Découpe {total} clip{'s' if total > 1 else ''}")
+
+    def worker():
+        db = SessionLocal()
+        try:
+            job.update(stage="Analyse source (fps)", pct=0.02)
+            raise_if_cancelled(job)
+            source_fps = probe_fps(path)
+
+            results = []
+            for i, c in enumerate(clips_data):
+                raise_if_cancelled(job)
+                base = i / total
+                stride = 1.0 / total
+                clip_id = str(uuid.uuid4())
+                segment_path = f"segments/{clip_id}.mp4"
+                thumb_path = f"thumbnails/{clip_id}.jpg"
+
+                job.update(stage=f"Extraction clip {i+1}/{total}", pct=base + stride * 0.10)
+                extract_segment(path, c["start"], c["end"], segment_path,
+                                c.get("video_stream"), c.get("audio_stream"))
+                raise_if_cancelled(job)
+
+                job.update(stage=f"Vignette clip {i+1}/{total}", pct=base + stride * 0.85)
+                try:
+                    mid = (c["end"] - c["start"]) / 2
+                    extract_thumbnail(segment_path, thumb_path, mid)
+                except Exception:
+                    thumb_path = None
+
+                row = create_clip(
+                    db, clip_id, c["name"].strip() or f"Clip {clip_id[:6]}",
+                    source_filename, c["start"], c["end"], segment_path, thumb_path,
+                    source_path=path, fps=source_fps,
+                )
+                results.append(row)
+
+            job.done({"clips": results, "count": len(results)})
+        except CancelledJobError:
+            pass
+        except Exception as e:
+            job.fail(str(e))
+        finally:
+            db.close()
+
+    asyncio.get_event_loop().run_in_executor(None, worker)
+    return {"job_id": job.id}
+
+
 @router.post("/probe-local")
 async def probe_streams_local(req: ProbeLocalRequest):
     if not req.path.startswith("http") and not os.path.isfile(req.path):
@@ -207,6 +273,63 @@ async def set_subtitles(clip_id: str, req: UpdateSubtitlesRequest, db: Session =
     if not clip:
         raise HTTPException(404, "Clip not found")
     return clip
+
+
+@router.post("/{clip_id}/import-subtitles")
+async def import_subtitles(
+    clip_id: str,
+    file: UploadFile = File(...),
+    mode: str = Form("replace"),   # "replace" | "append"
+    db: Session = Depends(get_db),
+):
+    """Import subtitles from SRT / ASS / SSA / VTT.
+    mode=replace clears existing subs; mode=append merges and re-sorts."""
+    clip = get_clip(db, clip_id)
+    if not clip:
+        raise HTTPException(404, "Clip not found")
+
+    raw = await file.read()
+    # Try UTF-8, fall back to latin-1 (common in older SRT files)
+    try:
+        content = raw.decode('utf-8')
+    except UnicodeDecodeError:
+        content = raw.decode('latin-1', errors='replace')
+
+    parsed = parse_subtitle_file(file.filename or "import.srt", content)
+    if not parsed:
+        raise HTTPException(422, "No subtitles found in file — check format (SRT/ASS/VTT)")
+
+    if mode == "append":
+        existing = clip.get("subtitles") or []
+        merged = list(existing) + [
+            {"start": s["start"], "end": s["end"],
+             "character": s.get("character", ""),
+             "text": s["text"], "words": None,
+             "off": False, "dos": False, "ambiance": False, "plan_cut": None}
+            for s in parsed
+        ]
+        merged.sort(key=lambda x: x["start"])
+        # Re-number order_index
+        for i, sub in enumerate(merged):
+            sub["order_index"] = i
+        updated = update_subtitles(db, clip_id, merged)
+    else:
+        subs = [
+            {"start": s["start"], "end": s["end"],
+             "character": s.get("character", ""),
+             "text": s["text"], "words": None,
+             "off": False, "dos": False, "ambiance": False, "plan_cut": None,
+             "order_index": i}
+            for i, s in enumerate(parsed)
+        ]
+        updated = update_subtitles(db, clip_id, subs)
+
+    return {
+        "ok": True,
+        "imported": len(parsed),
+        "mode": mode,
+        "clip": updated,
+    }
 
 
 @router.put("/{clip_id}/boucles")
