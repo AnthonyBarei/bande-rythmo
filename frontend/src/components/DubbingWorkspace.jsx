@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import SubtitleEditor from './SubtitleEditor'
 import ExportPanel from './ExportPanel'
 import RecorderPanel from './RecorderPanel'
+import BRTimeline from './BRTimeline'
 import { useSettings } from '../SettingsContext'
 import { classifyChar, SIGN_KINDS, DEFAULT_SIGN_TOGGLES } from '../detection'
 import { useProgress } from '../ProgressContext'
@@ -248,6 +249,9 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   const [wordByWord, setWordByWord] = useState(() => {
     try { return localStorage.getItem('br-word-by-word') !== 'false' } catch { return true }
   })
+  // Waveform + scene cuts for the full-clip nav timeline (BRTimeline).
+  const [waveformData, setWaveformData] = useState(null)
+  const [sceneCuts, setSceneCuts] = useState(clip.scene_cuts || [])
   const [sidebarWidth, setSidebarWidth] = useState(400)
   const [brPanelHeight, setBrPanelHeight] = useState(280)
   const [fontScale, setFontScale] = useState(1.0)
@@ -474,6 +478,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
         if (data && data.samples.length) {
           waveformRef.current = data
           onsetsRef.current = data.onsets || []
+          setWaveformData(data)
         }
       })
       .catch(() => {})
@@ -2427,6 +2432,25 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
             )
           })()}
         </div>
+        {/* Full-clip nav timeline — whole clip at a glance, click/drag to seek */}
+        {(() => {
+          const span = ((canvasRef.current?.width || 800) / (pxPerSec || 1))
+          const vStart = (currentTime + brOffset) - CURSOR_X_RATIO * span
+          return (
+            <BRTimeline
+              duration={duration}
+              currentTime={currentTime}
+              boucles={boucles}
+              waveform={waveformData}
+              sceneCuts={sceneCuts}
+              subtitles={subtitles}
+              charMap={charMap}
+              viewStart={vStart}
+              viewEnd={vStart + span}
+              onSeek={seekTo}
+            />
+          )
+        })()}
       </div>
 
       {/* ── Export modal ── */}
