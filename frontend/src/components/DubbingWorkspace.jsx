@@ -4,6 +4,7 @@ import SubtitleEditor from './SubtitleEditor'
 import ExportPanel from './ExportPanel'
 import RecorderPanel from './RecorderPanel'
 import BRTimeline from './BRTimeline'
+import LexiconPanel from './LexiconPanel'
 import { useSettings } from '../SettingsContext'
 import { classifyChar, SIGN_KINDS, DEFAULT_SIGN_TOGGLES } from '../detection'
 import { useProgress } from '../ProgressContext'
@@ -256,6 +257,13 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   })
   // Uploaded custom fonts — fetched + injected as @font-face for canvas/CSS.
   const [uploadedFonts, setUploadedFonts] = useState([])
+  // Auto-translation — gated on a configured provider (LibreTranslate/DeepL).
+  const [translateProvider, setTranslateProvider] = useState(null)
+  const [translateTarget, setTranslateTarget] = useState('en')
+  const [translating, setTranslating] = useState(false)
+  // AI vocal separation — gated on Demucs availability.
+  const [vocalAvailable, setVocalAvailable] = useState(false)
+  const [separatingVocals, setSeparatingVocals] = useState(false)
   // Waveform + scene cuts for the full-clip nav timeline (BRTimeline).
   const [waveformData, setWaveformData] = useState(null)
   const [sceneCuts, setSceneCuts] = useState(clip.scene_cuts || [])
@@ -569,6 +577,59 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
     } catch {}
   }, [])
   useEffect(() => { refreshFonts() }, [refreshFonts])
+
+  // Probe translation provider once.
+  useEffect(() => {
+    fetch('/api/translate/status').then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) setTranslateProvider(d) }).catch(() => {})
+    fetch('/api/clips/vocal-separation/status').then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) setVocalAvailable(!!d.available) }).catch(() => {})
+  }, [])
+
+  async function separateVocals() {
+    setSeparatingVocals(true)
+    const fireJob = async () => {
+      const res = await fetch(`/api/clips/${clip.clip_id}/separate-vocals`, { method: 'POST' })
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail || `HTTP ${res.status}`) }
+      return (await res.json()).job_id
+    }
+    try {
+      const jobId = await fireJob()
+      progress.start({
+        kind: 'vocals', title: 'Séparation vocale (Demucs)', jobId, retry: fireJob,
+        onDone: () => { setSeparatingVocals(false); setToast({ msg: 'Voix isolée — pistes prêtes dans segments/stems', type: 'success' }); setTimeout(() => setToast(null), 4000) },
+        onError: (err) => { setSeparatingVocals(false); setToast({ msg: 'Séparation : ' + err.message, type: 'error' }); setTimeout(() => setToast(null), 5000) },
+        onCancel: () => setSeparatingVocals(false),
+      })
+    } catch (e) {
+      setSeparatingVocals(false)
+      setToast({ msg: 'Séparation : ' + e.message, type: 'error' }); setTimeout(() => setToast(null), 5000)
+    }
+  }
+
+  async function translateAll() {
+    const subs = subtitlesRef.current
+    const texts = subs.map(s => s.text || '')
+    if (!texts.some(t => t.trim())) return
+    setTranslating(true)
+    try {
+      const res = await fetch('/api/translate', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ texts, target: translateTarget, source: 'auto' }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`)
+      const tr = data.translations || []
+      // Apply via handleSubtitlesChange → undoable + autosaved.
+      handleSubtitlesChange(subs.map((s, i) => ({ ...s, text: tr[i] ?? s.text, words: null })))
+      setToast({ msg: `Traduit en ${translateTarget.toUpperCase()} · annulable (Ctrl+Z)`, type: 'success' })
+    } catch (e) {
+      setToast({ msg: 'Traduction : ' + e.message, type: 'error' })
+    } finally {
+      setTranslating(false)
+      setTimeout(() => setToast(null), 4000)
+    }
+  }
 
   async function uploadFont(file) {
     if (!file) return
@@ -2178,6 +2239,31 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
           style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 11px', background: 'var(--surface2)', color: subtitles.length > 0 ? 'var(--text2)' : 'var(--accent)', border: `1px solid ${subtitles.length > 0 ? 'var(--border2)' : 'rgba(245,197,24,0.4)'}`, borderRadius: 6, fontSize: 11.5, fontWeight: 600, flexShrink: 0, cursor: 'pointer' }}>
           <Ic d={ICONS.mic} size={12} /> {transcribing ? '…' : 'Whisper'}
         </button>
+        {translateProvider?.available && subtitles.length > 0 && (
+          <>
+            <div style={{ width: 1, height: 20, background: 'var(--border2)', flexShrink: 0 }} />
+            <select value={translateTarget} onChange={e => setTranslateTarget(e.target.value)} disabled={translating}
+              title="Langue cible de traduction"
+              style={{ background: 'var(--surface2)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 6, padding: '4px 6px', fontSize: 11, flexShrink: 0, cursor: 'pointer' }}>
+              {LANGS.filter(l => l.code !== 'auto').map(l => <option key={l.code} value={l.code}>{l.code.toUpperCase()}</option>)}
+            </select>
+            <button onClick={translateAll} disabled={translating}
+              title={`Traduire toutes les répliques en ${translateTarget.toUpperCase()} (${translateProvider.provider}) — annulable`}
+              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 11px', background: 'var(--surface2)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 6, fontSize: 11.5, fontWeight: 600, flexShrink: 0, cursor: 'pointer', opacity: translating ? 0.5 : 1 }}>
+              🌐 {translating ? '…' : 'Traduire'}
+            </button>
+          </>
+        )}
+        {vocalAvailable && (
+          <>
+            <div style={{ width: 1, height: 20, background: 'var(--border2)', flexShrink: 0 }} />
+            <button onClick={separateVocals} disabled={separatingVocals}
+              title="Isoler la voix (VO) de la musique/FX — Demucs"
+              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 11px', background: 'var(--surface2)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 6, fontSize: 11.5, fontWeight: 600, flexShrink: 0, cursor: 'pointer', opacity: separatingVocals ? 0.5 : 1 }}>
+              🎚 {separatingVocals ? '…' : 'Séparer voix'}
+            </button>
+          </>
+        )}
       </div>
 
       {/* ── Body (video stage + right pane) ── */}
@@ -2367,7 +2453,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
 
           {/* Tabs */}
           <div style={{ flexShrink: 0, height: 36, borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'stretch' }}>
-            {[['repliques', `Répliques (${subtitles.length})`], ['personnage', 'Personnage'], ['distribution', 'Distribution']].map(([id, label]) => (
+            {[['repliques', `Répliques (${subtitles.length})`], ['personnage', 'Personnage'], ['distribution', 'Distribution'], ['lexique', 'Lexique']].map(([id, label]) => (
               <button key={id} onClick={() => setRightTab(id)} style={{ flex: 1, background: 'none', border: 'none', borderBottom: rightTab === id ? '2px solid var(--accent)' : '2px solid transparent', color: rightTab === id ? 'var(--text)' : 'var(--text3)', fontSize: 12, fontWeight: rightTab === id ? 600 : 400, cursor: 'pointer', padding: '0 4px', marginBottom: -1, transition: 'color 0.15s' }}>
                 {label}
               </button>
@@ -2510,6 +2596,9 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
                   </div>
                 )}
               </div>
+            )}
+            {rightTab === 'lexique' && (
+              <LexiconPanel project={clip.project || ''} />
             )}
           </div>
 

@@ -142,6 +142,21 @@ function AppInner() {
     }
   }
 
+  async function handleSetProject(clipId, project) {
+    try {
+      const res = await fetch(`/api/clips/${clipId}/project`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project }),
+      })
+      if (!res.ok) return
+      const updated = await res.json()
+      setClips(prev => prev.map(c => c.clip_id === clipId ? updated : c))
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden', background: 'var(--bg)' }}>
 
@@ -198,6 +213,7 @@ function AppInner() {
             onRename={handleRename}
             onStatusChange={handleStatusChange}
             onNewClip={() => setSection('import')}
+            onSetProject={handleSetProject}
           />
         )}
         {section === 'dub' && activeClip && (

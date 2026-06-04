@@ -20,7 +20,7 @@ def get_db():
 
 
 def init_db():
-    from models import Clip, Subtitle, Take, Boucle, Export  # noqa: F401
+    from models import Clip, Subtitle, Take, Boucle, Export, LexiconEntry  # noqa: F401
     Base.metadata.create_all(bind=engine)
     from sqlalchemy import text
     with engine.connect() as conn:
@@ -39,6 +39,9 @@ def init_db():
         # Scene-change timecodes (JSON array of seconds). Null until detected.
         if "scene_cuts" not in cols:
             conn.execute(text("ALTER TABLE clips ADD COLUMN scene_cuts TEXT"))
+        # Project/folder grouping (free-text, nullable).
+        if "project" not in cols:
+            conn.execute(text("ALTER TABLE clips ADD COLUMN project TEXT"))
         sub_cols = [r[1] for r in conn.execute(text("PRAGMA table_info(subtitles)")).fetchall()]
         if "words" not in sub_cols:
             conn.execute(text("ALTER TABLE subtitles ADD COLUMN words TEXT"))

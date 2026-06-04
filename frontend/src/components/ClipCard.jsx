@@ -24,7 +24,7 @@ function hashHue(str) {
 
 const TRACK_HEX = ['#f5c518', '#7ec0ff', '#f08aaf', '#7ed4a8']
 
-export default function ClipCard({ clip, onDub, onMeme, onDelete, onRename, onStatusChange }) {
+export default function ClipCard({ clip, onDub, onMeme, onDelete, onRename, onStatusChange, onAssignProject }) {
   const [editingName, setEditingName] = useState(false)
   const [nameInput, setNameInput] = useState(clip.name)
   const [hover, setHover] = useState(false)
@@ -172,6 +172,21 @@ export default function ClipCard({ clip, onDub, onMeme, onDelete, onRename, onSt
         )}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 10.5, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>
           <span>{hasSubtitles ? `${clip.subtitles.length} répl.` : 'aucune réplique'}</span>
+          {onAssignProject && (
+            <button
+              onClick={e => { e.stopPropagation(); onAssignProject(clip.clip_id) }}
+              title={clip.project ? `Projet : ${clip.project} — cliquez pour changer` : 'Assigner à un projet'}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 6px',
+                background: clip.project ? 'var(--accent-soft)' : 'transparent',
+                color: clip.project ? 'var(--accent)' : 'var(--text4)',
+                border: `1px solid ${clip.project ? 'rgba(245,197,24,0.35)' : 'var(--border)'}`,
+                borderRadius: 99, fontSize: 9.5, cursor: 'pointer', fontFamily: 'var(--font-ui)',
+                maxWidth: 110, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}>
+              {clip.project ? `📁 ${clip.project}` : '+ projet'}
+            </button>
+          )}
           {chars.length > 0 && (
             <div style={{ display: 'flex', alignItems: 'center' }}>
               {chars.slice(0, 4).map((c, i) => (
