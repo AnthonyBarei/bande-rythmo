@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { Icon, ICONS } from '../Icons'
+import { Btn, Segmented, ScreenHeader } from '../ui'
 import { useProgress } from '../ProgressContext'
 
 const FONTS = [
@@ -501,23 +502,21 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
   const gifDuration = Math.max(0, outPoint - inPoint).toFixed(1)
 
   return (
-    <div style={{ padding: '20px 28px', overflow: 'auto', height: '100%', boxSizing: 'border-box' }}>
-      <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+    <div style={{ overflow: 'auto', height: '100%', boxSizing: 'border-box', background: 'var(--bg)' }}>
+      <div style={{ maxWidth: 1100, margin: '0 auto', paddingBottom: 28 }}>
 
-        {/* Header */}
-        <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
-          {onBack && (
-            <button onClick={onBack} style={BTN_GHOST}>← Mes clips</button>
+        <ScreenHeader
+          kicker="ATELIER"
+          title="Meme · GIF · Audio"
+          sub={clip ? clip.name : undefined}
+          right={(
+            <div style={{ display: 'flex', gap: 8 }}>
+              {onBack && <Btn variant="outline" size="sm" icon={ICONS.back} onClick={onBack}>Mes clips</Btn>}
+              {imageUrl && <Btn variant="solid" size="sm" icon={ICONS.plus} onClick={resetMeme}>Nouveau</Btn>}
+            </div>
           )}
-          <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0, color: 'var(--text)' }}>Meme</h1>
-          {clip && <span style={{ fontSize: 10, color: '#888', background: 'var(--surface3)', padding: '2px 7px', borderRadius: 3, border: '1px solid var(--border2)' }}>{clip.name}</span>}
-          <div style={{ flex: 1 }} />
-          {imageUrl && (
-            <button onClick={resetMeme} style={BTN_GHOST}>
-              + Nouveau
-            </button>
-          )}
-        </div>
+        />
+        <div style={{ padding: '14px 32px 0' }}>
 
         {!imageUrl ? (
           <div>
@@ -525,21 +524,12 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
                 MEME_PLEX_HANDOFF §2.2: rename by intent + one-line flow hint. */}
             {clip && (
               <>
-                <div style={{ display: 'flex', gap: 0, marginBottom: 6, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 99, padding: 3, width: 'fit-content' }}>
-                  {[['image', ICONS.film, 'Image'], ['video', ICONS.gif, 'GIF'], ['audio', ICONS.audio, 'Extrait audio']].map(([tab, icon, label]) => (
-                    <button key={tab} onClick={() => setSourceTab(tab)} style={{
-                      display: 'flex', alignItems: 'center', gap: 6,
-                      padding: '6px 16px', fontSize: 12, fontWeight: 600,
-                      background: sourceTab === tab ? 'var(--bg2)' : 'transparent',
-                      color: sourceTab === tab ? 'var(--accent)' : 'var(--text2)',
-                      border: 'none',
-                      borderRadius: 99,
-                      borderBottom: sourceTab === tab ? '2px solid var(--accent)' : '2px solid transparent',
-                      cursor: 'pointer', minHeight: 32,
-                    }}><Icon d={icon} size={14} />{label}</button>
-                  ))}
-                </div>
-                <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 16 }}>
+                <Segmented value={sourceTab} onChange={setSourceTab} options={[
+                  { v: 'image', l: 'Image', icon: ICONS.film },
+                  { v: 'video', l: 'GIF', icon: ICONS.gif },
+                  { v: 'audio', l: 'Extrait audio', icon: ICONS.audio },
+                ]} />
+                <div style={{ fontSize: 11, color: 'var(--text3)', margin: '8px 0 16px' }}>
                   {sourceTab === 'audio'
                     ? "L'audio s'exporte directement — pas d'éditeur."
                     : 'Image & GIF passent par l\'éditeur de texte.'}
@@ -922,6 +912,7 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
 
         <input ref={fileInputRef} type="file" accept=".png,.jpg,.jpeg,.webp,.gif"
           onChange={e => handleFile(e.target.files?.[0])} style={{ display: 'none' }} />
+        </div>
       </div>
     </div>
   )
