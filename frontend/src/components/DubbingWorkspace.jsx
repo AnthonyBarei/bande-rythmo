@@ -5,6 +5,7 @@ import ExportPanel from './ExportPanel'
 import RecorderPanel from './RecorderPanel'
 import BRTimeline from './BRTimeline'
 import LexiconPanel from './LexiconPanel'
+import { Segmented as UISegmented } from '../ui'
 import { useSettings } from '../SettingsContext'
 import { classifyChar, SIGN_KINDS, DEFAULT_SIGN_TOGGLES } from '../detection'
 import { useProgress } from '../ProgressContext'
@@ -2331,8 +2332,8 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
           <div style={{ flexShrink: 0, height: 44, background: 'var(--bg2)', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', padding: '0 12px', gap: 6 }}>
             <button onClick={() => seekTo(0)} style={tBtn}><Ic d={ICONS.start} size={14} /></button>
             <button onClick={gotoPrevSub} style={tBtn}><Ic d={ICONS.prev} size={14} /></button>
-            <button onClick={togglePlay} style={{ ...tBtn, background: 'var(--accent)', color: '#000', border: 'none', width: 32, height: 28, borderRadius: 3 }}>
-              <Ic d={playing ? ICONS.pause : ICONS.play} size={14} fill="#000" />
+            <button onClick={togglePlay} style={{ ...tBtn, background: 'var(--accent)', color: '#000', border: 'none', width: 40, height: 34, borderRadius: 9 }}>
+              <Ic d={playing ? ICONS.pause : ICONS.play} size={15} fill="#000" />
             </button>
             <button onClick={gotoNextSub} style={tBtn}><Ic d={ICONS.next} size={14} /></button>
             <button onClick={() => { const v = videoRef.current; if (v) v.currentTime = v.duration }} style={tBtn}><Ic d={ICONS.end} size={14} /></button>
@@ -2346,10 +2347,8 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
             <input type="range" min={0} max={duration || 1} step={0.05} value={currentTime}
               onChange={e => seekTo(parseFloat(e.target.value))}
               style={{ flex: 1, color: '#f5c518', cursor: 'pointer', height: 3, '--pct': `${(currentTime / (duration || 1)) * 100}%` }} />
-            <select value={speed} onChange={e => changeSpeed(e.target.value)}
-              style={{ background: 'var(--surface3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 3, padding: '2px 4px', fontSize: 10, flexShrink: 0 }}>
-              {[0.5, 0.75, 1, 1.25, 1.5].map(s => <option key={s} value={s}>{s}×</option>)}
-            </select>
+            <UISegmented size="sm" value={speed} onChange={v => changeSpeed(v)}
+              options={[{ v: 0.5, l: '0.5×' }, { v: 1, l: '1×' }, { v: 1.5, l: '1.5×' }, { v: 2, l: '2×' }]} />
             <button onClick={toggleMute} title={muted ? 'Activer le son' : 'Couper le son'} style={{ ...tBtn, color: muted ? 'var(--text4)' : 'var(--text2)' }}>
               <Ic d={muted ? ICONS.mute : ICONS.volume} size={14} />
             </button>
