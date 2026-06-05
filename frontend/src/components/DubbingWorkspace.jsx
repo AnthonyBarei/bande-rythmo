@@ -3034,15 +3034,15 @@ function BandeRythmoToolbar({
     cursor: enabled ? 'pointer' : 'not-allowed',
   })
   const grp = {
-    display: 'inline-flex', alignItems: 'center', gap: 1,
-    background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 2,
+    display: 'inline-flex', alignItems: 'center', gap: 2,
+    background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 9, padding: 3,
   }
   const sep = <div style={{ width: 1, alignSelf: 'stretch', background: 'var(--border)', margin: '2px 4px' }} />
 
   return (
     <div ref={toolbarRef} style={{
-      position: 'relative', background: 'var(--bg2)',
-      borderBottom: '1px solid var(--border)', padding: '0 12px', height: 52, flexShrink: 0,
+      position: 'relative', background: 'var(--surface)',
+      borderBottom: '1px solid var(--border)', padding: '0 14px', height: 50, flexShrink: 0,
       display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'nowrap', overflowX: 'auto',
     }}>
       {/* Undo / redo */}
