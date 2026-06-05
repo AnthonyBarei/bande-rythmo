@@ -361,6 +361,7 @@ export default function TimelineBar({
 }
 
 const zBtn = {
-  width: 24, height: 22, background: 'var(--surface2)', color: 'var(--text2)',
-  border: '1px solid var(--border2)', borderRadius: 'var(--radius)', fontSize: 13, lineHeight: '20px',
+  minWidth: 30, height: 30, background: 'var(--surface2)', color: 'var(--text2)',
+  border: '1px solid var(--border2)', borderRadius: 9, fontSize: 14, cursor: 'pointer',
+  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
 }

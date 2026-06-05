@@ -295,7 +295,9 @@ export default function VideoEditor({ video, onClipsCreated, videoStream, audioS
                 fontWeight: 600, fontSize: 13, borderRadius: 'var(--radius)',
               }}
             >
-              {saving ? '⏳ Création…' : `Créer ${pendingClips.length} clip${pendingClips.length > 1 ? 's' : ''}`}
+              {saving
+                ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}><span style={{ width: 11, height: 11, borderRadius: '50%', border: '2px solid currentColor', borderTopColor: 'transparent', animation: 'brspin 0.7s linear infinite' }} /> Création…</span>
+                : `Créer ${pendingClips.length} clip${pendingClips.length > 1 ? 's' : ''}`}
             </button>
             <Kbd>Ctrl</Kbd>
             <span style={{ fontSize: 11, color: 'var(--text3)' }}>+</span>
