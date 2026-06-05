@@ -3082,7 +3082,7 @@ function BandeRythmoToolbar({
         {showCharPicker && target && createPortal(
           <div data-popover="char" style={{
             position: 'fixed', bottom: charAnchor.bottom, left: charAnchor.left, zIndex: 'var(--z-dropdown)',
-            background: '#0c0c0c', border: '1px solid #2a2a2a', borderRadius: 6,
+            background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: 12, boxShadow: '0 18px 60px rgba(0,0,0,0.55)',
             padding: '4px 0', minWidth: 180, boxShadow: '0 6px 18px rgba(0,0,0,0.7)',
           }}>
             <div style={{ padding: '4px 10px 6px', fontSize: 9, color: '#555', textTransform: 'uppercase', letterSpacing: 1 }}>
@@ -3177,7 +3177,7 @@ function BandeRythmoToolbar({
         {showDetection && createPortal(
           <div data-popover="det" style={{
             position: 'fixed', bottom: detAnchor.bottom, left: detAnchor.left, zIndex: 'var(--z-dropdown)',
-            background: '#0c0c0c', border: '1px solid #2a2a2a', borderRadius: 6,
+            background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: 12, boxShadow: '0 18px 60px rgba(0,0,0,0.55)',
             padding: 8, minWidth: 230, boxShadow: '0 6px 18px rgba(0,0,0,0.7)',
           }}>
             <div style={{ fontSize: 9, color: '#777', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>
@@ -3220,7 +3220,7 @@ function BandeRythmoToolbar({
         {showBoucles && createPortal(
           <div data-popover="boucle" style={{
             position: 'fixed', bottom: boucleAnchor.bottom, left: boucleAnchor.left, zIndex: 'var(--z-dropdown)',
-            background: '#0c0c0c', border: '1px solid #2a2a2a', borderRadius: 6,
+            background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: 12, boxShadow: '0 18px 60px rgba(0,0,0,0.55)',
             padding: 8, minWidth: 260, maxHeight: 260, overflow: 'auto',
             boxShadow: '0 6px 18px rgba(0,0,0,0.7)',
           }}>
@@ -3386,7 +3386,7 @@ function BandeRythmoToolbar({
       {showInserer && createPortal(
         <div data-popover="inserer" style={{
           position: 'fixed', bottom: dropdownAnchor.bottom, left: dropdownAnchor.left, zIndex: 'var(--z-dropdown)',
-          background: '#0c0c0c', border: '1px solid var(--border2)', borderRadius: 8,
+          background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: 12, boxShadow: '0 18px 60px rgba(0,0,0,0.55)',
           padding: 12, minWidth: 340, maxWidth: 400, boxShadow: '0 8px 22px rgba(0,0,0,0.75)',
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
@@ -3476,7 +3476,7 @@ function BandeRythmoToolbar({
       {showAffichage && createPortal(
         <div data-popover="affichage" style={{
           position: 'fixed', bottom: dropdownAnchor.bottom, left: dropdownAnchor.left, zIndex: 'var(--z-dropdown)',
-          background: '#0c0c0c', border: '1px solid var(--border2)', borderRadius: 8,
+          background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: 12, boxShadow: '0 18px 60px rgba(0,0,0,0.55)',
           padding: 14, width: 340, boxShadow: '0 8px 22px rgba(0,0,0,0.75)',
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
@@ -3605,15 +3605,15 @@ function BandeRythmoToolbar({
 }
 
 const menuHeader = {
-  padding: '6px 10px 4px', fontSize: 10, color: 'var(--text3)',
-  borderBottom: '1px solid #1a1a1a', marginBottom: 3,
+  padding: '7px 10px 5px', fontSize: 10.5, color: 'var(--text3)',
+  borderBottom: '1px solid var(--border)', marginBottom: 4,
   whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
 }
 const menuSubHeader = {
-  padding: '4px 10px 2px', fontSize: 9, color: 'var(--text3)',
-  textTransform: 'uppercase', letterSpacing: 1,
+  padding: '6px 10px 3px', fontSize: 9.5, color: 'var(--text3)',
+  textTransform: 'uppercase', letterSpacing: 1.2, fontWeight: 700,
 }
-const menuSep = { height: 1, background: '#1a1a1a', margin: '3px 0' }
+const menuSep = { height: 1, background: 'var(--border)', margin: '5px 4px' }
 
 function MenuBtn({ children, onClick, danger, active }) {
   const [h, setH] = React.useState(false)
@@ -3623,12 +3623,11 @@ function MenuBtn({ children, onClick, danger, active }) {
       onMouseEnter={() => setH(true)}
       onMouseLeave={() => setH(false)}
       style={{
-        display: 'block', width: '100%', textAlign: 'left',
-        padding: '5px 10px', fontSize: 11,
-        background: h ? (danger ? 'rgba(229,69,69,0.2)' : 'rgba(245, 197, 24,0.12)') : 'transparent',
-        color: danger ? 'var(--danger)' : active ? '#f5c518' : 'var(--text)',
-        border: 'none', borderRadius: 2, cursor: 'pointer',
-        fontFamily: 'inherit',
+        display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left',
+        padding: '8px 10px', fontSize: 13, minHeight: 32,
+        background: h ? (danger ? 'var(--danger-soft)' : 'var(--surface2)') : 'transparent',
+        color: danger ? 'var(--danger)' : active ? 'var(--accent)' : 'var(--text)',
+        border: 'none', borderRadius: 9, cursor: 'pointer', fontFamily: 'var(--font-ui)',
       }}
     >{children}</button>
   )
