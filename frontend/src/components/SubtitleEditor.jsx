@@ -355,8 +355,8 @@ function SubtitleRow({ sub, idx, active, selected, compact, charMap, charList, o
           )}
         </div>
 
-        {/* Actions */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        {/* Actions — reveal on row hover (prototype: clean rows) */}
+        <div className="row-actions" style={{ position: 'absolute', top: 6, right: 8, display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0, background: (selected || active) ? c.label + '22' : 'var(--surface)', borderRadius: 7, padding: 1, boxShadow: '0 1px 4px rgba(0,0,0,0.25)' }}>
           {icBtn('Aller au timecode', 'var(--info)', () => onSeek?.(sub.start), <Ic d={ICONS.goto} size={13} />)}
           {icBtn(sub.note ? `Note : ${sub.note}` : 'Ajouter une note', sub.note ? 'var(--accent)' : 'var(--text4)', () => setShowNote(v => !v), <Ic d={ICONS.note} size={13} />)}
           {icBtn(sub.hidden ? 'Masqué' : 'Visible', sub.hidden ? 'var(--text4)' : 'var(--success)', () => onChange({ ...sub, hidden: !sub.hidden }), <Ic d={sub.hidden ? ICONS.eyeOff : ICONS.eye} size={13} />)}

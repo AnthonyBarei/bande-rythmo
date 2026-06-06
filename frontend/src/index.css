@@ -160,3 +160,7 @@ select:focus-visible {
 video { display: block; }
 
 .mono { font-family: var(--font-mono); }
+
+/* Réplique rows — actions reveal on hover (clean rows, prototype) */
+.sub-row .row-actions { opacity: 0; transition: opacity 0.12s; pointer-events: none; }
+.sub-row:hover .row-actions, .sub-row:focus-within .row-actions { opacity: 1; pointer-events: auto; }
