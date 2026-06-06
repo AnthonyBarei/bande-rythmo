@@ -102,6 +102,24 @@ export default function Preferences() {
           <Field label="Densité">
             {seg(DENSITIES.map(d => ({ v: d.key, l: d.label })), settings.density, 'density')}
           </Field>
+          <Field label="Police personnalisée">
+            <FontUpload />
+          </Field>
+        </Section>
+
+        <Section title="Traitement IA" desc="Outils optionnels, locaux quand possible.">
+          <Field label="Séparation vocale">
+            <Chip soft color={aiStatus.vocal?.available ? 'var(--success)' : 'var(--text3)'}>
+              <Dot color={aiStatus.vocal?.available ? 'var(--success)' : 'var(--text3)'} size={6} />
+              {aiStatus.vocal?.available ? 'Demucs disponible' : 'Non installé (pip install demucs)'}
+            </Chip>
+          </Field>
+          <Field label="Auto-traduction">
+            <Chip soft color={aiStatus.translate?.available ? 'var(--success)' : 'var(--text3)'}>
+              <Dot color={aiStatus.translate?.available ? 'var(--success)' : 'var(--text3)'} size={6} />
+              {aiStatus.translate?.available ? `${aiStatus.translate.provider}` : 'Aucun fournisseur (DEEPL_API_KEY / LIBRETRANSLATE_URL)'}
+            </Chip>
+          </Field>
         </Section>
 
         <Section title="Transcription Whisper" desc="Modèle local, hors-ligne.">
@@ -132,21 +150,6 @@ export default function Preferences() {
           </Field>
         </Section>
 
-        <Section title="Traitement IA" desc="Outils optionnels, locaux quand possible.">
-          <Field label="Séparation vocale">
-            <Chip soft color={aiStatus.vocal?.available ? 'var(--success)' : 'var(--text3)'}>
-              <Dot color={aiStatus.vocal?.available ? 'var(--success)' : 'var(--text3)'} size={6} />
-              {aiStatus.vocal?.available ? 'Demucs disponible' : 'Non installé (pip install demucs)'}
-            </Chip>
-          </Field>
-          <Field label="Auto-traduction">
-            <Chip soft color={aiStatus.translate?.available ? 'var(--success)' : 'var(--text3)'}>
-              <Dot color={aiStatus.translate?.available ? 'var(--success)' : 'var(--text3)'} size={6} />
-              {aiStatus.translate?.available ? `${aiStatus.translate.provider}` : 'Aucun fournisseur (DEEPL_API_KEY / LIBRETRANSLATE_URL)'}
-            </Chip>
-          </Field>
-        </Section>
-
         <div style={{ fontSize: 11, color: 'var(--text3)', borderTop: '1px solid var(--border)', paddingTop: 14, maxWidth: 760 }}>
           Les préférences sont enregistrées localement dans ce navigateur.
         </div>
@@ -155,13 +158,49 @@ export default function Preferences() {
   )
 }
 
-// legacy stub kept so any external ref doesn't break
+// Custom font upload (TTF/OTF) → /api/fonts
+function FontUpload() {
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState(null)
+  async function pick(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setBusy(true); setMsg(null)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const r = await fetch('/api/fonts', { method: 'POST', body: fd })
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      const d = await r.json().catch(() => ({}))
+      setMsg(`✓ ${d.name || file.name}`)
+    } catch (err) {
+      setMsg('Erreur : ' + err.message)
+    } finally {
+      setBusy(false)
+      e.target.value = ''
+    }
+  }
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      <label>
+        <input type="file" accept=".ttf,.otf" onChange={pick} style={{ display: 'none' }} />
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, height: 36, padding: '0 15px', borderRadius: 9, border: '1px solid var(--border2)', color: 'var(--text)', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
+          <Icon d={ICONS.upload} size={15} /> {busy ? 'Envoi…' : 'Importer une police (TTF / OTF)'}
+        </span>
+      </label>
+      {msg && <span style={{ fontSize: 12, color: msg.startsWith('✓') ? 'var(--success)' : 'var(--danger)' }}>{msg}</span>}
+    </div>
+  )
+}
+
+// Plex — prototype Field rows (Statut chip / Token / Reconfigurer), real connect.
 function PlexSection() {
   const [status, setStatus] = useState(null)    // { connected, server, url }
   const [url, setUrl]       = useState('')
   const [token, setToken]   = useState('')
   const [busy, setBusy]     = useState(false)
   const [err, setErr]       = useState(null)
+  const [form, setForm]     = useState(false)
 
   useEffect(() => {
     let alive = true
@@ -186,7 +225,7 @@ function PlexSection() {
       }
       const d = await r.json()
       setStatus({ connected: true, server: d.server, url: url.trim() })
-      setToken('')
+      setToken(''); setForm(false)
     } catch (e) {
       setErr(e.message)
     } finally {
@@ -194,44 +233,41 @@ function PlexSection() {
     }
   }
 
+  const connected = status?.connected
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      {status && status.connected && (
-        <div style={{ fontSize: 12, color: 'var(--success)' }}>
-          ● Connecté à {status.server} ({status.url})
-        </div>
+    <>
+      <Field label="Statut">
+        <Chip soft color={connected ? 'var(--success)' : 'var(--text3)'}>
+          <Dot color={connected ? 'var(--success)' : 'var(--text3)'} size={6} />
+          {connected ? `Connecté · ${status.server || status.url}` : 'Non connecté'}
+        </Chip>
+      </Field>
+      {connected && !form && (
+        <Field label="Token"><span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--text2)' }}>••••••••••••••••</span></Field>
       )}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <input
-          placeholder="URL Plex (http://localhost:32400)"
-          value={url}
-          onChange={e => setUrl(e.target.value)}
-          style={{ flex: '1 1 240px', minHeight: 32, fontSize: 12 }}
-        />
-        <input
-          type="password"
-          placeholder="Token (masqué)"
-          value={token}
-          onChange={e => setToken(e.target.value)}
-          style={{ flex: '1 1 200px', minHeight: 32, fontSize: 12 }}
-        />
-        <button
-          onClick={connect}
-          disabled={busy || !url || !token}
-          style={{
-            padding: '6px 14px', minHeight: 32,
-            background: 'var(--accent)', color: '#000', fontWeight: 600,
-            fontSize: 12, borderRadius: 6,
-            opacity: (busy || !url || !token) ? 0.55 : 1,
-            cursor: (busy || !url || !token) ? 'default' : 'pointer',
-          }}>
-          {busy ? 'Connexion…' : 'Connecter'}
-        </button>
-      </div>
-      {err && <div style={{ fontSize: 12, color: 'var(--danger)' }}>{err}</div>}
-      <div style={{ fontSize: 11, color: 'var(--text3)' }}>
-        Le token reste local — utilisé uniquement pour les requêtes vers votre serveur Plex.
-      </div>
-    </div>
+      {!form ? (
+        <Field label="">
+          <Btn variant="outline" icon={ICONS.link} onClick={() => setForm(true)}>{connected ? 'Reconfigurer' : 'Connecter'}</Btn>
+        </Field>
+      ) : (
+        <>
+          <Field label="URL serveur">
+            <input placeholder="http://localhost:32400" value={url} onChange={e => setUrl(e.target.value)}
+              style={{ width: '100%', maxWidth: 320, minHeight: 34, fontSize: 13, fontFamily: 'var(--font-mono)' }} />
+          </Field>
+          <Field label="Token">
+            <input type="password" placeholder="Token Plex" value={token} onChange={e => setToken(e.target.value)}
+              style={{ width: '100%', maxWidth: 320, minHeight: 34, fontSize: 13 }} />
+          </Field>
+          <Field label="">
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <Btn variant="primary" onClick={connect} disabled={busy || !url || !token}>{busy ? 'Connexion…' : 'Connecter'}</Btn>
+              <Btn variant="outline" onClick={() => { setForm(false); setErr(null) }}>Annuler</Btn>
+              {err && <span style={{ fontSize: 12, color: 'var(--danger)' }}>{err}</span>}
+            </div>
+          </Field>
+        </>
+      )}
+    </>
   )
 }
