@@ -165,70 +165,49 @@ function AppInner() {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden', background: 'var(--bg)' }}>
+    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: 'var(--bg)' }}>
 
-      {/* Top bar — redesign shell.jsx TopBar. Editor is full-bleed (own header). */}
-      {section !== 'dub' && (
-      <div style={{ height: 52, flexShrink: 0, background: 'var(--bg)', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', padding: '0 18px', gap: 14 }}>
-        <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: 0.5, color: 'var(--text)' }}>
-          BANDE RYTHMO <span style={{ color: 'var(--text4)', fontWeight: 400 }}>· studio</span>
-        </span>
-        <div style={{ flex: 1 }} />
-        <button onClick={() => setCmdOpen(true)} title="Palette de commandes (⌘K)"
-          style={{ display: 'flex', alignItems: 'center', gap: 9, height: 36, padding: '0 12px', minWidth: 300, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 99, cursor: 'pointer', color: 'var(--text3)' }}>
-          <Icon d={ICONS.search} size={15} />
-          <span style={{ fontSize: 13 }}>Rechercher ou commande…</span>
-          <div style={{ flex: 1 }} />
-          <span style={{ display: 'flex', gap: 3 }}>
-            <kbd style={{ padding: '1px 5px', borderRadius: 4, background: 'var(--surface2)', border: '1px solid var(--border2)', fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text2)' }}>⌘</kbd>
-            <kbd style={{ padding: '1px 5px', borderRadius: 4, background: 'var(--surface2)', border: '1px solid var(--border2)', fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text2)' }}>K</kbd>
+      {/* Full-height rail (redesign shell — rail spans the whole window) */}
+      <Sidebar section={section} onNavigate={s => {
+        setDubExportOpen(false)
+        if (s === 'memes') { setMemeClip(null); setSection('memes'); return }
+        if (s === 'record') { const tgt = activeClip || clips[0]; if (tgt) { setActiveClip(tgt); setSection('dub') } else setSection('clips'); return }
+        if (s === 'dub') { const tgt = activeClip || clips[0]; if (tgt) { setActiveClip(tgt); setSection('dub') } else setSection('clips'); return }
+        setSection(s)
+      }} />
+
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
+
+        {/* Top bar — only over content; hidden on the full-bleed editor. Search right-aligned. */}
+        {section !== 'dub' && (
+        <div style={{ height: 52, flexShrink: 0, background: 'var(--bg)', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', padding: '0 18px', gap: 12 }}>
+          <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: 0.5, color: 'var(--text)' }}>
+            BANDE RYTHMO <span style={{ color: 'var(--text4)', fontWeight: 400 }}>· studio</span>
           </span>
-        </button>
-        <div style={{ flex: 1 }} />
-        {section === 'dub' && activeClip && (() => {
-          const ss = SAVE_STATUS[dubSaveStatus] || SAVE_STATUS.saved
-          return (
-            <>
-              <span style={{ display: 'flex', alignItems: 'center', fontSize: 11, fontWeight: 500, color: ss.color, padding: '4px 10px', background: 'var(--surface2)', border: '1px solid var(--border2)', borderRadius: 99 }}>
-                {ss.text}
-              </span>
-              <button onClick={() => setDubExportOpen(v => !v)}
-                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 14px', background: 'var(--accent)', color: '#000', fontWeight: 700, border: 'none', borderRadius: 6, fontSize: 12.5, cursor: 'pointer' }}>
-                <Icon d={ICONS.download} size={14} /> Exporter
-              </button>
-              <div style={{ width: 1, height: 20, background: 'var(--border2)' }} />
-            </>
-          )
-        })()}
-        <button onClick={() => setShortcutsOpen(true)} title="Raccourcis clavier (?)"
-          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px', background: 'var(--surface2)', border: '1px solid var(--border2)', color: 'var(--text2)', borderRadius: 6, fontSize: 12, fontWeight: 500, cursor: 'pointer' }}>
-          <Icon d={ICONS.kbd} size={14} /> Raccourcis
-        </button>
-        <button onClick={() => setSection('activity')} title="Activité — jobs & exports"
-          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 32, height: 30, background: section === 'activity' ? 'var(--accent-soft)' : 'var(--surface2)', border: '1px solid var(--border2)', color: section === 'activity' ? 'var(--accent)' : 'var(--text2)', borderRadius: 6, cursor: 'pointer' }}>
-          <Icon d={ICONS.activity} size={15} />
-        </button>
-        <div style={{ width: 1, height: 20, background: 'var(--border2)' }} />
-        <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--surface3)', border: '1px solid var(--border2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text2)' }}>
-          <Icon d={ICONS.user} size={15} />
+          <div style={{ flex: 1 }} />
+          <button onClick={() => setCmdOpen(true)} title="Palette de commandes (⌘K)"
+            style={{ display: 'flex', alignItems: 'center', gap: 9, height: 36, padding: '0 12px', minWidth: 300, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 99, cursor: 'pointer', color: 'var(--text3)' }}>
+            <Icon d={ICONS.search} size={15} />
+            <span style={{ fontSize: 13 }}>Rechercher ou commande…</span>
+            <div style={{ flex: 1 }} />
+            <span style={{ display: 'flex', gap: 3 }}>
+              <kbd style={{ padding: '1px 5px', borderRadius: 4, background: 'var(--surface2)', border: '1px solid var(--border2)', fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text2)' }}>⌘</kbd>
+              <kbd style={{ padding: '1px 5px', borderRadius: 4, background: 'var(--surface2)', border: '1px solid var(--border2)', fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text2)' }}>K</kbd>
+            </span>
+          </button>
+          <button onClick={() => setShortcutsOpen(true)} title="Raccourcis clavier (?)"
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 36, background: 'transparent', border: '1px solid transparent', color: 'var(--text2)', borderRadius: 9, cursor: 'pointer' }}>
+            <Icon d={ICONS.kbd} size={16} />
+          </button>
+          <button onClick={() => setSection('activity')} title="Activité — jobs & exports"
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 36, background: section === 'activity' ? 'var(--accent-soft)' : 'transparent', border: '1px solid transparent', color: section === 'activity' ? 'var(--accent)' : 'var(--text2)', borderRadius: 9, cursor: 'pointer' }}>
+            <Icon d={ICONS.activity} size={16} />
+          </button>
+          <div style={{ width: 1, height: 22, background: 'var(--border)' }} />
+          <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#000', fontWeight: 700, fontSize: 12, fontFamily: 'var(--font-mono)' }}>S</div>
         </div>
-      </div>
-      )}
+        )}
 
-      {/* Body: nav rail + main */}
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
-        <Sidebar section={section} onNavigate={s => {
-          setDubExportOpen(false)
-          if (s === 'memes') { setMemeClip(null); setSection('memes'); return }
-          // Éditeur / Studio need a clip — use active, else most recent, else library.
-          if (s === 'dub' || s === 'record') {
-            const target = activeClip || clips[0]
-            if (target) { setActiveClip(target); setSection('dub') }
-            else setSection('clips')
-            return
-          }
-          setSection(s)
-        }} />
         <main style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         {section === 'import' && (
           <ImportSection
