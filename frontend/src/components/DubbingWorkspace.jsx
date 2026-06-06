@@ -2428,34 +2428,36 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
         {/* Right pane (resizable) */}
         <div style={{ width: sidebarWidth, flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', borderLeft: '1px solid var(--border)', background: 'var(--bg)' }}>
 
-          {/* Active character card — shown only during playback; empty state in gaps */}
-          {playing && (() => {
-            const trackIdx = activeSubtitle ? (charMap[activeSubtitle.character || ''] ?? 0) : 0
+          {/* Active character card — always visible (selected-or-active réplique),
+              redesign Inspector header. */}
+          {(() => {
+            const target = activeSubtitle || (selectedIdx != null ? subtitles[selectedIdx] : null)
+            const trackIdx = target ? (charMap[target.character || ''] ?? 0) : 0
             const color = TRACK_COLORS[trackIdx % TRACK_COLORS.length]
-            const subIdx = activeSubtitle ? subtitles.indexOf(activeSubtitle) : -1
+            const subIdx = target ? subtitles.indexOf(target) : -1
             return (
-              <div style={{ flexShrink: 0, padding: '10px 14px', background: activeSubtitle ? color.hex + '14' : 'var(--surface)', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div style={{ width: 36, height: 36, borderRadius: '50%', flexShrink: 0, border: `2px solid ${activeSubtitle ? color.hex : 'var(--border2)'}`, background: activeSubtitle ? color.hex + '22' : 'var(--surface2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 700, color: activeSubtitle ? color.hex : 'var(--text4)' }}>
-                  {activeSubtitle ? (activeSubtitle.character || '?')[0].toUpperCase() : '—'}
+              <div style={{ flexShrink: 0, padding: '13px 16px', background: target ? color.hex + '0c' : 'var(--surface)', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 11 }}>
+                <div style={{ width: 38, height: 38, borderRadius: '50%', flexShrink: 0, border: `2px solid ${target ? color.hex : 'var(--border2)'}`, background: target ? color.hex + '22' : 'var(--surface2)', boxShadow: target ? `0 0 0 2px ${color.hex}33` : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 700, color: target ? color.hex : 'var(--text4)', fontFamily: 'var(--font-mono)' }}>
+                  {target ? (target.character || '?')[0].toUpperCase() : '—'}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ fontSize: 14, fontWeight: 700, color: activeSubtitle ? color.hex : 'var(--text4)' }}>{activeSubtitle ? (activeSubtitle.character || '(défaut)') : '—'}</span>
-                    {activeSubtitle && <span style={{ fontSize: 9.5, fontWeight: 600, color: 'var(--text3)' }}>· ACTIF</span>}
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 7 }}>
+                    <span style={{ fontSize: 16, fontWeight: 700, color: target ? color.hex : 'var(--text4)' }}>{target ? (target.character || '(défaut)') : 'Aucune réplique'}</span>
+                    {target && <span style={{ fontSize: 9.5, fontWeight: 600, color: 'var(--text3)', letterSpacing: 1 }}>· RÉPLIQUE {subIdx + 1}</span>}
                   </div>
                   <div style={{ fontSize: 10.5, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>
-                    {activeSubtitle
-                      ? `réplique ${subIdx + 1} / ${subtitles.length} · ${(activeSubtitle.end - activeSubtitle.start).toFixed(1)}s`
-                      : 'Hors réplique'}
+                    {target
+                      ? `${fmtTC(target.start, clipFps)} → ${fmtTC(target.end, clipFps)} · ${(target.end - target.start).toFixed(1)}s`
+                      : 'Sélectionnez ou lancez la lecture'}
                   </div>
                 </div>
                 <button
                   onClick={() => setShowRecorder(s => !s)}
-                  disabled={!activeSubtitle}
-                  title={activeSubtitle ? 'Enregistrer (R)' : 'Aucune réplique active'}
-                  style={{ width: 34, height: 34, borderRadius: 4, flexShrink: 0, background: !activeSubtitle ? 'var(--surface2)' : showRecorder ? '#c0392b' : 'var(--danger)', border: 'none', cursor: activeSubtitle ? 'pointer' : 'not-allowed', opacity: activeSubtitle ? 1 : 0.4, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  disabled={!target}
+                  title={target ? 'Enregistrer (R)' : 'Aucune réplique'}
+                  style={{ width: 36, height: 36, borderRadius: 9, flexShrink: 0, background: !target ? 'var(--surface2)' : showRecorder ? '#c0392b' : 'var(--danger)', border: 'none', cursor: target ? 'pointer' : 'not-allowed', opacity: target ? 1 : 0.4, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                 >
-                  <Ic d={ICONS.rec} size={12} fill="#fff" />
+                  <Ic d={ICONS.rec} size={13} fill="#fff" />
                 </button>
               </div>
             )
