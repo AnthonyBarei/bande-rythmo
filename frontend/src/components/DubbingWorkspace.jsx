@@ -2375,37 +2375,6 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
                 {proxyJob ? '…' : 'Proxy'}
               </button>
             )}
-            <div style={{ width: 1, height: 18, background: 'var(--border)', flexShrink: 0, margin: '0 2px' }} />
-            {/* Subtitle display mode — cycles play → always → never */}
-            <button
-              onClick={() => setBrInPlayer(m => m === 'play' ? 'always' : m === 'always' ? 'never' : 'play')}
-              title="Sous-titres incrustés sur la vidéo — cliquer pour changer"
-              style={{
-                display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0,
-                padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
-                fontSize: 10.5, fontWeight: 600, letterSpacing: 0.2,
-                transition: 'background 0.15s, color 0.15s, border-color 0.15s',
-                background: brInPlayer === 'always' ? 'var(--accent)' : brInPlayer === 'play' ? 'var(--accent-soft)' : 'var(--surface2)',
-                color: brInPlayer === 'always' ? '#000' : brInPlayer === 'play' ? 'var(--accent)' : 'var(--text4)',
-                border: `1px solid ${brInPlayer === 'always' ? 'var(--accent)' : brInPlayer === 'play' ? 'rgba(245,197,24,0.45)' : 'var(--border2)'}`,
-              }}>
-              <Ic d={ICONS.caption} size={13} />
-              {brInPlayer === 'play' ? 'Sous-titres : lecture' : brInPlayer === 'always' ? 'Sous-titres : toujours' : 'Sous-titres : masqués'}
-            </button>
-            {/* BR text size */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0 }}>
-              <button onClick={() => setFontScale(f => Math.max(0.3, +(f - 0.15).toFixed(2)))} title="Texte BR −" style={{ ...tBtn, padding: '3px 6px' }}>A−</button>
-              <span style={{ fontSize: 9.5, fontFamily: 'var(--font-mono)', color: fontScale !== 1 ? 'var(--accent)' : 'var(--text3)', minWidth: 32, textAlign: 'center' }}>{Math.round(fontScale * 100)}%</span>
-              <button onClick={() => setFontScale(f => Math.min(3, +(f + 0.15).toFixed(2)))} title="Texte BR +" style={{ ...tBtn, padding: '3px 6px' }}>A+</button>
-            </div>
-            {/* BR font */}
-            <select value={brFont} onChange={e => setBrFont(e.target.value)} title="Police de la bande rythmo"
-              style={{ background: 'var(--surface2)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 6, padding: '4px 6px', fontSize: 10.5, flexShrink: 0, cursor: 'pointer' }}>
-              {BR_FONTS.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
-              {uploadedFonts.length > 0 && <optgroup label="Mes polices">
-                {uploadedFonts.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
-              </optgroup>}
-            </select>
           </div>
         </div>
 

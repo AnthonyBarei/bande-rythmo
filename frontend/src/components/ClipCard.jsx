@@ -204,8 +204,8 @@ export default function ClipCard({ clip, onDub, onMeme, onDelete, onRename, onSt
         </div>
       </div>
 
-      {/* Action row */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto auto', borderTop: '1px solid var(--border)' }}>
+      {/* Action row — reveals on hover (prototype) */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto auto', borderTop: '1px solid var(--border)', opacity: hover ? 1 : 0, maxHeight: hover ? 44 : 0, overflow: 'hidden', transition: 'opacity 0.15s, max-height 0.15s' }}>
         <ActionBtn onClick={e => { e.stopPropagation(); onDub(clip) }} accent flex title="Doublage">
           Doubler
         </ActionBtn>
