@@ -5,7 +5,7 @@ import ExportPanel from './ExportPanel'
 import RecorderPanel from './RecorderPanel'
 import BRTimeline from './BRTimeline'
 import LexiconPanel from './LexiconPanel'
-import { Segmented as UISegmented } from '../ui'
+import { Segmented as UISegmented, Toggle as UIToggle } from '../ui'
 import { useSettings } from '../SettingsContext'
 import { classifyChar, SIGN_KINDS, DEFAULT_SIGN_TOGGLES } from '../detection'
 import { useProgress } from '../ProgressContext'
@@ -2461,10 +2461,10 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
             )
           })()}
 
-          {/* Tabs */}
-          <div style={{ flexShrink: 0, height: 36, borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'stretch' }}>
-            {[['repliques', `Répliques (${subtitles.length})`], ['personnage', 'Personnage'], ['distribution', 'Distribution'], ['lexique', 'Lexique']].map(([id, label]) => (
-              <button key={id} onClick={() => setRightTab(id)} style={{ flex: 1, background: 'none', border: 'none', borderBottom: rightTab === id ? '2px solid var(--accent)' : '2px solid transparent', color: rightTab === id ? 'var(--text)' : 'var(--text3)', fontSize: 12, fontWeight: rightTab === id ? 600 : 400, cursor: 'pointer', padding: '0 4px', marginBottom: -1, transition: 'color 0.15s' }}>
+          {/* Tabs — redesign inspector: Répliques · Voix · Détection · Boucles · Lexique */}
+          <div style={{ flexShrink: 0, height: 40, borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'stretch', padding: '0 6px' }}>
+            {[['repliques', 'Répliques'], ['voix', 'Voix'], ['detection', 'Détection'], ['boucles', `Boucles`], ['lexique', 'Lexique']].map(([id, label]) => (
+              <button key={id} onClick={() => setRightTab(id)} style={{ flex: 1, background: 'none', border: 'none', borderBottom: rightTab === id ? '2px solid var(--accent)' : '2px solid transparent', color: rightTab === id ? 'var(--accent)' : 'var(--text2)', fontSize: 12, fontWeight: rightTab === id ? 600 : 500, cursor: 'pointer', padding: '0 4px', marginBottom: -1, transition: 'color 0.15s' }}>
                 {label}
               </button>
             ))}
@@ -2497,7 +2497,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
                 )}
               </>
             )}
-            {rightTab === 'personnage' && (() => {
+            {rightTab === 'voix' && (() => {
               const chars = charList.filter(c => c)
               if (chars.length === 0) {
                 return <div style={{ padding: 16 }}><p style={{ color: 'var(--text3)', fontSize: 13 }}>Aucun personnage défini.</p></div>
@@ -2573,8 +2573,9 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
                 </div>
               )
             })()}
-            {rightTab === 'distribution' && (
-              <div style={{ padding: 16, overflow: 'auto', flex: 1 }}>
+            {rightTab === 'voix' && (
+              <div style={{ padding: '0 16px 16px', overflow: 'auto' }}>
+                <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 1.2, color: 'var(--text3)', textTransform: 'uppercase', margin: '4px 0 10px' }}>Distribution</div>
                 {charList.length === 0 ? (
                   <p style={{ color: 'var(--text3)', fontSize: 13 }}>Aucune réplique.</p>
                 ) : (
@@ -2605,6 +2606,35 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
                     })}
                   </div>
                 )}
+              </div>
+            )}
+            {rightTab === 'detection' && (
+              <div style={{ padding: 16, overflow: 'auto' }}>
+                <DetRow label="Calque détection" on={detection.layer} onClick={() => setDetection(d => ({ ...d, layer: !d.layer }))} accent />
+                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.2, color: 'var(--text3)', textTransform: 'uppercase', margin: '14px 0 6px' }}>Signes phonétiques</div>
+                {[['labiale', 'Labiale (B P M)'], ['semi', 'Semi (W)'], ['fricative', 'Fricative (F V)'], ['arrondie', 'Arrondie (O U Œ)'], ['ouverte', 'Ouverte (A E I…)'], ['startEnd', 'Début / Fin de phrase']].map(([k, lbl]) => (
+                  <DetRow key={k} label={lbl} on={!!detection[k]} onClick={() => setDetection(d => ({ ...d, [k]: !d[k] }))} />
+                ))}
+                <DetRow label="Aide auto (depuis les lettres)" on={detectionAuto} onClick={() => setDetectionAuto(v => !v)} />
+                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.2, color: 'var(--text3)', textTransform: 'uppercase', margin: '14px 0 6px' }}>Affichage</div>
+                <DetRow label="Rendu mot par mot" on={wordByWord} onClick={() => setWordByWord(v => !v)} />
+              </div>
+            )}
+            {rightTab === 'boucles' && (
+              <div style={{ padding: 16, overflow: 'auto' }}>
+                <button onClick={addBoucleAtCursor}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%', height: 34, marginBottom: 12, background: 'var(--accent)', color: '#000', fontWeight: 600, border: 'none', borderRadius: 9, fontSize: 12.5, cursor: 'pointer' }}>
+                  <Ic d={ICONS.plus} size={14} /> Boucle au curseur
+                </button>
+                {boucles.length === 0 ? (
+                  <p style={{ fontSize: 12, color: 'var(--text3)' }}>Aucune boucle. Placez le curseur et ajoutez.</p>
+                ) : boucles.map(b => (
+                  <div key={b.number} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', marginBottom: 4, background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 8 }}>
+                    <button onClick={() => { const v = videoRef.current; if (v) v.currentTime = b.start }} style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontWeight: 700, fontFamily: 'var(--font-mono)', fontSize: 12 }}>B{b.number}</button>
+                    <span style={{ flex: 1, fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>{fmtTC(b.start, clipFps)} — {fmtTC(b.end, clipFps)} · {(b.end - b.start).toFixed(1)}s</span>
+                    <button onClick={() => removeBoucle(b.number)} title="Supprimer" style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: 13 }}>✕</button>
+                  </div>
+                ))}
               </div>
             )}
             {rightTab === 'lexique' && (
@@ -3622,6 +3652,15 @@ const menuSubHeader = {
   textTransform: 'uppercase', letterSpacing: 1.2, fontWeight: 700,
 }
 const menuSep = { height: 1, background: 'var(--border)', margin: '5px 4px' }
+
+function DetRow({ label, on, onClick, accent }) {
+  return (
+    <div onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', cursor: 'pointer', borderBottom: '1px solid var(--surface2)' }}>
+      <span style={{ flex: 1, fontSize: 12.5, color: on ? 'var(--text)' : 'var(--text2)', fontWeight: accent && on ? 600 : 400 }}>{label}</span>
+      <UIToggle on={on} onClick={onClick} />
+    </div>
+  )
+}
 
 function MenuBtn({ children, onClick, danger, active }) {
   const [h, setH] = React.useState(false)
