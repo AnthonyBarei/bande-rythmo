@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react'
 import { Icon, ICONS } from '../Icons'
+import { Btn, Chip, Dot, ProgressBar, ScreenHeader } from '../ui'
 import { useProgress } from '../ProgressContext'
 
 // Activity center (redesign screen-misc Activity) — one place for all jobs:
@@ -9,7 +10,7 @@ import { useProgress } from '../ProgressContext'
 const KIND_ICON = {
   'export-mp4': ICONS.film, 'mp4': ICONS.film, 'export-gif': ICONS.gif, 'gif': ICONS.gif,
   'transcribe': ICONS.mic, 'import-batch': ICONS.upload, 'proxy': ICONS.film,
-  'vocals': ICONS.audio, 'export': ICONS.download,
+  'vocals': ICONS.audio, 'export': ICONS.download, 'plex-remux': ICONS.film,
 }
 const iconFor = kind => KIND_ICON[kind] || ICONS.activity
 
@@ -37,17 +38,17 @@ function fmtWhen(iso) {
 
 function GroupLabel({ children, color }) {
   return (
-    <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1.2, color, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 9, textTransform: 'uppercase' }}>
+    <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1.2, color, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 9 }}>
       {children}
       <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
     </div>
   )
 }
 
-function Tile({ color, icon, children }) {
+function Tile({ color, icon, size = 38, r = 9 }) {
   return (
-    <div style={{ width: 38, height: 38, flexShrink: 0, borderRadius: 9, background: color + '14', border: `1px solid ${color}33`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <Icon d={icon} size={18} stroke={color} />
+    <div style={{ width: size, height: size, flexShrink: 0, borderRadius: r, background: color + '14', border: `1px solid ${color}33`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <Icon d={icon} size={Math.round(size * 0.47)} stroke={color} />
     </div>
   )
 }
@@ -68,25 +69,24 @@ export default function ActivityCenter() {
   const failed = useMemo(() => jobs.filter(j => j.status === 'error'), [jobs])
   const finished = useMemo(() => jobs.filter(j => j.status === 'done' || j.status === 'cancelled'), [jobs])
 
-  const empty = !running.length && !failed.length && !finished.length && !exports.length
+  const doneCount = finished.length + exports.length
+  const empty = !running.length && !failed.length && !doneCount
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--bg)' }}>
-      {/* Header */}
-      <div style={{ flexShrink: 0, padding: '20px 32px 14px', display: 'flex', alignItems: 'flex-end', gap: 14 }}>
-        <div>
-          <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 1.5, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>SYSTÈME</div>
-          <div style={{ fontSize: 26, fontWeight: 600, letterSpacing: -0.4, color: 'var(--text)', marginTop: 2 }}>Activité</div>
-        </div>
-        <div style={{ flex: 1 }} />
-        <div style={{ display: 'flex', gap: 8 }}>
-          <StatChip color="var(--accent)" pulse={running.length > 0}>{running.length} en cours</StatChip>
-          {failed.length > 0 && <StatChip color="var(--danger)">{failed.length} échec{failed.length > 1 ? 's' : ''}</StatChip>}
-          <StatChip color="var(--text3)">{finished.length + exports.length} terminés</StatChip>
-        </div>
-      </div>
+      <ScreenHeader
+        kicker="SYSTÈME"
+        title="Activité"
+        right={
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Chip soft color="var(--accent)"><Dot color="var(--accent)" size={7} pulse={running.length > 0} /> {running.length} en cours</Chip>
+            {failed.length > 0 && <Chip soft color="var(--danger)">{failed.length} échec{failed.length > 1 ? 's' : ''}</Chip>}
+            <Chip soft color="var(--text3)">{doneCount} terminé{doneCount > 1 ? 's' : ''}</Chip>
+          </div>
+        }
+      />
 
-      <div style={{ flex: 1, overflow: 'auto', padding: '4px 32px 32px' }}>
+      <div style={{ flex: 1, overflow: 'auto', padding: '16px 32px 32px' }}>
         {empty && (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60%', gap: 12, color: 'var(--text3)' }}>
             <Icon d={ICONS.activity} size={40} stroke="var(--text4)" />
@@ -97,7 +97,7 @@ export default function ActivityCenter() {
 
         {running.length > 0 && (
           <>
-            <GroupLabel color="var(--accent)">En cours · {running.length}</GroupLabel>
+            <GroupLabel color="var(--accent)">EN COURS · {running.length}</GroupLabel>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 24 }}>
               {running.map(j => <RunRow key={j.key} j={j} onCancel={() => cancelByKey(j.key)} />)}
             </div>
@@ -106,7 +106,7 @@ export default function ActivityCenter() {
 
         {failed.length > 0 && (
           <>
-            <GroupLabel color="var(--danger)">Échecs · {failed.length}</GroupLabel>
+            <GroupLabel color="var(--danger)">ÉCHECS · {failed.length}</GroupLabel>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 24 }}>
               {failed.map(j => <FailRow key={j.key} j={j} onRetry={() => retry(j.key)} onDismiss={() => dismiss(j.key)} />)}
             </div>
@@ -115,7 +115,7 @@ export default function ActivityCenter() {
 
         {finished.length > 0 && (
           <>
-            <GroupLabel color="var(--success)">Terminé · {finished.length}</GroupLabel>
+            <GroupLabel color="var(--success)">TERMINÉ · {finished.length}</GroupLabel>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 24 }}>
               {finished.map(j => <DoneJobRow key={j.key} j={j} onDismiss={() => dismiss(j.key)} />)}
             </div>
@@ -124,7 +124,7 @@ export default function ActivityCenter() {
 
         {exports.length > 0 && (
           <>
-            <GroupLabel color="var(--text3)">Exports · {exports.length}</GroupLabel>
+            <GroupLabel color="var(--text3)">EXPORTS · {exports.length}</GroupLabel>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {exports.map(e => <ExportRow key={e.id} e={e} />)}
             </div>
@@ -135,29 +135,10 @@ export default function ActivityCenter() {
   )
 }
 
-function StatChip({ children, color, pulse }) {
-  return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 99, background: color === 'var(--text3)' ? 'var(--surface2)' : color.replace(')', '-soft)').replace('var(--', 'var(--'), fontSize: 11.5, fontWeight: 600, color, border: `1px solid ${color === 'var(--text3)' ? 'var(--border)' : 'transparent'}` }}>
-      <span style={{ position: 'relative', width: 7, height: 7 }}>
-        <span style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: color }} />
-        {pulse && <span style={{ position: 'absolute', inset: -3, borderRadius: '50%', border: `1.5px solid ${color}`, opacity: 0.4 }} />}
-      </span>
-      {children}
-    </span>
-  )
-}
-
 const rowBase = {
   background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 9,
   padding: '13px 16px', display: 'flex', alignItems: 'center', gap: 14,
 }
-const actBtn = (variant) => ({
-  height: 30, padding: '0 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-  display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0,
-  background: variant === 'primary' ? 'var(--accent)' : 'transparent',
-  color: variant === 'primary' ? '#000' : 'var(--text2)',
-  border: variant === 'primary' ? 'none' : '1px solid var(--border2)',
-})
 
 function RunRow({ j, onCancel }) {
   const pct = Math.round((j.pct || 0) * 100)
@@ -165,11 +146,12 @@ function RunRow({ j, onCancel }) {
     <div style={rowBase}>
       <Tile color="var(--accent)" icon={iconFor(j.kind)} />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 14, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{j.title}</div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
+          <span style={{ fontSize: 14, fontWeight: 600, whiteSpace: 'nowrap' }}>{j.title}</span>
+          {j.clip && <span style={{ fontSize: 12, color: 'var(--text3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{j.clip}</span>}
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}>
-          <div style={{ flex: 1, height: 5, background: 'var(--surface3)', borderRadius: 5, overflow: 'hidden' }}>
-            <div style={{ width: `${pct}%`, height: '100%', background: 'var(--accent)', borderRadius: 5, transition: 'width 0.3s' }} />
-          </div>
+          <ProgressBar pct={pct} />
           <span style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--font-mono)', minWidth: 90, whiteSpace: 'nowrap' }}>{j.stage || '…'}</span>
         </div>
       </div>
@@ -177,21 +159,21 @@ function RunRow({ j, onCancel }) {
         <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--accent)' }}>{pct}%</div>
         {j.eta != null && <div style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>~{fmtEta(j.eta)}</div>}
       </div>
-      <button onClick={onCancel} style={actBtn('outline')}>Annuler</button>
+      <Btn size="sm" variant="outline" onClick={onCancel}>Annuler</Btn>
     </div>
   )
 }
 
 function FailRow({ j, onRetry, onDismiss }) {
   return (
-    <div style={{ ...rowBase, background: 'rgba(232,93,93,0.05)', borderColor: 'rgba(232,93,93,0.27)' }}>
+    <div style={{ ...rowBase, background: 'rgba(232,89,93,0.05)', borderColor: 'rgba(232,89,93,0.27)' }}>
       <Tile color="var(--danger)" icon={iconFor(j.kind)} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 13.5, fontWeight: 600 }}>{j.title}</div>
         <div style={{ fontSize: 12, color: 'var(--danger)', fontFamily: 'var(--font-mono)', marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{j.error || 'Erreur'}</div>
       </div>
-      {j.retry && <button onClick={onRetry} style={actBtn('primary')}><Icon d={ICONS.loop2} size={13} stroke="#000" /> Réessayer</button>}
-      <button onClick={onDismiss} title="Fermer" style={{ ...actBtn('outline'), width: 30, padding: 0 }}>✕</button>
+      {j.retry && <Btn size="sm" variant="primary" icon={ICONS.loop2} onClick={onRetry}>Réessayer</Btn>}
+      <Btn size="sm" variant="outline" icon={ICONS.close} onClick={onDismiss} title="Fermer" />
     </div>
   )
 }
@@ -201,12 +183,12 @@ function DoneJobRow({ j, onDismiss }) {
   const color = cancelled ? 'var(--text3)' : 'var(--success)'
   return (
     <div style={{ ...rowBase, padding: '11px 16px' }}>
-      <Tile color={color} icon={cancelled ? ICONS.close : ICONS.check} />
+      <Tile color={color} icon={cancelled ? ICONS.close : ICONS.check} size={34} r={8} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 600 }}>{j.title}</div>
         <div style={{ fontSize: 10.5, color: 'var(--text3)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>{cancelled ? 'Annulé' : (j.stage || 'Terminé')}</div>
       </div>
-      <button onClick={onDismiss} title="Retirer" style={{ ...actBtn('outline'), width: 30, padding: 0 }}>✕</button>
+      <Btn size="sm" variant="outline" icon={ICONS.close} onClick={onDismiss} title="Retirer" />
     </div>
   )
 }
@@ -220,7 +202,7 @@ function ExportRow({ e }) {
   }
   return (
     <div style={{ ...rowBase, padding: '11px 16px' }}>
-      <Tile color="var(--success)" icon={iconFor(e.format)} />
+      <Tile color="var(--success)" icon={iconFor(e.format)} size={34} r={8} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
           <span style={{ fontSize: 13, fontWeight: 600 }}>{(e.format || '').toUpperCase()}</span>
@@ -230,7 +212,7 @@ function ExportRow({ e }) {
           {[e.quality, fmtBytes(e.size_bytes), fmtWhen(e.created_at)].filter(Boolean).join(' · ')}
         </div>
       </div>
-      <button onClick={dl} style={actBtn('primary')}><Icon d={ICONS.download} size={13} stroke="#000" /> Télécharger</button>
+      <Btn size="sm" variant="primary" icon={ICONS.download} onClick={dl}>Télécharger</Btn>
     </div>
   )
 }
