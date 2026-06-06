@@ -220,13 +220,13 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
         )}
       />
 
-      {/* Source switcher */}
-      <div style={{ padding: '14px 28px', flexShrink: 0 }}>
-        <div style={{ display: 'inline-flex', gap: 4, padding: 4, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)' }}>
+      {/* Source switcher — redesign screen-import */}
+      <div style={{ padding: '4px 28px 14px', flexShrink: 0 }}>
+        <div style={{ display: 'inline-flex', gap: 6, padding: 5, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 9 }}>
           {[
-            { id: TAB.LOCAL, icon: ICONS.upload, label: 'Fichier local', hint: 'Glisser un .mp4 ou choisir' },
-            { id: TAB.PLEX,  icon: ICONS.film,   label: 'Plex',          hint: 'Bibliothèque locale' },
-            { id: TAB.URL,   icon: ICONS.link,   label: 'URL',           hint: 'https://…' },
+            { id: TAB.LOCAL, icon: ICONS.upload, label: 'Fichier local', hint: 'glisser un .mp4' },
+            { id: TAB.PLEX,  icon: ICONS.film,   label: 'Plex',          hint: 'bibliothèque locale', online: true },
+            { id: TAB.URL,   icon: ICONS.link,   label: 'URL / Stream',  hint: 'http://…' },
           ].map(s => {
             const active = tab === s.id
             return (
@@ -234,17 +234,16 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
                 key={s.id}
                 onClick={() => setTab(s.id)}
                 style={{
-                  display: 'flex', alignItems: 'center', gap: 9, padding: '7px 14px', borderRadius: 6,
-                  background: active ? 'var(--bg2)' : 'transparent',
-                  borderBottom: `2px solid ${active ? 'var(--accent)' : 'transparent'}`,
-                  color: active ? 'var(--text)' : 'var(--text3)', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', gap: 8, padding: '8px 15px', borderRadius: 6,
+                  background: active ? 'var(--bg2)' : 'transparent', border: 'none', cursor: 'pointer',
+                  color: active ? 'var(--text)' : 'var(--text2)', fontSize: 13, fontWeight: active ? 600 : 500,
+                  boxShadow: active ? 'inset 0 -2px 0 var(--accent)' : 'none',
                 }}
               >
-                <Icon d={s.icon} size={16} style={{ color: active ? 'var(--accent)' : 'inherit' }} />
-                <span style={{ textAlign: 'left' }}>
-                  <span style={{ display: 'block', fontSize: 12.5, fontWeight: active ? 600 : 500 }}>{s.label}</span>
-                  <span style={{ display: 'block', fontSize: 10, color: 'var(--text4)' }}>{s.hint}</span>
-                </span>
+                <Icon d={s.icon} size={15} style={{ color: active ? 'var(--accent)' : 'inherit' }} />
+                {s.label}
+                {s.online && <span style={{ fontSize: 8.5, padding: '1px 5px', background: 'rgba(94,194,124,.16)', color: 'var(--success)', borderRadius: 3, fontWeight: 700 }}>● ONLINE</span>}
+                <span style={{ fontSize: 10.5, color: 'var(--text4)', marginLeft: 2 }}>{s.hint}</span>
               </button>
             )
           })}
@@ -303,10 +302,10 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
       {/* Video loaded → editor */}
       {video && (
         <div style={{ flex: 1, overflow: 'auto' }}>
-          <div style={{ padding: '8px 16px', background: 'var(--surface2)', borderBottom: '1px solid var(--border)', fontSize: 12, color: 'var(--text2)', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ padding: '8px 16px', background: 'var(--surface2)', borderBottom: '1px solid var(--border)', fontSize: 12, color: 'var(--text2)', display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
             {video.plexTitle
-              ? <span>▶ <strong style={{ color: 'var(--text)' }}>{video.plexTitle}</strong>{video.plexYear ? ` (${video.plexYear})` : ''}</span>
-              : <span>📄 {video.filename}</span>
+              ? <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}><Icon d={ICONS.film} size={14} style={{ color: 'var(--success)' }} /><strong style={{ color: 'var(--text)' }}>{video.plexTitle}</strong>{video.plexYear ? ` (${video.plexYear})` : ''}</span>
+              : <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}><Icon d={ICONS.film} size={14} style={{ color: 'var(--text3)' }} />{video.filename}</span>
             }
             <span style={{ color: 'var(--text3)', fontFamily: 'var(--font-mono)', fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 400 }}>
               {video.sourcePath}
