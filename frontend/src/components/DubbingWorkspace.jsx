@@ -2267,6 +2267,15 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
             </button>
           </>
         )}
+        <div style={{ width: 1, height: 20, background: 'var(--border2)', flexShrink: 0 }} />
+        {(() => {
+          const SS = { saved: { t: '✓ Sauvegardé', c: 'var(--success)' }, saving: { t: '… Sauvegarde', c: 'var(--text2)' }, unsaved: { t: '● Non sauvegardé', c: 'var(--accent)' }, error: { t: '✕ Erreur', c: 'var(--danger)' } }[saveStatus] || { t: '', c: 'var(--text3)' }
+          return <span style={{ fontSize: 11, color: SS.c, flexShrink: 0, whiteSpace: 'nowrap' }}>{SS.t}</span>
+        })()}
+        <button onClick={() => onToggleExport?.()} title="Exporter (E)"
+          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 14px', height: 34, background: 'var(--accent)', color: '#000', fontWeight: 600, border: 'none', borderRadius: 9, fontSize: 12.5, cursor: 'pointer', flexShrink: 0 }}>
+          <Ic d={ICONS.download} size={14} fill="#000" /> Exporter
+        </button>
       </div>
 
       {/* ── Body (video stage + right pane) ── */}

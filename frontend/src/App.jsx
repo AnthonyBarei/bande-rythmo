@@ -167,7 +167,8 @@ function AppInner() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden', background: 'var(--bg)' }}>
 
-      {/* Top bar — redesign shell.jsx TopBar */}
+      {/* Top bar — redesign shell.jsx TopBar. Editor is full-bleed (own header). */}
+      {section !== 'dub' && (
       <div style={{ height: 52, flexShrink: 0, background: 'var(--bg)', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', padding: '0 18px', gap: 14 }}>
         <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: 0.5, color: 'var(--text)' }}>
           BANDE RYTHMO <span style={{ color: 'var(--text4)', fontWeight: 400 }}>· studio</span>
@@ -212,6 +213,7 @@ function AppInner() {
           <Icon d={ICONS.user} size={15} />
         </div>
       </div>
+      )}
 
       {/* Body: nav rail + main */}
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
