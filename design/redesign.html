@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Bande Rythmo — Studio (refonte)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Caveat:wght@500;600;700&display=swap" rel="stylesheet" />
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body, #root { height: 100%; }
+  body { background: #0b0b0d; color: #ECECEF; font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 14px; -webkit-font-smoothing: antialiased; overflow: hidden; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #2a2a33; border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: #3a3a45; }
+  button { font-family: inherit; }
+  input[type="range"] { -webkit-appearance: none; appearance: none; height: 4px; border-radius: 2px; background: #24242b; outline: none; }
+  input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 13px; height: 13px; border-radius: 50%; background: currentColor; cursor: pointer; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<template id="__bundler_thumbnail">
+  <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+    <rect width="100" height="100" rx="20" fill="#0b0b0d"/>
+    <path d="M22 50h6l5-16 7 32 6-22 5 14 4-8h12" stroke="#F5C518" stroke-width="3.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+</template>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="redesign/foundation.jsx"></script>
+<script type="text/babel" src="redesign/data.jsx"></script>
+<script type="text/babel" src="redesign/shell.jsx"></script>
+<script type="text/babel" src="redesign/screen-library.jsx"></script>
+<script type="text/babel" src="redesign/screen-import.jsx"></script>
+<script type="text/babel" src="redesign/screen-editor.jsx"></script>
+<script type="text/babel" src="redesign/screen-record-export.jsx"></script>
+<script type="text/babel" src="redesign/screen-misc.jsx"></script>
+
+<script type="text/babel">
+  const { useState, useEffect } = React;
+
+  function App() {
+    const [screen, setScreen] = useState('library');
+    const [cmd, setCmd] = useState(false);
+    const [help, setHelp] = useState(false);
+    const [accent, setAccent] = useState('#F5C518');
+    const [brStyle, setBrStyle] = useState('classique');
+    const [density, setDensity] = useState('normal');
+
+    const go = (s) => { setScreen(s); window.scrollTo?.(0, 0); };
+
+    // Sync the live accent into the shared token so ALL primitives (Btn, Chip, canvas…) follow it.
+    window.RD.T.accent = accent;
+    window.RD.T.accentDim = accent + '22';
+
+    useEffect(() => {
+      const onKey = (e) => {
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setCmd(c => !c); }
+        if (e.key === 'Escape') setCmd(false);
+        if (e.key === '/' && !['INPUT', 'TEXTAREA'].includes(e.target.tagName)) { e.preventDefault(); setCmd(true); }
+        if (e.key === '?' && !['INPUT', 'TEXTAREA'].includes(e.target.tagName)) { e.preventDefault(); setHelp(h => !h); }
+      };
+      window.addEventListener('keydown', onKey);
+      return () => window.removeEventListener('keydown', onKey);
+    }, []);
+
+    const S = window.RScreens;
+    const screens = {
+      library: <S.Library go={go} accent={accent} />,
+      import: <S.Import go={go} accent={accent} />,
+      editor: <S.Editor go={go} accent={accent} brStyle={brStyle} density={density} onHelp={() => setHelp(true)} />,
+      record: <S.Record go={go} accent={accent} />,
+      export: <S.Export go={go} accent={accent} />,
+      meme: <S.Meme go={go} accent={accent} />,
+      activity: <S.Activity go={go} accent={accent} />,
+      settings: <S.Settings go={go} accent={accent} setAccent={setAccent} brStyle={brStyle} setBrStyle={setBrStyle} density={density} setDensity={setDensity} />,
+    };
+
+    const { Rail, TopBar, CommandPalette, ShortcutsOverlay } = window.RShell;
+    // editor + export are full-bleed (own top bars); others use the shell top bar
+    const fullBleed = screen === 'editor';
+
+    return (
+      <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: '#0b0b0d' }}>
+        <Rail screen={screen} go={go} accent={accent} />
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+          {!fullBleed && <TopBar accent={accent} onCmd={() => setCmd(true)} onHelp={() => setHelp(true)} />}
+          <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+            {screens[screen]}
+          </div>
+        </div>
+        <CommandPalette open={cmd} onClose={() => setCmd(false)} go={go} setAccent={setAccent} />
+        <ShortcutsOverlay open={help} onClose={() => setHelp(false)} />
+      </div>
+    );
+  }
+
+  ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

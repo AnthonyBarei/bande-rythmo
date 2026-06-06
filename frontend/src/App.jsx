@@ -167,18 +167,16 @@ function AppInner() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden', background: 'var(--bg)' }}>
 
-      {/* Top bar */}
-      <div style={{ height: 44, flexShrink: 0, background: 'var(--bg2)', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', padding: '0 14px', gap: 10 }}>
-        <div style={{ width: 22, height: 22, borderRadius: 5, background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-mono)', fontWeight: 800, fontSize: 10, color: '#000' }}>
-          BR
-        </div>
-        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>Bande Rythmo</span>
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text3)' }}>v2.0</span>
-        <div style={{ width: 18 }} />
+      {/* Top bar — redesign shell.jsx TopBar */}
+      <div style={{ height: 52, flexShrink: 0, background: 'var(--bg)', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', padding: '0 18px', gap: 14 }}>
+        <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: 0.5, color: 'var(--text)' }}>
+          BANDE RYTHMO <span style={{ color: 'var(--text4)', fontWeight: 400 }}>· studio</span>
+        </span>
+        <div style={{ flex: 1 }} />
         <button onClick={() => setCmdOpen(true)} title="Palette de commandes (⌘K)"
-          style={{ display: 'flex', alignItems: 'center', gap: 8, height: 30, padding: '0 12px', minWidth: 240, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 99, cursor: 'pointer', color: 'var(--text3)' }}>
-          <Icon d={ICONS.search} size={14} />
-          <span style={{ fontSize: 12 }}>Rechercher ou commande…</span>
+          style={{ display: 'flex', alignItems: 'center', gap: 9, height: 36, padding: '0 12px', minWidth: 300, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 99, cursor: 'pointer', color: 'var(--text3)' }}>
+          <Icon d={ICONS.search} size={15} />
+          <span style={{ fontSize: 13 }}>Rechercher ou commande…</span>
           <div style={{ flex: 1 }} />
           <span style={{ display: 'flex', gap: 3 }}>
             <kbd style={{ padding: '1px 5px', borderRadius: 4, background: 'var(--surface2)', border: '1px solid var(--border2)', fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text2)' }}>⌘</kbd>
@@ -217,7 +215,18 @@ function AppInner() {
 
       {/* Body: nav rail + main */}
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
-        <Sidebar section={section} onNavigate={s => { if (s === 'memes') setMemeClip(null); setDubExportOpen(false); setSection(s) }} clipCount={clips.length} />
+        <Sidebar section={section} onNavigate={s => {
+          setDubExportOpen(false)
+          if (s === 'memes') { setMemeClip(null); setSection('memes'); return }
+          // Éditeur / Studio need a clip — use active, else most recent, else library.
+          if (s === 'dub' || s === 'record') {
+            const target = activeClip || clips[0]
+            if (target) { setActiveClip(target); setSection('dub') }
+            else setSection('clips')
+            return
+          }
+          setSection(s)
+        }} />
         <main style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         {section === 'import' && (
           <ImportSection

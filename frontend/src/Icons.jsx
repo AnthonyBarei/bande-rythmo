@@ -65,6 +65,9 @@ export const ICONS = {
   audio:   <><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></>,
   gif:     <><rect x="2" y="4" width="20" height="16" rx="2" /><path d="M9 10a2 2 0 10-2 2h1v-1M13 9v6M17 9v6M17 9h-3v3h2" /></>,
   // Misc (redesign foundation parity — replaces emoji)
+  wave:     <><path d="M5 8v8M8 5v14M11 9v6M14 4v16M17 8v8M20 10v4" /></>,
+  edit2:    <><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 013 3L12 15l-4 1 1-4 9.5-9.5z" /></>,
+  meme2:    <><rect x="3" y="3" width="18" height="18" rx="3" /><circle cx="8.5" cy="9" r="1.4" /><path d="M7 16c1.2-1.6 3-2.4 5-2.4s3.8.8 5 2.4" /></>,
   activity: <path d="M3 12h4l2.5-7 5 18 2.5-11H21" />,
   loop2:   <><polyline points="17 1 21 5 17 9" /><path d="M3 11V9a4 4 0 014-4h14" /><polyline points="7 23 3 19 7 15" /><path d="M21 13v2a4 4 0 01-4 4H3" /></>,
   globe:   <><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a14 14 0 010 18 14 14 0 010-18z" /></>,
