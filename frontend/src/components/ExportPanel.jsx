@@ -281,6 +281,9 @@ export default function ExportPanel({ segmentId, subtitles, boucles = [], pxPerS
         })}
       </div>
 
+      {/* Mixage — takes over (ducked) source audio → dubbed MP4. */}
+      <MixSection segmentId={segmentId} subtitles={subtitles} onExported={refreshHistory} />
+
       {/* Custom export range — applies to all formats. */}
       <div style={{ padding: '10px 12px', marginBottom: 8, background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 6 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -460,6 +463,214 @@ export default function ExportPanel({ segmentId, subtitles, boucles = [], pxPerS
       {lastExport && !error && !loading && (
         <div style={{ padding: '10px 14px', background: 'rgba(68,187,85,0.1)', border: '1px solid rgba(68,187,85,0.3)', borderRadius: 4, color: 'var(--success)', fontSize: 13 }}>
           ✓ Export {lastExport.toUpperCase()} téléchargé
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Mixage — Phase 1: dubbed MP4 (takes mixed over the source audio) ─────────
+function MixSection({ segmentId, subtitles = [], onExported }) {
+  const [takes, setTakes] = useState([])
+  const [sel, setSel] = useState({})          // take_id → { on, gain }
+  const [duck, setDuck] = useState(-12)
+  const [muteBed, setMuteBed] = useState(false)
+  const [hasBed, setHasBed] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [bedBusy, setBedBusy] = useState(false)
+  const [msg, setMsg] = useState(null)        // { kind: 'ok'|'err', text }
+
+  const refresh = useCallback(async () => {
+    if (!segmentId) return
+    try {
+      const [tr, cr] = await Promise.all([
+        fetch(`/api/takes/${segmentId}`),
+        fetch(`/api/clips/${segmentId}`),
+      ])
+      if (tr.ok) setTakes(await tr.json())
+      if (cr.ok) setHasBed(!!(await cr.json()).has_bed)
+    } catch (e) { console.error('mix data fetch failed', e) }
+  }, [segmentId])
+  useEffect(() => { refresh() }, [refresh])
+
+  const selected = takes.filter(t => sel[t.id]?.on)
+
+  function takeLabel(t) {
+    if (t.subtitle_index != null && subtitles[t.subtitle_index]) {
+      const s = subtitles[t.subtitle_index]
+      return `Réplique ${t.subtitle_index + 1}${s.character ? ' · ' + s.character : ''}`
+    }
+    return t.character || t.label || 'Prise libre'
+  }
+
+  async function exportDub() {
+    if (!selected.length) { setMsg({ kind: 'err', text: 'Sélectionnez au moins une prise.' }); return }
+    setBusy(true); setMsg(null)
+    try {
+      const body = {
+        segment_id: segmentId,
+        entries: selected.map(t => ({ take_id: t.id, gain_db: sel[t.id]?.gain || 0 })),
+        duck_db: duck, mute_bed: muteBed, loudnorm: true,
+      }
+      const res = await fetch('/api/export/mp4-dubbed', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.detail || `HTTP ${res.status}`)
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url; a.download = 'clip_double.mp4'; a.click()
+      URL.revokeObjectURL(url)
+      setMsg({ kind: 'ok', text: `MP4 doublé exporté — ${selected.length} prise${selected.length > 1 ? 's' : ''} mixée${selected.length > 1 ? 's' : ''}.` })
+      onExported?.()
+    } catch (e) {
+      setMsg({ kind: 'err', text: 'Mixage échoué : ' + e.message })
+    } finally { setBusy(false) }
+  }
+
+  async function uploadBed(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setBedBusy(true); setMsg(null)
+    try {
+      const fd = new FormData()
+      fd.append('audio', file)
+      const res = await fetch(`/api/clips/${segmentId}/replace-audio`, { method: 'POST', body: fd })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.detail || `HTTP ${res.status}`)
+      }
+      setHasBed(true)
+      setMsg({ kind: 'ok', text: `Piste audio remplacée par « ${file.name} ».` })
+    } catch (err) {
+      setMsg({ kind: 'err', text: 'Remplacement audio échoué : ' + err.message })
+    } finally { setBedBusy(false); e.target.value = '' }
+  }
+
+  async function useStem(stem) {
+    setBedBusy(true); setMsg(null)
+    try {
+      const res = await fetch(`/api/clips/${segmentId}/use-stem`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ stem }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.detail || `HTTP ${res.status}`)
+      }
+      setHasBed(true)
+      setMsg({ kind: 'ok', text: stem === 'no_vocals' ? 'Instrumental (Demucs) utilisé comme piste de base.' : 'Voix (Demucs) utilisée comme piste de base.' })
+    } catch (err) {
+      setMsg({ kind: 'err', text: err.message })
+    } finally { setBedBusy(false) }
+  }
+
+  async function resetBed() {
+    setBedBusy(true); setMsg(null)
+    try {
+      await fetch(`/api/clips/${segmentId}/audio-bed`, { method: 'DELETE' })
+      setHasBed(false)
+      setMsg({ kind: 'ok', text: 'Audio original restauré.' })
+    } catch (err) {
+      setMsg({ kind: 'err', text: err.message })
+    } finally { setBedBusy(false) }
+  }
+
+  const mono = { fontSize: 10.5, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, fontFamily: 'var(--font-mono)' }
+
+  return (
+    <div style={{ padding: '12px', marginBottom: 8, background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: takes.length ? 10 : 0 }}>
+        <span style={mono}>Mixage — MP4 doublé</span>
+        <span style={{ fontSize: 10.5, color: 'var(--text4)' }}>{takes.length} prise{takes.length !== 1 ? 's' : ''}</span>
+        <div style={{ flex: 1 }} />
+        {/* bed management */}
+        <label title="Remplacer l'audio du clip par un fichier (wav/mp3/m4a)" style={{ cursor: 'pointer' }}>
+          <input type="file" accept="audio/*,.wav,.mp3,.m4a,.flac,.ogg" onChange={uploadBed} style={{ display: 'none' }} />
+          <span style={{ fontSize: 10.5, color: 'var(--text2)', background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: 4, padding: '3px 8px' }}>
+            {bedBusy ? '…' : 'Remplacer l\'audio'}
+          </span>
+        </label>
+        <button onClick={() => useStem('no_vocals')} disabled={bedBusy} title="Utiliser l'instrumental Demucs (séparation vocale requise)"
+          style={{ fontSize: 10.5, color: 'var(--text2)', background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: 4, padding: '3px 8px', cursor: 'pointer' }}>
+          Instrumental
+        </button>
+        {hasBed && (
+          <button onClick={resetBed} disabled={bedBusy} title="Revenir à l'audio original"
+            style={{ fontSize: 10.5, color: 'var(--accent)', background: 'rgba(245,197,24,0.1)', border: '1px solid rgba(245,197,24,0.3)', borderRadius: 4, padding: '3px 8px', cursor: 'pointer' }}>
+            Piste remplacée ✕
+          </button>
+        )}
+      </div>
+
+      {takes.length === 0 ? (
+        <div style={{ fontSize: 11.5, color: 'var(--text3)', padding: '6px 0' }}>
+          Aucune prise enregistrée — enregistrez des répliques dans l'onglet Studio, elles apparaîtront ici pour le mixage.
+        </div>
+      ) : (
+        <>
+          {/* takes */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 180, overflowY: 'auto', marginBottom: 10 }}>
+            {takes.map(t => {
+              const on = !!sel[t.id]?.on
+              const gain = sel[t.id]?.gain || 0
+              return (
+                <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 9px', background: 'var(--surface)', border: `1px solid ${on ? 'rgba(245,197,24,0.4)' : 'var(--border)'}`, borderRadius: 6 }}>
+                  <input type="checkbox" checked={on}
+                    onChange={e => setSel(s => ({ ...s, [t.id]: { on: e.target.checked, gain } }))} />
+                  <span style={{ flex: 1, fontSize: 12, color: on ? 'var(--text)' : 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {takeLabel(t)}
+                  </span>
+                  <span style={{ fontSize: 10.5, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>{(t.duration || 0).toFixed(1)}s</span>
+                  {on && (
+                    <>
+                      <input type="range" min={-12} max={12} step={1} value={gain}
+                        onChange={e => setSel(s => ({ ...s, [t.id]: { on: true, gain: +e.target.value } }))}
+                        style={{ width: 90 }} title="Gain de la prise (dB)" />
+                      <span style={{ fontSize: 10, color: gain !== 0 ? 'var(--accent)' : 'var(--text4)', fontFamily: 'var(--font-mono)', minWidth: 38, textAlign: 'right' }}>
+                        {gain > 0 ? '+' : ''}{gain} dB
+                      </span>
+                    </>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+
+          {/* VO bed level */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+            <span style={{ fontSize: 11.5, color: 'var(--text2)', minWidth: 88 }}>Voix originale</span>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: 'var(--text2)', cursor: 'pointer' }}>
+              <input type="checkbox" checked={muteBed} onChange={e => setMuteBed(e.target.checked)} />
+              muette
+            </label>
+            {!muteBed && (
+              <>
+                <input type="range" min={-24} max={0} step={1} value={duck} onChange={e => setDuck(+e.target.value)}
+                  style={{ flex: 1 }} title="Atténuation de la piste originale (dB)" />
+                <span style={{ fontSize: 10.5, color: 'var(--text3)', fontFamily: 'var(--font-mono)', minWidth: 46, textAlign: 'right' }}>{duck} dB</span>
+              </>
+            )}
+            {muteBed && <div style={{ flex: 1 }} />}
+          </div>
+
+          <button onClick={exportDub} disabled={busy || !selected.length}
+            style={{
+              width: '100%', padding: '9px 0', borderRadius: 6, fontSize: 13, fontWeight: 600,
+              background: busy ? 'var(--surface3)' : selected.length ? 'var(--accent)' : 'var(--surface3)',
+              color: busy || !selected.length ? 'var(--text3)' : '#000',
+              cursor: busy || !selected.length ? 'default' : 'pointer', border: 'none',
+            }}>
+            {busy ? 'Mixage en cours…' : `Exporter le MP4 doublé${selected.length ? ` (${selected.length} prise${selected.length > 1 ? 's' : ''})` : ''}`}
+          </button>
+        </>
+      )}
+
+      {msg && (
+        <div style={{ marginTop: 8, fontSize: 11.5, color: msg.kind === 'ok' ? 'var(--success)' : 'var(--danger)' }}>
+          {msg.text}
         </div>
       )}
     </div>
