@@ -2919,17 +2919,6 @@ function BandeRythmoToolbar({
     onSubtitlesChange(subtitles.map((s, i) => i === targetIdx ? { ...s, ...patch } : s))
   }
 
-
-  function insertTagSub(text, dur = 0.5) {
-    const v = videoRef.current
-    const t = v ? v.currentTime : 0
-    const newSub = { start: t, end: t + dur, text, character: '', reactions: [] }
-    const next = [...subtitles, newSub].sort((a, b) => a.start - b.start)
-    onSubtitlesChange(next)
-    setShowResp(false)
-    setShowReact(false)
-  }
-
   function setIN() {
     const v = videoRef.current; if (!target || !v) return
     updateTarget({ start: Math.min(v.currentTime, target.end - 0.1) })
@@ -3074,7 +3063,7 @@ function BandeRythmoToolbar({
           <div data-popover="char" style={{
             position: 'fixed', bottom: charAnchor.bottom, left: charAnchor.left, zIndex: 'var(--z-dropdown)',
             background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: 12, boxShadow: '0 18px 60px rgba(0,0,0,0.55)',
-            padding: '4px 0', minWidth: 180, boxShadow: '0 6px 18px rgba(0,0,0,0.7)',
+            padding: '4px 0', minWidth: 180,
           }}>
             <div style={{ padding: '4px 10px 6px', fontSize: 9, color: '#555', textTransform: 'uppercase', letterSpacing: 1 }}>
               Personnage — réplique #{targetIdx + 1}
@@ -3169,7 +3158,7 @@ function BandeRythmoToolbar({
           <div data-popover="det" style={{
             position: 'fixed', bottom: detAnchor.bottom, left: detAnchor.left, zIndex: 'var(--z-dropdown)',
             background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: 12, boxShadow: '0 18px 60px rgba(0,0,0,0.55)',
-            padding: 8, minWidth: 230, boxShadow: '0 6px 18px rgba(0,0,0,0.7)',
+            padding: 8, minWidth: 230,
           }}>
             <div style={{ fontSize: 9, color: '#777', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>
               Signes phonétiques
@@ -3213,7 +3202,6 @@ function BandeRythmoToolbar({
             position: 'fixed', bottom: boucleAnchor.bottom, left: boucleAnchor.left, zIndex: 'var(--z-dropdown)',
             background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: 12, boxShadow: '0 18px 60px rgba(0,0,0,0.55)',
             padding: 8, minWidth: 260, maxHeight: 260, overflow: 'auto',
-            boxShadow: '0 6px 18px rgba(0,0,0,0.7)',
           }}>
             <div style={{ fontSize: 9, color: '#777', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>
               Boucles · fps {clipFps.toFixed(2)}
@@ -3378,7 +3366,7 @@ function BandeRythmoToolbar({
         <div data-popover="inserer" style={{
           position: 'fixed', bottom: dropdownAnchor.bottom, left: dropdownAnchor.left, zIndex: 'var(--z-dropdown)',
           background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: 12, boxShadow: '0 18px 60px rgba(0,0,0,0.55)',
-          padding: 12, minWidth: 340, maxWidth: 400, boxShadow: '0 8px 22px rgba(0,0,0,0.75)',
+          padding: 12, minWidth: 340, maxWidth: 400,
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
             <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text)', textTransform: 'uppercase', letterSpacing: 1 }}>
@@ -3468,7 +3456,7 @@ function BandeRythmoToolbar({
         <div data-popover="affichage" style={{
           position: 'fixed', bottom: dropdownAnchor.bottom, left: dropdownAnchor.left, zIndex: 'var(--z-dropdown)',
           background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: 12, boxShadow: '0 18px 60px rgba(0,0,0,0.55)',
-          padding: 14, width: 340, boxShadow: '0 8px 22px rgba(0,0,0,0.75)',
+          padding: 14, width: 340,
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
             <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text)', textTransform: 'uppercase', letterSpacing: 1 }}>
