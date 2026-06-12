@@ -299,7 +299,26 @@ Backend: `_BR_FONT_FILES["lisible"]` → fallback atkinson si fichier absent.
 - **Traduction** : `DEEPL_API_KEY` ou `LIBRETRANSLATE_URL` (+ `LIBRETRANSLATE_API_KEY`). Sinon `GET /api/translate/status` → `available:false`, contrôle masqué, `POST` → 503.
 - **Séparation vocale** : `pip install demucs`. Sinon `GET /api/clips/vocal-separation/status` → `available:false`, contrôle masqué, `POST` → 503.
 
+### Fait — Phase 0+1 REMAKE_PLAN (2026-06-07)
+- **Hardening** : SQLite WAL + busy_timeout + index FK, excepts loggés, garde
+  path fonts/SSRF Plex, ESLint baseline (`npm run lint`), `utils/timecode.js` +
+  `config/tracks.js` (formatters/palette canoniques)
+- **Export doublé (boucle de doublage fermée)** :
+  - `services/mix_service.py` — mix ffmpeg : bed atténué (duck dB) ou muet +
+    prises adelay'd au début de leur réplique + gain par prise + loudnorm −16
+    LUFS, vidéo copiée (rapide)
+  - `POST /api/export/mp4-dubbed` `{entries:[{take_id,at?,gain_db}], duck_db,
+    mute_bed, loudnorm}` → MP4 doublé (historique `mp4-dubbed`)
+  - **Piste audio de base (bed)** : `segments/{id}_bed.wav` (prioritaire sur
+    l'audio du segment ; `has_bed` dérivé). `POST /{id}/replace-audio` (upload
+    → wav 48k stéréo) · `POST /{id}/use-stem` (stem Demucs → bed) ·
+    `DELETE /{id}/audio-bed`
+  - **UI Mixage** (ExportPanel) : prises cochables + gain −12..+12 dB, VO
+    duck/muette, Remplacer l'audio / Instrumental / reset, export 1-clic
+
 ### Reste à faire (non démarré)
+- **Phase 2 (REMAKE_PLAN)** : split DubbingWorkspace (3 650 lignes) en hooks,
+  export côté serveur (DB source of truth), Vitest
 - **Gestion utilisateurs** : auth (JWT/session), multi-user, contenu par user
 - **Intégrations tierces** : Stremio (lecture vidéo), qBittorrent (download → import auto)
 - `.rythmo.txt` import (DetX XML déjà couvert)

@@ -108,19 +108,22 @@ All 9 formats pass. Two design issues:
 
 ## 5 · Execution phases
 
-### Phase 0 — hardening quick wins (hours) ← start here
-- [ ] SQLite WAL + busy_timeout + FK indexes
-- [ ] Replace bare excepts with logged errors (backend) + toast surfacing (frontend)
-- [ ] `utils/timecode.js` + `config/colors.js` dedup
-- [ ] ESLint + Prettier baseline
-- [ ] Path validation (fonts basename, plex URL scheme, local path size cap)
+### Phase 0 — hardening quick wins ✅ (2026-06-07)
+- [x] SQLite WAL + busy_timeout + FK indexes (`c5322c8`)
+- [x] Bare excepts logged (backend) + toast surfacing (frontend) (`c5322c8`, `4e810bf`)
+- [x] `utils/timecode.js` + `config/tracks.js` dedup (`08d831b`)
+- [x] ESLint baseline — caught 2 real bugs (dup function, dup style keys) (`22a054f`)
+- [x] Path validation (fonts basename, plex URL scheme) (`c5322c8`)
+- [ ] Prettier + upload size caps + rate limiting (deferred to Phase 3)
 
-### Phase 1 — the flagship feature: dubbed export (1–2 sessions)
-- [ ] `POST /api/export/mp4-dubbed`: ffmpeg amix — source audio (duck −12 dB or mute)
-      + takes placed at their subtitle times, gain per take, loudnorm to −16 LUFS
-- [ ] Audio replacement: upload .wav/.mp3 → swap as clip audio bed
-- [ ] "Use separated vocals/instrumental as bed" (Demucs output integration)
-- [ ] Mixage UI (per-réplique take slot + gain + duck + export button)
+### Phase 1 — the flagship feature: dubbed export ✅ core (2026-06-07)
+- [x] `POST /api/export/mp4-dubbed`: ffmpeg amix — bed duck/mute + takes adelay'd
+      at réplique start + per-take gain + loudnorm −16 LUFS, video copied (`cd31b6a`)
+- [x] Audio replacement: upload audio file → 48k wav bed (`/replace-audio`)
+- [x] Demucs stem → bed (`/use-stem`), reset (`DELETE /audio-bed`)
+- [x] Mixage UI in ExportPanel (takes + gains + duck/mute + bed controls) (`17d7842`)
+- [ ] Take gain auto-normalization on upload (−18 dBFS) — later
+- [ ] Mixed audio under the BR-band MP4 export (combine pipelines) — later
 
 ### Phase 2 — editor refactor (2–3 sessions, no behavior change)
 - [ ] Extract `useSubtitleManager` (CRUD/undo/autosave) — with Vitest coverage
