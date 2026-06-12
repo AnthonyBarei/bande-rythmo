@@ -440,6 +440,63 @@ async def separate_clip_vocals(clip_id: str):
     return {"job_id": job.id}
 
 
+# ── Audio bed (Phase 1 — dubbed export) ─────────────────────────────────────
+# segments/{clip_id}_bed.wav replaces the segment's own audio as the mix base.
+
+@router.post("/{clip_id}/replace-audio")
+async def replace_audio(clip_id: str, audio: UploadFile = File(...), db: Session = Depends(get_db)):
+    """Upload an audio file (wav/mp3/m4a/...) to use as the clip's audio bed."""
+    from services.mix_service import make_bed_from_file
+    if not get_clip(db, clip_id):
+        raise HTTPException(404, "Clip not found")
+    ext = os.path.splitext(audio.filename or "audio.wav")[1] or ".wav"
+    tmp = f"segments/{clip_id}_bed_upload{ext}"
+    try:
+        with open(tmp, "wb") as dst:
+            shutil.copyfileobj(audio.file, dst)
+        await asyncio.to_thread(make_bed_from_file, clip_id, tmp)
+    except RuntimeError as exc:
+        raise HTTPException(400, str(exc))
+    finally:
+        if os.path.isfile(tmp):
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+    return {"ok": True, "has_bed": True}
+
+
+class UseStemRequest(BaseModel):
+    stem: str = "no_vocals"   # 'no_vocals' (instrumental) | 'vocals'
+
+
+@router.post("/{clip_id}/use-stem")
+async def use_stem_as_bed(clip_id: str, req: UseStemRequest, db: Session = Depends(get_db)):
+    """Promote a Demucs stem (from separate-vocals) to the clip's audio bed."""
+    from services.mix_service import make_bed_from_file
+    if req.stem not in ("vocals", "no_vocals"):
+        raise HTTPException(400, "stem must be 'vocals' or 'no_vocals'")
+    if not get_clip(db, clip_id):
+        raise HTTPException(404, "Clip not found")
+    stem_path = os.path.join("segments", "stems", "htdemucs", clip_id, f"{req.stem}.wav")
+    if not os.path.isfile(stem_path):
+        raise HTTPException(404, "Stem introuvable — lancez d'abord la séparation vocale")
+    await asyncio.to_thread(make_bed_from_file, clip_id, stem_path)
+    return {"ok": True, "has_bed": True, "stem": req.stem}
+
+
+@router.delete("/{clip_id}/audio-bed")
+async def delete_audio_bed(clip_id: str):
+    """Back to the segment's original audio."""
+    p = f"segments/{clip_id}_bed.wav"
+    if os.path.isfile(p):
+        try:
+            os.remove(p)
+        except OSError:
+            raise HTTPException(500, "Impossible de supprimer la piste")
+    return {"ok": True, "has_bed": False}
+
+
 @router.post("/{clip_id}/detect-scenes")
 async def detect_scenes(clip_id: str, threshold: float = 0.4, db: Session = Depends(get_db)):
     """Detect scene-change timecodes in the clip segment and persist them.

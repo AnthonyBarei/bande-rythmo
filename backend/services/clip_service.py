@@ -40,6 +40,7 @@ def _to_dict(clip: Clip) -> dict:
         "scene_cuts": _parse_scene_cuts(clip.scene_cuts),
         "project": clip.project or "",
         "has_proxy": os.path.isfile(f"segments/{clip.clip_id}_proxy.mp4"),
+        "has_bed": os.path.isfile(f"segments/{clip.clip_id}_bed.wav"),
         "subtitles": [
             {
                 "start": s.start, "end": s.end, "character": s.character,

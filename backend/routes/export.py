@@ -114,6 +114,71 @@ def _trim_subs_to_range(subs: list, a: float, b: float) -> list:
     return out
 
 
+class DubEntry(BaseModel):
+    take_id: int
+    at: Optional[float] = None      # seconds into clip; default = subtitle.start
+    gain_db: float = 0.0
+
+
+class DubMixRequest(BaseModel):
+    segment_id: str
+    entries: List[DubEntry]
+    duck_db: Optional[float] = -12.0  # bed attenuation; ignored if mute_bed
+    mute_bed: bool = False
+    loudnorm: bool = True
+
+
+@router.post("/mp4-dubbed")
+async def export_mp4_dubbed(req: DubMixRequest, db: Session = Depends(get_db)):
+    """Mix recorded takes over the (ducked/muted) source audio → dubbed MP4.
+
+    Take placement: explicit `at`, else the start of the take's réplique
+    (subtitle_index), else 0. Video stream is copied (fast, lossless)."""
+    from models import Take
+    from services.mix_service import mix_dub
+
+    segment = f"segments/{req.segment_id}.mp4"
+    if not os.path.exists(segment):
+        raise HTTPException(404, "Segment not found")
+    if not req.entries:
+        raise HTTPException(400, "Aucune prise sélectionnée")
+
+    clip_row = get_clip(db, req.segment_id) or {}
+    subs = clip_row.get("subtitles") or []
+
+    entries = []
+    for e in req.entries:
+        take = db.query(Take).filter(Take.id == e.take_id).first()
+        if not take or take.clip_id != req.segment_id:
+            raise HTTPException(404, f"Prise {e.take_id} introuvable pour ce clip")
+        if not os.path.isfile(take.audio_path):
+            raise HTTPException(404, f"Fichier audio manquant pour la prise {e.take_id}")
+        at = e.at
+        if at is None and take.subtitle_index is not None and take.subtitle_index < len(subs):
+            at = subs[take.subtitle_index]["start"]
+        entries.append({"path": take.audio_path, "at": at or 0.0, "gain_db": e.gain_db})
+
+    export_id = str(uuid.uuid4())
+    output = f"exports/{export_id}_dubbed.mp4"
+    duck = None if req.mute_bed else (req.duck_db if req.duck_db is not None else -12.0)
+    try:
+        await asyncio.to_thread(
+            mix_dub, segment, output, entries,
+            duck, clip_id=req.segment_id, loudnorm=req.loudnorm,
+        )
+    except (RuntimeError, ValueError) as exc:
+        log.error("dub mix failed for clip %s: %s", req.segment_id, exc)
+        raise HTTPException(500, "Mixage échoué — vérifiez les prises sélectionnées")
+
+    try:
+        record_export(db, clip_id=req.segment_id, format="mp4-dubbed", path=output,
+                      filename="clip_double.mp4", media_type="video/mp4",
+                      params={"takes": len(entries), "duck_db": duck, "loudnorm": req.loudnorm})
+    except Exception:
+        log.exception("export history write failed (mp4-dubbed, clip %s)", req.segment_id)
+    return FileResponse(output, filename="clip_double.mp4", media_type="video/mp4")
+
+
 @router.post("/export")
 async def export(req: ExportRequest, db: Session = Depends(get_db)):
     export_id = str(uuid.uuid4())
