@@ -478,15 +478,17 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
       setSceneCuts(data.scene_cuts || [])
-    } catch {
-      // silent — non-critical aid
+      if (!(data.scene_cuts || []).length) undoToast.show({ msg: 'Aucun changement de plan détecté', kind: 'info' })
+    } catch (e) {
+      undoToast.error('Détection des plans échouée : ' + e.message)
     } finally {
       setDetectingScenes(false)
     }
   }
   async function clearScenes() {
     setSceneCuts([])
-    try { await fetch(`/api/clips/${clip.clip_id}/scenes`, { method: 'DELETE' }) } catch {}
+    try { await fetch(`/api/clips/${clip.clip_id}/scenes`, { method: 'DELETE' }) }
+    catch (e) { undoToast.error('Effacement des plans échoué : ' + e.message) }
   }
 
   async function generateProxy() {
@@ -504,7 +506,10 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
         onError: () => { setProxyJob(false) },
         onCancel: () => { setProxyJob(false) },
       })
-    } catch { setProxyJob(false) }
+    } catch (e) {
+      setProxyJob(false)
+      undoToast.error('Lancement du proxy échoué : ' + e.message)
+    }
   }
 
   // Auto-fit scroll rate, once per clip: pick pxPerSec so the densest réplique
@@ -646,7 +651,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
           setWaveformData(data)
         }
       })
-      .catch(() => {})
+      .catch(e => console.error('waveform fetch failed', e)) // non-bloquant : la bande s'affiche sans onde
   }, [clip.clip_id])
 
   // BR canvas RAF loop

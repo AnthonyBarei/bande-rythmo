@@ -45,7 +45,7 @@ export default function ExportPanel({ segmentId, subtitles, boucles = [], pxPerS
       const r = await fetch(`/api/export/list?clip_id=${encodeURIComponent(segmentId)}`)
       if (!r.ok) return
       setHistory(await r.json())
-    } catch {}
+    } catch (e) { console.error('export history fetch failed', e) } // l'historique reste vide, l'export fonctionne
   }, [segmentId])
   useEffect(() => { refreshHistory() }, [refreshHistory])
 
