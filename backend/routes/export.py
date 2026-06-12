@@ -15,10 +15,13 @@ from services.jobs import create_job, raise_if_cancelled, CancelledJobError, Job
 from services.export_service import record_export, list_exports, get_export, delete_export
 from database import SessionLocal
 import asyncio
+import logging
 import uuid
 import os
 import json
 import subprocess
+
+log = logging.getLogger("br.export")
 
 router = APIRouter()
 
@@ -130,7 +133,7 @@ async def export(req: ExportRequest, db: Session = Depends(get_db)):
             record_export(db, clip_id=req.segment_id, format="gif",
                           path=output, filename="clip.gif", media_type="image/gif")
         except Exception:
-            pass
+            log.exception("export history write failed (gif, clip %s)", req.segment_id)
         return FileResponse(output, filename="clip.gif", media_type="image/gif")
 
     subs = [
@@ -158,7 +161,7 @@ async def export(req: ExportRequest, db: Session = Depends(get_db)):
             record_export(db, clip_id=req.segment_id, format=fmt,
                           path=path, filename=filename, media_type=media_type)
         except Exception:
-            pass
+            log.exception("export history write failed (%s, clip %s)", fmt, req.segment_id)
 
     if req.format == "srt":
         path = f"exports/{export_id}.srt"
@@ -215,7 +218,7 @@ async def export(req: ExportRequest, db: Session = Depends(get_db)):
             if duration_s <= 0:
                 duration_s = float(data.get("format", {}).get("duration", 0) or 0)
         except Exception:
-            pass
+            log.warning("ffprobe failed for %s — using fallback dimensions", segment, exc_info=True)
 
         # Parse fps fraction (e.g. "24000/1001" → 23.976)
         try:
@@ -472,7 +475,7 @@ async def export_mp4_job(req: ExportRequest, db: Session = Depends(get_db)):
                 if duration_s <= 0:
                     duration_s = float(data.get("format", {}).get("duration", 0) or 0)
             except Exception:
-                pass
+                log.warning("ffprobe failed for %s (mp4 job) — fallback metrics", segment, exc_info=True)
             try:
                 num, den = fps_str.split("/")
                 src_fps = float(num) / float(den)
@@ -656,7 +659,7 @@ async def export_mp4_canvas(
         vw = vs["width"]
         fps = vs.get("r_frame_rate", "30/1")
     except Exception:
-        pass
+        log.warning("ffprobe failed (canvas overlay) — fallback 1280/30fps", exc_info=True)
 
     output = f"exports/{export_id}_canvas_rythmo.mp4"
     # Normalize overlay timestamps then convert to CFR matching video fps.

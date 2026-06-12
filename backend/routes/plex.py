@@ -34,12 +34,15 @@ async def status():
 
 @router.post("/connect")
 async def connect(req: ConnectRequest):
+    url = req.url.strip()
+    if not url.lower().startswith(("http://", "https://")):
+        raise HTTPException(400, "URL Plex invalide — http(s):// requis")
     try:
-        name = await test_connection(req.url, req.token)
-        save_config(req.url, req.token)
+        name = await test_connection(url, req.token)
+        save_config(url, req.token)
         return {"connected": True, "server": name}
-    except Exception as e:
-        raise HTTPException(400, f"Connexion échouée : {e}")
+    except Exception:
+        raise HTTPException(400, "Connexion échouée — vérifiez l'URL et le token")
 
 
 @router.get("/libraries")

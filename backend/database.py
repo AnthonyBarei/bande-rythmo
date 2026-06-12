@@ -1,9 +1,23 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 
 DATABASE_URL = "sqlite:///./bande_rythmo.db"
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+
+
+@event.listens_for(engine, "connect")
+def _sqlite_pragmas(dbapi_conn, _):
+    # WAL: readers don't block writers — required once jobs + UI hit the DB
+    # concurrently. busy_timeout: wait instead of "database is locked".
+    cur = dbapi_conn.cursor()
+    cur.execute("PRAGMA journal_mode=WAL")
+    cur.execute("PRAGMA busy_timeout=5000")
+    cur.execute("PRAGMA synchronous=NORMAL")
+    cur.execute("PRAGMA foreign_keys=ON")
+    cur.close()
+
+
 SessionLocal = sessionmaker(bind=engine)
 
 
@@ -56,4 +70,9 @@ def init_db():
             conn.execute(text("ALTER TABLE subtitles ADD COLUMN plan_cut REAL"))
         if "note" not in sub_cols:
             conn.execute(text("ALTER TABLE subtitles ADD COLUMN note TEXT"))
+        # FK indexes — list/lookup endpoints filter on clip_id constantly.
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_subtitles_clip_id ON subtitles (clip_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_takes_clip_id ON takes (clip_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_boucles_clip_id ON boucles (clip_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_exports_clip_id ON exports (clip_id)"))
         conn.commit()

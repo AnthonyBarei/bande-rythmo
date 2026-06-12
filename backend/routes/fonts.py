@@ -48,7 +48,12 @@ def resolve_font_path(font_id: str):
     Called by br_renderer when the picker id isn't a bundled font."""
     for it in _load_registry():
         if it.get("id") == font_id:
-            p = os.path.join(FONTS_DIR, it["file"])
+            fname = it.get("file") or ""
+            # Registry is app-written, but never trust it as a path: a corrupted
+            # or hand-edited entry must not escape FONTS_DIR.
+            if fname != os.path.basename(fname) or fname.startswith("."):
+                return None
+            p = os.path.join(FONTS_DIR, fname)
             return p if os.path.isfile(p) else None
     return None
 

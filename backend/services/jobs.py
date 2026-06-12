@@ -8,12 +8,15 @@ GET /api/jobs/{id}/result delivers the final file or JSON when status=done.
 from __future__ import annotations
 
 import asyncio
+import logging
 import threading
 import time
 import uuid
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel
+
+log = logging.getLogger("br.jobs")
 
 
 class JobStartResponse(BaseModel):
@@ -112,7 +115,8 @@ class Job:
             try:
                 proc.kill()
             except Exception:
-                pass
+                log.warning("job %s: subprocess kill failed (pid may already be gone)",
+                            self.job_id, exc_info=True)
         if self.status == "running":
             self.status = "cancelled"
             self.updated_at = time.time()
