@@ -23,12 +23,8 @@ const FONT_BR = 'bold 22px "JetBrains Mono", "Courier New", monospace'
 const FONT_LABEL = 'bold 10px "IBM Plex Sans", sans-serif'
 
 // Character track colors — hex for label/text/border, soft for fills, bg for legacy callers
-const TRACK_COLORS = [
-  { bg: 'rgba(245,197,24,0.10)',  hex: '#f5c518', soft: 'rgba(245,197,24,0.10)', text: '#f5c518', label: '#f5c518' },
-  { bg: 'rgba(126,192,255,0.10)', hex: '#7ec0ff', soft: 'rgba(126,192,255,0.10)', text: '#7ec0ff', label: '#7ec0ff' },
-  { bg: 'rgba(240,138,175,0.10)', hex: '#f08aaf', soft: 'rgba(240,138,175,0.10)', text: '#f08aaf', label: '#f08aaf' },
-  { bg: 'rgba(126,212,168,0.10)', hex: '#7ed4a8', soft: 'rgba(126,212,168,0.10)', text: '#7ed4a8', label: '#7ed4a8' },
-]
+import { TRACK_COLORS } from '../config/tracks'
+import { fmtClock, fmtSMPTE } from '../utils/timecode'
 
 // hex (#rrggbb) + opacity (0..1) → 8-digit hex string accepted by canvas fillStyle
 const withAlpha = (hex, a) => hex + Math.round(Math.max(0, Math.min(1, a)) * 255).toString(16).padStart(2, '0')
@@ -79,12 +75,7 @@ const ICONS = {
   sliders:  <><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></>,
 }
 
-const fmt = t => {
-  if (!t && t !== 0) return '00:00.0'
-  const m = Math.floor(t / 60)
-  const s = (t % 60).toFixed(1).padStart(4, '0')
-  return `${String(m).padStart(2, '0')}:${s}`
-}
+const fmt = fmtClock
 
 const LANGS = [
   { code: 'fr', label: 'FR — Français' },
@@ -122,21 +113,7 @@ const brFontStack = id => {
 // readout is wanted (cursor, grid majors, list timecodes). Negative time is
 // preserved with a leading minus so calibration marks (START at −3s) read
 // correctly. `fps` defaults to 25 (PAL) when the clip doesn't carry one yet.
-const fmtTC = (sec, fps = 25) => {
-  if (sec == null || Number.isNaN(sec)) return '--:--:--:--'
-  const f = Math.max(1, Math.round(fps))
-  const neg = sec < 0
-  const abs = Math.abs(sec)
-  const totalFrames = Math.round(abs * f)
-  const ff = totalFrames % f
-  const totalSec = Math.floor(totalFrames / f)
-  const ss = totalSec % 60
-  const totalMin = Math.floor(totalSec / 60)
-  const mm = totalMin % 60
-  const hh = Math.floor(totalMin / 60)
-  const p2 = n => String(n).padStart(2, '0')
-  return `${neg ? '-' : ''}${p2(hh)}:${p2(mm)}:${p2(ss)}:${p2(ff)}`
-}
+const fmtTC = fmtSMPTE
 
 // Détection sign palette colour (graphite, low-saturation so it never fights
 // the dialogue text). Same on canvas and in MP4 burn (see br_renderer).

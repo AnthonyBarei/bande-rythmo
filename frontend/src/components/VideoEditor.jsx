@@ -3,17 +3,10 @@ import TimelineBar from './TimelineBar'
 import VideoPlayer from './VideoPlayer'
 import { Icon, ICONS } from '../Icons'
 import { useProgress } from '../ProgressContext'
+import { fmtClockHours as fmt } from '../utils/timecode'
 
 let _pendingId = 0
 const newId = () => ++_pendingId
-
-const fmt = t => {
-  if (t === null || t === undefined) return '--:--.--'
-  const h = Math.floor(t / 3600)
-  const m = Math.floor((t % 3600) / 60)
-  const s = (t % 60).toFixed(2).padStart(5, '0')
-  return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${s}` : `${String(m).padStart(2, '0')}:${s}`
-}
 
 const Kbd = ({ children }) => (
   <span style={{

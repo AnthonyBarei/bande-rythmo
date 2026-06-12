@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { Icon, ICONS } from '../Icons'
 import { useProgress } from '../ProgressContext'
+import { fmtClock } from '../utils/timecode'
 
 const FORMATS = [
   { id: 'srt',         label: 'SRT',        icon: ICONS.note,  desc: 'Sous-titres standard',                        color: '#4488ff', needsSubs: true },
@@ -77,12 +78,7 @@ export default function ExportPanel({ segmentId, subtitles, boucles = [], pxPerS
     } catch {}
   }
 
-  function fmtSec(t) {
-    if (!t && t !== 0) return '--'
-    const m = Math.floor(t / 60)
-    const s = (t % 60).toFixed(1).padStart(4, '0')
-    return `${m}:${s}`
-  }
+  const fmtSec = t => (!t && t !== 0) ? '--' : fmtClock(t)
   function fmtBytes(n) {
     if (!n) return '—'
     if (n < 1024) return `${n} B`

@@ -1,12 +1,11 @@
 import React, { useRef, useEffect, useCallback } from 'react'
+import { TRACK_HEXES as TRACK_COLORS } from '../config/tracks'
 
 // Full-clip navigation timeline, drawn below the scrolling BR canvas.
 // Shows the WHOLE clip at once (the BR canvas only shows a moving window):
 //   waveform · subtitle ticks per track · boucle bands · scene cuts ·
 //   the visible-window bracket · the playhead.
 // Click / drag anywhere to seek.
-
-const TRACK_COLORS = ['#f5c518', '#7ec0ff', '#f08aaf', '#7ed4a8']
 
 export default function BRTimeline({
   duration = 0,

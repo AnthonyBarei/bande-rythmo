@@ -1,11 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react'
-
-const TRACK_COLORS = [
-  { bg: 'rgba(245,197,24,0.10)',  text: '#f5c518', label: '#f5c518' },
-  { bg: 'rgba(126,192,255,0.10)', text: '#7ec0ff', label: '#7ec0ff' },
-  { bg: 'rgba(240,138,175,0.10)', text: '#f08aaf', label: '#f08aaf' },
-  { bg: 'rgba(126,212,168,0.10)', text: '#7ed4a8', label: '#7ed4a8' },
-]
+import { TRACK_COLORS } from '../config/tracks'
+import { fmtClockPrecise, parseTC } from '../utils/timecode'
 
 const NOTATION_TAGS = [
   { label: '(HH)', title: 'Inspiration',  color: '#7ec0ff' },
@@ -18,27 +13,7 @@ const NOTATION_TAGS = [
   { label: '*',          title: 'Repère BR (respiration)',color: '#7ec0ff' },
 ]
 
-function parseTC(s) {
-  if (typeof s !== 'string') return null
-  s = s.trim().replace(',', '.')
-  if (!s) return null
-  const parts = s.split(':')
-  let sec = 0
-  try {
-    if (parts.length === 1) sec = parseFloat(parts[0])
-    else if (parts.length === 2) sec = parseInt(parts[0], 10) * 60 + parseFloat(parts[1])
-    else sec = parseInt(parts[0], 10) * 3600 + parseInt(parts[1], 10) * 60 + parseFloat(parts[2])
-    if (isNaN(sec)) return null
-    return Math.max(0, sec)
-  } catch { return null }
-}
-
-const fmtTC = t => {
-  if (t === null || t === undefined) return '--:--.--'
-  const m = Math.floor(t / 60)
-  const s = (t % 60).toFixed(2).padStart(5, '0')
-  return `${String(m).padStart(2, '0')}:${s}`
-}
+const fmtTC = fmtClockPrecise
 
 function TCInput({ value, onCommit, color = 'var(--text2)' }) {
   const [editing, setEditing] = useState(false)
