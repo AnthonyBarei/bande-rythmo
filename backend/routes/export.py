@@ -215,6 +215,10 @@ async def export(req: ExportRequest, db: Session = Depends(get_db)):
         }
         for s in req.subtitles
     ]
+    # DB fallback (Phase 2 — server as source of truth): a payload without
+    # subtitles exports what's saved instead of silently producing empty files.
+    if not subs and clip_row.get("subtitles"):
+        subs = clip_row["subtitles"]
 
     # Custom time-range: keep subs overlapping [in,out], clamp + shift to 0.
     # Applies to every subtitle format (SRT/ASS/DetX/croisillé).
