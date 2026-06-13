@@ -231,6 +231,7 @@ function AppInner() {
         {section === 'activity' && <ActivityCenter />}
         {section === 'dub' && activeClip && (
           <DubbingWorkspace
+            key={activeClip.clip_id}
             clip={activeClip}
             onUpdate={handleClipUpdated}
             onBack={() => { setDubExportOpen(false); setSection('clips') }}

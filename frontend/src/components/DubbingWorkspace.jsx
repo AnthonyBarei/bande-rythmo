@@ -10,6 +10,7 @@ import { useSettings } from '../SettingsContext'
 import { classifyChar, SIGN_KINDS, DEFAULT_SIGN_TOGGLES } from '../detection'
 import { useProgress } from '../ProgressContext'
 import { useToast } from '../ToastContext'
+import useSubtitleManager from '../hooks/useSubtitleManager'
 
 // BR canvas — constant-speed scrolling
 // Cursor is at CURSOR_X_RATIO * W from left
@@ -191,7 +192,15 @@ function CanvasCoachmark() {
 }
 
 export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus, exportOpen, onToggleExport }) {
-  const [subtitles, setSubtitles] = useState(clip.subtitles || [])
+  // Subtitle state machine (array, selection, undo/redo, debounced autosave)
+  // lives in useSubtitleManager — Phase 2 extraction. Aliases keep the
+  // historical call-site names.
+  const {
+    subtitles, selectedIdx, setSelectedIdx, saveStatus,
+    changeSubtitles: handleSubtitlesChange,
+    setSubtitlesTransient, commitDrag: dragCommit, saveNow,
+    undo, redo, canUndo, canRedo, undoRedoRef,
+  } = useSubtitleManager({ clipId: clip.clip_id, initialSubtitles: clip.subtitles || [], onSaved: onUpdate })
   const [boucles, setBoucles] = useState(clip.boucles || [])
   const clipFps = clip.fps || 25
   const [currentTime, setCurrentTime] = useState(0)
@@ -200,7 +209,6 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   const [muted, setMuted] = useState(false)
   const [speed, setSpeed] = useState(1)
   const [transcribing, setTranscribing] = useState(false)
-  const [saveStatus, setSaveStatus] = useState('saved')
   const [toast, setToast] = useState(null)
   const showExport = !!exportOpen
   const [brExporting, setBrExporting] = useState(false)
@@ -214,7 +222,6 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   const [rythmoStyle, setRythmoStyle] = useState(settings.brStyle || 'classique')
   const [lang, setLang] = useState('fr')
 
-  const [selectedIdx, setSelectedIdx] = useState(null)
   const [brInPlayer, setBrInPlayer] = useState('play')
   const [brFont, setBrFont] = useState(() => {
     // Pro classique default = Caveat manuscrite (DOUBLAGE_IA_REVIEW §7).
@@ -288,7 +295,6 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   const canvasRef = useRef(null)
   const canvasOverlayRef = useRef(null)
   const rafRef = useRef(null)
-  const debounceRef = useRef(null)
   const subtitlesRef = useRef(subtitles)
   const brOffsetRef = useRef(0)
   const pxPerSecRef = useRef(180)
@@ -300,7 +306,6 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   const charMapRef = useRef({})
   const numTracksRef = useRef(1)
   const canvasHRef = useRef(64)
-  const saveStatusRef = useRef(saveStatus)
   const brInPlayerRef = useRef('play')
   const playingRef = useRef(false)
   const fontScaleRef = useRef(1.0)
@@ -320,7 +325,6 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   brOffsetRef.current = brOffset
   pxPerSecRef.current = pxPerSec
   rythmoStyleRef.current = rythmoStyle
-  saveStatusRef.current = saveStatus
   brInPlayerRef.current = brInPlayer
   playingRef.current = playing
   fontScaleRef.current = fontScale
@@ -1503,89 +1507,6 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
     if (i >= 0) { v.currentTime = subs[i].start; setSelectedIdx(i) }
   }
 
-  const doSave = useCallback(async (subs) => {
-    setSaveStatus('saving')
-    try {
-      const res = await fetch(`/api/clips/${clip.clip_id}/subtitles`, {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ subtitles: subs }),
-      })
-      if (!res.ok) throw new Error()
-      onUpdate(await res.json())
-      setSaveStatus('saved')
-    } catch { setSaveStatus('error') }
-  }, [clip.clip_id, onUpdate])
-
-  // ── Undo / redo — subtitle snapshots, capped at 50 ──
-  const historyRef = useRef(null)            // { stack: snapshot[], idx }
-  const [canUndo, setCanUndo] = useState(false)
-  const [canRedo, setCanRedo] = useState(false)
-  const HISTORY_CAP = 50
-  const snap = subs => JSON.parse(JSON.stringify(subs))
-  function syncHistoryFlags() {
-    const h = historyRef.current
-    setCanUndo(!!h && h.idx > 0)
-    setCanRedo(!!h && h.idx < h.stack.length - 1)
-  }
-  function pushHistory(subs) {
-    let h = historyRef.current
-    if (!h) { historyRef.current = { stack: [snap(subs)], idx: 0 }; syncHistoryFlags(); return }
-    // Drop the redo branch, append, cap.
-    h.stack = h.stack.slice(0, h.idx + 1)
-    h.stack.push(snap(subs))
-    if (h.stack.length > HISTORY_CAP) h.stack.shift()
-    h.idx = h.stack.length - 1
-    syncHistoryFlags()
-  }
-  function applyHistorySubs(subs) {
-    const sorted = [...subs].sort((a, b) => a.start - b.start)
-    setSubtitles(sorted)
-    setSelectedIdx(null)
-    setSaveStatus('unsaved')
-    clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => doSave(sorted), 1500)
-  }
-  function undo() {
-    const h = historyRef.current
-    if (!h || h.idx <= 0) return
-    h.idx -= 1
-    applyHistorySubs(snap(h.stack[h.idx]))
-    syncHistoryFlags()
-  }
-  function redo() {
-    const h = historyRef.current
-    if (!h || h.idx >= h.stack.length - 1) return
-    h.idx += 1
-    applyHistorySubs(snap(h.stack[h.idx]))
-    syncHistoryFlags()
-  }
-  // Keep keydown (empty-dep closure) calling the latest undo/redo.
-  const undoRedoRef = useRef({ undo, redo })
-  undoRedoRef.current = { undo, redo }
-  // Seed history with the initial subtitles once per clip.
-  const historySeedRef = useRef(null)
-  useEffect(() => {
-    if (historySeedRef.current === clip.clip_id) return
-    historySeedRef.current = clip.clip_id
-    historyRef.current = { stack: [snap(clip.subtitles || [])], idx: 0 }
-    syncHistoryFlags()
-  }, [clip.clip_id])
-
-  function handleSubtitlesChange(subs) {
-    const sorted = [...subs].sort((a, b) => a.start - b.start)
-    // Track selectedIdx through sort (objects share references from spread-sort)
-    if (selectedIdx != null && selectedIdx < subs.length) {
-      const ref = subs[selectedIdx]
-      const newIdx = sorted.indexOf(ref)
-      if (newIdx !== selectedIdx && newIdx >= 0) setSelectedIdx(newIdx)
-    }
-    setSubtitles(sorted)
-    pushHistory(sorted)
-    setSaveStatus('unsaved')
-    clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => doSave(sorted), 1500)
-  }
-
   // Réplique delete via undo toast — 5s window to recover before auto-save commits.
   function deleteReplicaWithUndo(idx) {
     const subs = subtitlesRef.current
@@ -1605,11 +1526,6 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
       },
     })
   }
-
-  useEffect(() => () => {
-    clearTimeout(debounceRef.current)
-    if (saveStatusRef.current === 'unsaved') doSave(subtitlesRef.current)
-  }, [])
 
   useEffect(() => {
     if (!ctxMenu) return
@@ -1765,13 +1681,6 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
     return Math.max(0, Math.round(t * 100) / 100)
   }
 
-  function dragCommit(subs) {
-    setSubtitles(subs)
-    setSaveStatus('unsaved')
-    clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => doSave(subtitlesRef.current), 800)
-  }
-
   function onCanvasMouseDown(e) {
     if (editingIdx != null) return
     if (e.button !== 0) return
@@ -1808,7 +1717,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
         const dupe = { ...sub, start: sub.end, end: sub.end + dur }
         workingSubs = [...workingSubs.slice(0, hit.subIdx + 1), dupe, ...workingSubs.slice(hit.subIdx + 1)]
         subIdx = hit.subIdx + 1
-        setSubtitles(workingSubs)
+        setSubtitlesTransient(workingSubs)
       }
       dragRef.current = {
         mode,
@@ -1920,8 +1829,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
       const hit = hitTest(e)
       if (hit) seekTo(Math.max(0, hit.time))
     } else {
-      clearTimeout(debounceRef.current)
-      doSave(subtitlesRef.current)
+      saveNow()
     }
   }
 
