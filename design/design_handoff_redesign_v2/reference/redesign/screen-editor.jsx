@@ -16,6 +16,25 @@
     const [showDet, setShowDet] = React.useState(true);
     const [locked, setLocked] = React.useState(false);
     const tRef = React.useRef(t); tRef.current = t;
+    const LS = 'rd.editor.layout';
+    const saved = React.useMemo(() => { try { return JSON.parse(localStorage.getItem(LS)) || {}; } catch { return {}; } }, []);
+    const [bandH, setBandH] = React.useState(saved.bandH || 190);
+    const [inspW, setInspW] = React.useState(saved.inspW || 392);
+    const [inspOpen, setInspOpen] = React.useState(saved.inspOpen !== false);
+    React.useEffect(() => { localStorage.setItem(LS, JSON.stringify({ bandH, inspW, inspOpen })); }, [bandH, inspW, inspOpen]);
+    React.useEffect(() => {
+      const k = (e) => { if (e.key === '\\' && !['INPUT', 'TEXTAREA'].includes(e.target.tagName)) { e.preventDefault(); setInspOpen(o => !o); } };
+      window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k);
+    }, []);
+    const colRef = React.useRef(null);
+    // band max = column height − transport(50) − nav(56) − toolbar(48) − video min(160)
+    const bandMax = () => Math.max(120, (colRef.current ? colRef.current.offsetHeight : 900) - 50 - 56 - 48 - 160);
+    const clampBand = (v) => Math.max(120, Math.min(520, bandMax(), v));
+    React.useEffect(() => {
+      const fit = () => setBandH(h => clampBand(h));
+      fit(); window.addEventListener('resize', fit); return () => window.removeEventListener('resize', fit);
+    }, []);
+    const layoutKey = bandH + ':' + (inspOpen ? inspW : 0);
 
     // playback clock
     React.useEffect(() => {
@@ -71,14 +90,15 @@
               <MenuItem icon={ICONS.download} onClick={() => { close(); go('export'); }}>Exporter les sous-titres</MenuItem></>)}
           </Popover>
           <Btn size="sm" icon={ICONS.keyboard} title="Raccourcis (?)" onClick={onHelp} />
+          <Btn size="sm" icon={ICONS.sidebar} active={inspOpen} onClick={() => setInspOpen(o => !o)} title={(inspOpen ? 'Masquer' : 'Afficher') + ' le panneau (\\)'} />
           <Btn size="sm" variant="primary" icon={ICONS.download} onClick={() => go('export')}>Exporter</Btn>
         </div>
 
         {/* Main: video + inspector */}
         <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
-          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+          <div ref={colRef} style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
             {/* Video hero */}
-            <div style={{ flex: 1, minHeight: 0, background: '#000', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ flex: 1, minHeight: 160, background: '#000', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
               <div style={{ width: '74%', aspectRatio: '16/9', maxHeight: '92%', background: `repeating-linear-gradient(0deg,#15151b 0 2px,#1a1a20 2px 6px)`, borderRadius: 8, position: 'relative', overflow: 'hidden' }}>
                 {active && (
                   <div style={{ position: 'absolute', left: '50%', bottom: 22, transform: 'translateX(-50%)', maxWidth: '88%', background: 'rgba(0,0,0,.78)', padding: '7px 18px', borderRadius: 6, borderTop: `2px solid ${trackOf(active.char).hex}`, backdropFilter: 'blur(6px)', textAlign: 'center' }}>
@@ -101,20 +121,56 @@
             <Transport t={t} playing={playing} setPlaying={setPlaying} setT={setT} accent={accent} />
 
             {/* Timeline nav bar (the big gap, now filled) */}
-            <TimelineNav t={t} setT={setT} accent={accent} pxPerSec={pxPerSec} />
+            <TimelineNav t={t} setT={setT} accent={accent} pxPerSec={pxPerSec} layoutKey={layoutKey} />
 
             {/* Band toolbar (clusters) */}
             <BandToolbar accent={accent} brStyle={brStyle} pxPerSec={pxPerSec} setPxPerSec={setPxPerSec}
               font={font} setFont={setFont} showDet={showDet} setShowDet={setShowDet} locked={locked} setLocked={setLocked} />
 
-            {/* The band */}
-            <BandCanvas t={t} setT={setT} setPlaying={setPlaying} accent={accent} brStyle={brStyle} pxPerSec={pxPerSec} font={font} showDet={showDet} filter={filter} />
+            {/* The band — top edge is a resize handle */}
+            <Splitter dir="row" accent={accent} title="Glisser pour redimensionner la bande · double-clic : réinitialiser"
+              onDrag={(dy, start) => setBandH(clampBand(start - dy))} start={bandH} onReset={() => setBandH(190)} />
+            <BandCanvas t={t} setT={setT} setPlaying={setPlaying} accent={accent} brStyle={brStyle} pxPerSec={pxPerSec} font={font} showDet={showDet} filter={filter} h={bandH} layoutKey={layoutKey} />
           </div>
 
-          {/* Inspector */}
-          <Inspector tab={tab} setTab={setTab} sel={sel} setSel={setSel} t={t} setT={setT} accent={accent}
-            showDet={showDet} setShowDet={setShowDet} font={font} setFont={setFont} go={go} />
+          {/* Inspector — resizable + hideable */}
+          {inspOpen && <Splitter dir="col" accent={accent} title="Glisser pour redimensionner le panneau · double-clic : réinitialiser"
+            onDrag={(dx, start) => setInspW(Math.max(300, Math.min(600, start - dx)))} start={inspW} onReset={() => setInspW(392)} />}
+          {!inspOpen && (
+            <button onClick={() => setInspOpen(true)} title={'Afficher le panneau (\\)'} style={{
+              width: 32, flexShrink: 0, background: T.surface, border: 'none', borderLeft: `1px solid ${T.border}`, cursor: 'pointer',
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, paddingTop: 14, color: T.text3, fontFamily: T.fontUI }}>
+              <Icon d={ICONS.sidebar} size={16} stroke={T.text2} />
+              <span style={{ writingMode: 'vertical-rl', fontSize: 11, fontWeight: 600, letterSpacing: 0.6, color: T.text3 }}>Répliques · Voix · Détection</span>
+            </button>
+          )}
+          {inspOpen && <Inspector w={inspW} onClose={() => setInspOpen(false)} tab={tab} setTab={setTab} sel={sel} setSel={setSel} t={t} setT={setT} accent={accent}
+            showDet={showDet} setShowDet={setShowDet} font={font} setFont={setFont} go={go} />}
         </div>
+      </div>
+    );
+  }
+
+  // ── Splitter (drag handle between panes) ──
+  function Splitter({ dir, onDrag, start, onReset, accent, title }) {
+    const [h, setH] = React.useState(false), [d, setD] = React.useState(false);
+    const row = dir === 'row';
+    const down = (e) => {
+      e.preventDefault(); const p0 = row ? e.clientY : e.clientX, s0 = start; setD(true);
+      document.body.style.cursor = row ? 'row-resize' : 'col-resize'; document.body.style.userSelect = 'none';
+      const mv = (ev) => onDrag((row ? ev.clientY : ev.clientX) - p0, s0);
+      const up = () => { setD(false); document.body.style.cursor = ''; document.body.style.userSelect = ''; window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); };
+      window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up);
+    };
+    const on = h || d;
+    return (
+      <div onPointerDown={down} onDoubleClick={onReset} onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)} title={title}
+        style={{ flexShrink: 0, position: 'relative', zIndex: 5, cursor: row ? 'row-resize' : 'col-resize', touchAction: 'none',
+          ...(row ? { height: 7, margin: '-3px 0', width: '100%' } : { width: 7, margin: '0 -3px', alignSelf: 'stretch' }) }}>
+        <div style={{ position: 'absolute', background: on ? accent : T.border2, transition: 'background .12s',
+          ...(row ? { left: 0, right: 0, top: 3, height: on ? 2 : 1 } : { top: 0, bottom: 0, left: 3, width: on ? 2 : 1 }) }} />
+        <div style={{ position: 'absolute', borderRadius: 3, background: on ? accent : T.border3, opacity: on ? 1 : 0.8, transition: 'background .12s',
+          ...(row ? { left: '50%', top: 1, width: 36, height: 5, transform: 'translateX(-50%)' } : { top: '50%', left: 1, width: 5, height: 36, transform: 'translateY(-50%)' }) }} />
       </div>
     );
   }
@@ -145,8 +201,10 @@
   }
 
   // ── Timeline nav bar ───────────────────────────────────────
-  function TimelineNav({ t, setT, accent }) {
+  function TimelineNav({ t, setT, accent, layoutKey }) {
     const ref = React.useRef(null);
+    const [loop, setLoop] = React.useState({ s: 11, e: 15.4 });
+    const [dragging, setDragging] = React.useState(false);
     React.useEffect(() => {
       const cv = ref.current; if (!cv) return;
       const ctx = cv.getContext('2d');
@@ -166,21 +224,43 @@
         const x = (s.start / 17.5) * w, ww = ((s.end - s.start) / 17.5) * w;
         ctx.fillStyle = tc.hex + '33'; ctx.fillRect(x, h - 10, ww, 6);
       });
-      // boucle band
-      ctx.fillStyle = accent + '18'; ctx.fillRect((11 / 17.5) * w, 0, ((15.4 - 11) / 17.5) * w, h);
-      ctx.strokeStyle = accent + '88'; ctx.setLineDash([3, 3]);
-      ctx.strokeRect((11 / 17.5) * w, 1, ((15.4 - 11) / 17.5) * w, h - 2); ctx.setLineDash([]);
       // playhead
       const px = (t / 17.5) * w;
       ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(px, 0); ctx.lineTo(px, h); ctx.stroke();
       ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.moveTo(px - 5, 0); ctx.lineTo(px + 5, 0); ctx.lineTo(px, 6); ctx.fill();
-    }, [t, accent]);
+    }, [t, accent, layoutKey]);
+    const D = 17.5;
+    const startDrag = (e, mode) => {
+      e.stopPropagation(); e.preventDefault();
+      const box = e.currentTarget.closest('[data-tlnav]').getBoundingClientRect();
+      const x0 = e.clientX, s0 = loop.s, e0 = loop.e, len = e0 - s0;
+      const mv = (ev) => {
+        const dt = ((ev.clientX - x0) / box.width) * D;
+        if (mode === 'move') { const s = Math.max(0, Math.min(D - len, s0 + dt)); setLoop({ s, e: s + len }); }
+        else if (mode === 'l') setLoop({ s: Math.max(0, Math.min(e0 - 0.3, s0 + dt)), e: e0 });
+        else setLoop({ s: s0, e: Math.min(D, Math.max(s0 + 0.3, e0 + dt)) });
+      };
+      const up = () => { window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); setDragging(false); };
+      setDragging(true); window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up);
+    };
+    const tc = (s) => fmtTC(s, 24).slice(6);
     return (
-      <div style={{ height: 56, flexShrink: 0, position: 'relative', background: T.bg2, borderTop: `1px solid ${T.border}` }}
-        onClick={e => { const r = e.currentTarget.getBoundingClientRect(); setT(((e.clientX - r.left) / r.width) * 17.5); }}>
+      <div data-tlnav style={{ height: 56, flexShrink: 0, position: 'relative', background: T.bg2, borderTop: `1px solid ${T.border}` }}
+        onClick={e => { const r = e.currentTarget.getBoundingClientRect(); setT(((e.clientX - r.left) / r.width) * D); }}>
         <canvas ref={ref} style={{ width: '100%', height: 56, display: 'block', cursor: 'pointer' }} />
+        {/* draggable boucle region */}
+        <div onPointerDown={e => startDrag(e, 'move')} onClick={e => e.stopPropagation()} title="Glisser pour déplacer la boucle · bords pour ajuster"
+          style={{ position: 'absolute', top: 0, bottom: 0, left: `${(loop.s / D) * 100}%`, width: `${((loop.e - loop.s) / D) * 100}%`,
+            background: accent + (dragging ? '26' : '18'), borderLeft: `2px solid ${accent}`, borderRight: `2px solid ${accent}`, cursor: dragging ? 'grabbing' : 'grab' }}>
+          {['l', 'r'].map(side => (
+            <div key={side} onPointerDown={e => startDrag(e, side)}
+              style={{ position: 'absolute', top: 0, bottom: 0, [side === 'l' ? 'left' : 'right']: -5, width: 8, cursor: 'ew-resize', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div style={{ width: 4, height: 18, borderRadius: 2, background: accent }} />
+            </div>
+          ))}
+        </div>
         <div style={{ position: 'absolute', top: 5, left: 10, fontSize: 9, color: T.text4, letterSpacing: 1, fontWeight: 700, fontFamily: T.fontMono, pointerEvents: 'none' }}>TIMELINE · CLIP ENTIER</div>
-        <div style={{ position: 'absolute', top: 5, right: 10, fontSize: 9, color: accent, fontFamily: T.fontMono, pointerEvents: 'none' }}>⟲ B1 11:00–15:09</div>
+        <div style={{ position: 'absolute', top: 5, right: 10, fontSize: 9, color: accent, fontFamily: T.fontMono, pointerEvents: 'none' }}>⟲ B1 {tc(loop.s)}–{tc(loop.e)}</div>
       </div>
     );
   }
@@ -273,7 +353,7 @@
   }
 
   // ── Band canvas (elastic text) ─────────────────────────────
-  function BandCanvas({ t, setT, setPlaying, accent, brStyle, pxPerSec, font, showDet, filter }) {
+  function BandCanvas({ t, setT, setPlaying, accent, brStyle, pxPerSec, font, showDet, filter, h: bandH = 190, layoutKey }) {
     const ref = React.useRef(null);
     const drag = React.useRef(null);
     const [ctx, setCtx] = React.useState(null);
@@ -401,7 +481,7 @@
       // cursor
       ctx.strokeStyle = accent; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(cursorX, 0); ctx.lineTo(cursorX, h); ctx.stroke();
       ctx.fillStyle = accent; ctx.beginPath(); ctx.moveTo(cursorX - 7, 0); ctx.lineTo(cursorX + 7, 0); ctx.lineTo(cursorX, 9); ctx.fill();
-    }, [t, accent, brStyle, pxPerSec, font, showDet, filter]);
+    }, [t, accent, brStyle, pxPerSec, font, showDet, filter, bandH, layoutKey]);
 
     // Hold-click to scrub: drag the band like a film strip (left = forward in time)
     function onPointerDown(e) {
@@ -425,10 +505,10 @@
     }
 
     return (
-      <div style={{ height: 190, flexShrink: 0, borderTop: `2px solid ${T.border2}`, position: 'relative' }}>
+      <div style={{ height: bandH, flexShrink: 0, position: 'relative' }}>
         <canvas ref={ref} onPointerDown={onPointerDown}
           onContextMenu={(e) => { e.preventDefault(); const r = e.currentTarget.getBoundingClientRect(); setCtx({ x: e.clientX - r.left, y: e.clientY - r.top }); }}
-          style={{ width: '100%', height: 190, display: 'block', cursor: 'grab', touchAction: 'none', userSelect: 'none' }} />
+          style={{ width: '100%', height: bandH, display: 'block', cursor: 'grab', touchAction: 'none', userSelect: 'none' }} />
         <div style={{ position: 'absolute', right: 10, bottom: 8, fontSize: 9, color: T.text4, fontFamily: T.fontMono, pointerEvents: 'none' }}>
           maintenir pour déplacer le curseur · double-clic éditer · clic-droit menu
         </div>
@@ -451,7 +531,7 @@
   }
 
   // ── Inspector (adaptive tabs) ──────────────────────────────
-  function Inspector({ tab, setTab, sel, setSel, t, setT, accent, showDet, setShowDet, font, setFont, go }) {
+  function Inspector({ w = 392, onClose, tab, setTab, sel, setSel, t, setT, accent, showDet, setShowDet, font, setFont, go }) {
     const target = SUBS[sel] || SUBS[0];
     const tc = trackOf(target.char);
     const TABS = [
@@ -462,7 +542,7 @@
       { id: 'lex', label: 'Lexique' },
     ];
     return (
-      <div style={{ width: 392, flexShrink: 0, display: 'flex', flexDirection: 'column', background: T.surface, borderLeft: `1px solid ${T.border}`, overflow: 'hidden' }}>
+      <div style={{ width: w, flexShrink: 0, display: 'flex', flexDirection: 'column', background: T.surface, overflow: 'hidden' }}>
         {/* active réplique header */}
         <div style={{ padding: '13px 16px', borderBottom: `1px solid ${T.border}`, background: tc.hex + '0c', display: 'flex', alignItems: 'center', gap: 11 }}>
           <Popover width={200} trigger={(o, tog) => (

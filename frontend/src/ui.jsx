@@ -268,6 +268,43 @@ export function Select({ value, options, onChange, width = 'auto', size = 'md', 
   )
 }
 
+// ── Splitter — draggable pane divider (row = horizontal line / vertical drag) ──
+export function Splitter({ dir, onDrag, start, onReset, accent, title }) {
+  const [h, setH] = useState(false)
+  const [d, setD] = useState(false)
+  const row = dir === 'row'
+  const c = accent || T.accent
+  const down = (e) => {
+    e.preventDefault()
+    const p0 = row ? e.clientY : e.clientX
+    const s0 = start
+    setD(true)
+    document.body.style.cursor = row ? 'row-resize' : 'col-resize'
+    document.body.style.userSelect = 'none'
+    const mv = (ev) => onDrag((row ? ev.clientY : ev.clientX) - p0, s0)
+    const up = () => {
+      setD(false)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      window.removeEventListener('pointermove', mv)
+      window.removeEventListener('pointerup', up)
+    }
+    window.addEventListener('pointermove', mv)
+    window.addEventListener('pointerup', up)
+  }
+  const on = h || d
+  return (
+    <div onPointerDown={down} onDoubleClick={onReset} onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)} title={title}
+      style={{ flexShrink: 0, position: 'relative', zIndex: 5, cursor: row ? 'row-resize' : 'col-resize', touchAction: 'none',
+        ...(row ? { height: 7, margin: '-3px 0', width: '100%' } : { width: 7, margin: '0 -3px', alignSelf: 'stretch' }) }}>
+      <div style={{ position: 'absolute', background: on ? c : T.border2, transition: 'background .12s',
+        ...(row ? { left: 0, right: 0, top: 3, height: on ? 2 : 1 } : { top: 0, bottom: 0, left: 3, width: on ? 2 : 1 }) }} />
+      <div style={{ position: 'absolute', borderRadius: 3, background: on ? c : T.border3, opacity: on ? 1 : 0.8, transition: 'background .12s',
+        ...(row ? { left: '50%', top: 1, width: 36, height: 5, transform: 'translateX(-50%)' } : { top: '50%', left: 1, width: 5, height: 36, transform: 'translateY(-50%)' }) }} />
+    </div>
+  )
+}
+
 export function ProgressBar({ pct, color, h = 5 }) {
   const c = color || T.accent
   return (

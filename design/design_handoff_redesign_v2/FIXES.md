@@ -124,6 +124,80 @@ The layout matches. The problems are in states the capture didn't show.
    - the queue rows are 32px high with 13px text
    - the "enregistrer la réplique" hint moves to the bottom hint bar
 
+## F9 · Importer source switcher: remove the curved yellow underline
+**File:** `ImportSection.jsx` (source tabs: Fichier local · Plex · URL / Stream)
+
+The active tab currently uses `box-shadow: inset 0 -2px 0 accent` on a rounded chip. Because of the radius, the underline curves up at both ends.
+- Delete the box-shadow.
+- Active tab: background `--surface3`, `1px solid --border2`, text `--text` at weight 600. Only the icon is accent.
+- Inactive tab: transparent background and a `1px solid transparent` border, so the layout doesn't shift on switch.
+- The container (`surface`, `border`, radius 9, padding 5) is unchanged.
+
+The reference `screen-import.jsx` is updated to match.
+
+## F10 · Draggable timeline windows
+**Source:** `screen-editor.jsx` → `TimelineNav`, `screen-import.jsx` → `ZoomTimeline` (both updated)
+
+1. **Éditeur, timeline nav: the yellow boucle region is draggable.**
+   - It is an absolutely-positioned `div` over the canvas, not drawn on the canvas.
+   - Its fill is accent `18` (`26` while dragging) with 2px accent borders on the left and right.
+   - Drag the body to move the loop. Drag the 8px edge handles (each a 4×18 accent grip) to trim it, with a minimum length of 0.3s.
+   - Use `cursor: grab`, then `grabbing` while dragging.
+   - `stopPropagation` on the region and its handles, so a drag doesn't also seek.
+   - The top-right label `⟲ B1 SS:FF–SS:FF` updates live.
+   - Persist the loop on pointer-up through the existing loops API.
+2. **Importer, minimap: the yellow viewport window is draggable.**
+   - Drag the window to pan the zoomed timeline.
+   - Clicking elsewhere on the minimap centers the window on that point.
+   - Clamp the window to [0, 1 − 1/zoom].
+   - The header range (`MM:SS – MM:SS sur 42:18`) updates live.
+   - The window has a 3-line grip in the middle, `touch-action: none` and grab cursors.
+
+## F11 · Bibliothèque polish
+1. **Rail labels overflow** ("Bibliothèque" is wider than the 52px item). Make items **62×52** and set the labels to `white-space: nowrap` with an ellipsis at 58px max. **Remove the 3px yellow bar on the left of the active item.** The tinted background and border are enough.
+2. **The project select wraps its text onto 2 lines.**
+   - The `Select` trigger gets `white-space: nowrap`, padding `0 10px 0 12px`, and an ellipsis on the label.
+   - The library uses `width={176}`.
+   - The popover is at least 220px wide, and `MenuItem` labels are `nowrap` with an ellipsis.
+3. **Status tabs wrap at narrow widths**: add `white-space: nowrap; flex-shrink: 0` to each tab. Wrap the tabs in a `flex:1; min-width:0; overflow-x:auto` scroller with a hidden scrollbar. The project Select (176px), "Trier" and the sort Select sit **outside** the scroller with `flex-shrink:0`, so their dropdowns aren't clipped and the row never overflows.
+4. **Nouveau clip button** (all primary buttons get the base treatment):
+   - `Btn primary` gets depth: `inset 0 1px 0 rgba(255,255,255,.35)`, `inset 0 -1px 0 rgba(0,0,0,.12)` and a soft accent drop shadow (`0 4px 14px -6px accent77`). On hover, use `0 8px 22px -6px accentaa` plus `translateY(-1px)`.
+   - Nouveau clip has a 28px icon tile (`rgba(11,11,13,.14)`, radius 7, a 16px plus at stroke 2.4), then the label, then a `N` shortcut chip in mono 11px. Wire the `N` key to open Importer.
+   - The search pill becomes 42px high to match.
+
+## F12 · Atelier: choose a source clip and upload video
+**Source:** `screen-misc.jsx` → `Meme`, `ImageMode`
+
+**Workflow rule:** the Atelier always works on a **clip**.
+- A short video (≤ 60s) dropped or uploaded here is imported **inline**. It is saved as a clip in the "Memes & extraits" project, then selected as the source. No trip to Importer.
+- A longer video goes to **Importer** with the file preloaded, so it can be cut. When the user clicks "Créer N clips" there, return to Atelier with the first clip selected.
+- Image drops go straight into the meme editor, as today.
+
+**UI:**
+1. On the right of the header, add a clip `Select` (250px) listing every clip, with a project-colored dot on each. Changing it swaps the source.
+2. Next to it, add `Btn outline` with an upload icon, labeled "Vidéo courte…". It opens a file picker (video/*) and follows the rule above.
+3. The sub line reads `source · <clip name> · <duration>`.
+4. The drop zone text becomes "Glisser une image ou une vidéo" and "PNG · JPG · WEBP · GIF · MP4 ≤ 60 s", with a hint: "Plus longue ? Elle s'ouvre dans Importer pour découper."
+5. Backend: reuse the import endpoint with `project="memes"` and skip transcription by default.
+
+## F13 · Éditeur: resizable panes and a hideable inspector
+**Source:** `screen-editor.jsx` → `Splitter`, `Editor` (the `bandH`, `inspW` and `inspOpen` state)
+**Files:** `DubbingWorkspace.jsx` / `editor/*`, `ui.jsx` (add `Splitter`), `Icons` (add `sidebar`)
+
+1. **Add a `Splitter` primitive** to `ui.jsx`, copied from the reference.
+   - The hit area is 7px, centered on a 1px `--border2` line, with a 36×5 grip.
+   - On hover or drag, the line and grip turn accent (the line becomes 2px).
+   - While dragging, set `body` to `cursor: row-resize` / `col-resize` and `user-select: none`.
+   - Double-click resets to the default size.
+2. **Band height:** put a row splitter between the band toolbar and the band canvas. The height is 120–520px (default 190), **and also capped so the video keeps at least 160px**. The cap is `colH − 50 (transport) − 56 (nav) − 48 (toolbar) − 160`, where `colH` is the left column height measured with a ref. Re-clamp on window resize and when restoring from localStorage. The video area takes the remaining space and has `min-height: 160px; overflow: hidden`, so the subtitle overlay never spills over the header. Remove the old 2px top border on the band. The canvas must redraw on resize (add the height to the draw effect's deps, or use a `ResizeObserver`).
+3. **Inspector width:** put a column splitter on the inspector's left edge. The width is 300–600px (default 392). Remove the old `borderLeft`, since the splitter draws the line. The band and timeline nav canvases must redraw when the width changes.
+4. **Hide the inspector:**
+   - Add a `sidebar` icon button in the editor header, before Exporter. It is `active` while the panel is open. The `\\` key also toggles it.
+   - When hidden, a 32px strip appears at the right edge, with the icon and the vertical text "Répliques · Voix · Détection". Clicking it reopens the panel.
+   - The video and band take the full width.
+5. **Persist** `{ bandH, inspW, inspOpen }` in localStorage (`br.editor.layout`) and restore it on load.
+6. Add `\\ Afficher / masquer le panneau` to the ShortcutsOverlay (Général).
+
 ## Done when
 - Re-shoot every screen, regenerate the `*-compare.png` images, and check them. Each F section's image shows the app matching the design.
 - Also capture: Exporter with a running job, Activité with a running job and a failed one, and Studio with 2 or more takes.

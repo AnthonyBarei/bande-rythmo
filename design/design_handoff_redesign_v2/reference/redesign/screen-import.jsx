@@ -35,9 +35,9 @@
               return (
                 <button key={s.id} onClick={() => setSrc(s.id)} style={{
                   display: 'flex', alignItems: 'center', gap: 8, padding: '8px 15px', borderRadius: T.r.chip,
-                  border: 'none', cursor: 'pointer', background: active ? T.bg2 : 'transparent',
+                  border: `1px solid ${active ? T.border2 : 'transparent'}`, cursor: 'pointer', background: active ? T.surface3 : 'transparent',
                   color: active ? T.text : T.text2, fontSize: T.fs.sm, fontWeight: active ? 600 : 500,
-                  boxShadow: active ? `inset 0 -2px 0 ${accent}` : 'none', fontFamily: T.fontUI,
+                  fontFamily: T.fontUI,
                 }}>
                   <Icon d={s.ic} size={15} stroke={active ? accent : 'currentColor'} />
                   {s.label}
@@ -91,7 +91,22 @@
       const loop = () => { const e = ((performance.now() - t0) / 1000) % 16; setPx(0.2 + (e / 16) * 0.3); raf = requestAnimationFrame(loop); };
       raf = requestAnimationFrame(loop); return () => cancelAnimationFrame(raf);
     }, []);
-    const winW = 1 / zoom, viewStart = 0.22, toView = (f) => (f - viewStart) / winW;
+    const [vs, setVs] = React.useState(0.22);
+    const [dragging, setDragging] = React.useState(false);
+    const winW = 1 / zoom, viewStart = Math.max(0, Math.min(1 - winW, vs)), toView = (f) => (f - viewStart) / winW;
+    const DUR = 42 * 60 + 18;
+    const mmss = (f) => { const s = Math.round(f * DUR); return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; };
+    const dragWin = (e) => {
+      e.preventDefault();
+      const box = e.currentTarget.getBoundingClientRect();
+      const f = (e.clientX - box.left) / box.width;
+      const inside = f >= viewStart && f <= viewStart + winW;
+      const off = inside ? f - viewStart : winW / 2;
+      if (!inside) setVs(f - off);
+      const mv = (ev) => setVs((ev.clientX - box.left) / box.width - off);
+      const up = () => { window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); setDragging(false); };
+      setDragging(true); window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up);
+    };
     const blocks = [
       { s: 0.245, e: 0.258, c: accent }, { s: 0.30, e: 0.33, c: accent }, { s: 0.36, e: 0.365, c: accent, draft: true }, { s: 0.50, e: 0.515, c: T.success, saved: true },
     ];
@@ -99,7 +114,7 @@
       <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.r.card, overflow: 'hidden' }}>
         <div style={{ height: 38, padding: '0 12px', display: 'flex', alignItems: 'center', gap: 8, background: T.bg2, borderBottom: `1px solid ${T.border}` }}>
           <span style={{ fontSize: T.fs.micro, letterSpacing: 1.2, color: T.text3, fontWeight: 700 }}>TIMELINE</span>
-          <span style={{ fontSize: T.fs.xs, color: T.text3, fontFamily: T.fontMono }}>09:18 – 23:24 sur 42:18</span>
+          <span style={{ fontSize: T.fs.xs, color: T.text3, fontFamily: T.fontMono }}>{mmss(viewStart)} – {mmss(viewStart + winW)} sur 42:18</span>
           <div style={{ flex: 1 }} />
           <Btn size="sm" icon={ICONS.zoomOut} onClick={() => setZoom(z => Math.max(1, z - 0.5))} />
           <input type="range" min={1} max={20} step={0.5} value={zoom} onChange={e => setZoom(+e.target.value)} style={{ width: 110, accentColor: accent }} />
@@ -131,11 +146,13 @@
           </div>
         </div>
         {/* minimap */}
-        <div style={{ height: 26, background: T.bg2, borderTop: `1px solid ${T.border}`, position: 'relative' }}>
+        <div onPointerDown={dragWin} title="Glisser la fenêtre pour naviguer" style={{ height: 26, background: T.bg2, borderTop: `1px solid ${T.border}`, position: 'relative', cursor: dragging ? 'grabbing' : 'pointer', touchAction: 'none' }}>
           {blocks.map((b, i) => (
             <div key={i} style={{ position: 'absolute', left: `${b.s * 100}%`, width: `${Math.max(0.4, (b.e - b.s) * 100)}%`, top: 6, bottom: 6, background: b.saved ? T.success : b.c, opacity: 0.7, borderRadius: 1 }} />
           ))}
-          <div style={{ position: 'absolute', left: `${viewStart * 100}%`, width: `${winW * 100}%`, top: 0, bottom: 0, background: accent + '1a', border: `1px solid ${accent}`, borderRadius: 3 }} />
+          <div style={{ position: 'absolute', left: `${viewStart * 100}%`, width: `${winW * 100}%`, top: 2, bottom: 2, background: accent + (dragging ? '2e' : '1a'), border: `1px solid ${accent}`, borderRadius: 4, cursor: dragging ? 'grabbing' : 'grab' }}>
+            <div style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%,-50%)', display: 'flex', gap: 2 }}>{[0, 1, 2].map(i => <div key={i} style={{ width: 1.5, height: 8, background: accent, borderRadius: 1 }} />)}</div>
+          </div>
         </div>
       </div>
     );

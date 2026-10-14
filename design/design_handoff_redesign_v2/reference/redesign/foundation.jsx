@@ -101,6 +101,7 @@
     keyboard: <><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></>,
     book:     <><path d="M4 5a2 2 0 012-2h13v16H6a2 2 0 00-2 2z"/><path d="M4 19V5"/></>,
     globe:    <><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 010 18 14 14 0 010-18z"/></>,
+    sidebar:  <><rect x="3" y="4" width="18" height="16" rx="2.5"/><line x1="15" y1="4" x2="15" y2="20"/></>,
     proxy:    <><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M8 9l4 3-4 3M14 15h3"/></>,
   };
 
@@ -120,7 +121,8 @@
     const pad = { sm: '0 12px', md: '0 15px', lg: '0 20px' }[size];
     const fz = { sm: T.fs.xs, md: T.fs.sm, lg: T.fs.base }[size];
     let bg = 'transparent', col = T.text2, bord = '1px solid transparent';
-    if (variant === 'primary') { bg = h ? '#ffd83a' : T.accent; col = '#0b0b0d'; }
+    let shadow = 'none';
+    if (variant === 'primary') { bg = h ? '#ffd83a' : T.accent; col = '#0b0b0d'; shadow = `inset 0 1px 0 rgba(255,255,255,.35), inset 0 -1px 0 rgba(0,0,0,.12), 0 ${h ? 8 : 4}px ${h ? 22 : 14}px -6px ${T.accent}${h ? 'aa' : '77'}`; }
     else if (variant === 'solid') { bg = h ? T.surface3 : T.surface2; col = T.text; bord = `1px solid ${T.border2}`; }
     else if (variant === 'outline') { bg = h ? T.surface : 'transparent'; col = T.text; bord = `1px solid ${T.border2}`; }
     else { bg = h ? T.surface2 : 'transparent'; col = active ? T.accent : T.text2; }
@@ -134,7 +136,8 @@
           background: bg, color: col, border: bord, cursor: 'pointer',
           display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
           fontSize: fz, fontWeight: variant === 'primary' ? 600 : 500, fontFamily: T.fontUI,
-          width: full ? '100%' : undefined, transition: 'background .14s, color .14s', flexShrink: 0,
+          width: full ? '100%' : undefined, transition: 'background .14s, color .14s, box-shadow .14s, transform .14s', flexShrink: 0,
+          boxShadow: shadow, transform: variant === 'primary' && h ? 'translateY(-1px)' : 'none', whiteSpace: 'nowrap',
           ...style,
         }}>
         {icon && <Icon d={icon} size={fz + 3} stroke={col} fill={icon === ICONS.rec ? col : undefined} />}
@@ -279,7 +282,7 @@
           color: c, textAlign: 'left', fontSize: T.fs.sm, fontFamily: T.fontUI,
         }}>
         {icon && (typeof icon === 'string' && icon.length <= 2 ? <span style={{ width: 16, textAlign: 'center', fontFamily: T.fontMono, fontWeight: 700 }}>{icon}</span> : <Icon d={icon} size={15} stroke={c} />)}
-        <span style={{ flex: 1 }}>{children}{sub && <span style={{ display: 'block', fontSize: 10, color: T.text3, marginTop: 1 }}>{sub}</span>}</span>
+        <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{children}{sub && <span style={{ display: 'block', fontSize: 10, color: T.text3, marginTop: 1 }}>{sub}</span>}</span>
         {active && <Icon d={ICONS.check} size={14} stroke={T.accent} />}
         {right}
       </button>
@@ -296,15 +299,15 @@
     const H = { sm: 30, md: 36 }[size] || 36;
     const cur = options.find(o => o.v === value);
     return (
-      <Popover width={typeof width === 'number' ? width : 200}
+      <Popover width={Math.max(220, typeof width === 'number' ? width : 200)}
         trigger={(open, toggle) => (
           <button onClick={toggle} style={{
-            height: H, padding: '0 11px', borderRadius: T.r.ctl, cursor: 'pointer',
+            height: H, padding: '0 10px 0 12px', borderRadius: T.r.ctl, cursor: 'pointer', whiteSpace: 'nowrap', minWidth: 0,
             background: T.surface, border: `1px solid ${open ? T.accent : T.border2}`, color: T.text,
             display: 'inline-flex', alignItems: 'center', gap: 9, fontSize: T.fs.sm, fontFamily: T.fontUI,
             width: typeof width === 'number' ? width : 'auto', justifyContent: 'space-between',
           }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 8, color: cur ? T.text : T.text3 }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 8, color: cur ? T.text : T.text3, overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
               {cur?.dot && <Dot color={cur.dot} size={7} />}{cur ? cur.l : (placeholder || 'Choisir…')}
             </span>
             <Icon d={ICONS.chevron} size={13} stroke={T.text3} style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />

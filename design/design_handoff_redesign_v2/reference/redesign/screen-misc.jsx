@@ -11,8 +11,15 @@
     const H = window.RScreens._Header;
     return (
       <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <H kicker="ATELIER" title="Meme · GIF · Audio" sub="clip · S02E04 — confrontation cuisine"
-          right={edit ? <Btn variant="outline" onClick={() => setEdit(false)} icon={ICONS.chevron} style={{ transform: 'none' }}>Sources</Btn> : null} />
+        <H kicker="ATELIER" title="Meme · GIF · Audio" sub="source · S02E04 — confrontation cuisine · 41.2s"
+          right={edit ? <Btn variant="outline" onClick={() => setEdit(false)} icon={ICONS.chevron} style={{ transform: 'none' }}>Sources</Btn> :
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <Select width={250} value="c1" onChange={() => {}} options={[
+                { v: 'c1', l: 'S02E04 — confrontation cuisine', dot: T.accent }, { v: 'c2', l: 'S02E04 — réveil dans la grange', dot: T.accent },
+                { v: 'c3', l: 'S02E03 — annonce du capitaine', dot: T.accent }, { v: 'm1', l: 'Réaction — Léa surprise', dot: T.violet },
+              ]} />
+              <Btn variant="outline" icon={ICONS.upload}>Vidéo courte…</Btn>
+            </div>} />
         {!edit && (
           <div style={{ padding: '0 32px 14px', flexShrink: 0 }}>
             <Segmented value={mode} onChange={setMode} options={[
@@ -56,8 +63,9 @@
           <p style={{ fontSize: T.fs.xs, color: T.text3, lineHeight: 1.6, margin: 0 }}>Naviguez puis capturez le frame souhaité — ou glissez votre propre image.</p>
           <div style={{ padding: 22, border: `2px dashed ${T.border2}`, borderRadius: T.r.card, textAlign: 'center', color: T.text3 }}>
             <Icon d={ICONS.upload} size={26} stroke={T.text3} style={{ margin: '0 auto' }} />
-            <div style={{ fontSize: T.fs.xs, fontWeight: 600, marginTop: 8, color: T.text2 }}>Glisser une image</div>
-            <div style={{ fontSize: 10.5, marginTop: 2 }}>PNG · JPG · WEBP · GIF</div>
+            <div style={{ fontSize: T.fs.xs, fontWeight: 600, marginTop: 8, color: T.text2 }}>Glisser une image ou une vidéo</div>
+            <div style={{ fontSize: 11, marginTop: 2 }}>PNG · JPG · WEBP · GIF · MP4 ≤ 60 s</div>
+            <div style={{ fontSize: 11, marginTop: 8, color: T.text4, lineHeight: 1.5 }}>Plus longue ? Elle s'ouvre dans <span style={{ color: accent }}>Importer</span> pour découper.</div>
           </div>
         </div>
       </div>
