@@ -1,5 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react'
 import { Btn, Icon, ICONS, T, alpha } from '../ui'
+import { MARK_ID } from '../utils/inOut'
 
 const EDGE = 8
 const MIN_DUR = 0.2
@@ -16,7 +17,7 @@ function fmtClock(t) {
 
 export default function TimelineBar({
   duration, currentTime,
-  pendingClips, savedClips,
+  pendingClips, savedClips, markRange = null, markIn = null,
   onSeek, onAdd, onUpdate, onRemove,
 }) {
   const trackRef = useRef(null)
@@ -42,8 +43,10 @@ export default function TimelineBar({
     return Math.max(0, Math.min(r.width, e.clientX - r.left))
   }
 
+  const editable = markRange ? [...pendingClips, markRange] : pendingClips
+
   function hitTest(x, w) {
-    for (const c of pendingClips) {
+    for (const c of editable) {
       const cx0 = tToX(c.start, w)
       const cx1 = tToX(c.end, w)
       if (x >= cx0 - EDGE && x <= cx1 + EDGE) {
@@ -208,7 +211,7 @@ export default function TimelineBar({
   const step = labelStep / 2
   const ticks = []
   for (let t = Math.ceil(vs / step) * step; t <= vs + viewDur; t += step) ticks.push(t)
-  const empty = !pendingClips.length && !savedClips.length && !draft
+  const empty = !pendingClips.length && !savedClips.length && !draft && !markRange && markIn == null
 
   return (
     <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.r.card, overflow: 'hidden', flexShrink: 0 }}>
@@ -273,6 +276,25 @@ export default function TimelineBar({
             </div>
           ))}
 
+          {markRange && (
+            <div title="Plage IN → OUT du lecteur" style={{
+              position: 'absolute', left: `${((markRange.start - vs) / viewDur) * 100}%`, width: `${((markRange.end - markRange.start) / viewDur) * 100}%`,
+              top: 12, bottom: 12, borderRadius: 5, background: alpha(T.info, '22'), minWidth: 4, cursor: 'grab',
+              borderTop: `1.5px dashed ${T.info}`, borderBottom: `1.5px dashed ${T.info}`, borderLeft: `2px solid ${T.info}`, borderRight: `2px solid ${T.accent}`,
+              boxShadow: focusedId === MARK_ID ? `0 0 0 2px ${alpha(T.info, '55')}` : 'none',
+            }}>
+              <div style={{ position: 'absolute', left: -3, top: 0, bottom: 0, width: 6, cursor: 'ew-resize' }} />
+              <div style={{ position: 'absolute', right: -3, top: 0, bottom: 0, width: 6, cursor: 'ew-resize' }} />
+              <div style={{ position: 'absolute', top: -15, left: 0, fontSize: 9, color: T.info, fontWeight: 700, fontFamily: T.fontMono, whiteSpace: 'nowrap', pointerEvents: 'none' }}>#{pendingClips.length + 1} IN→OUT</div>
+            </div>
+          )}
+
+          {!markRange && markIn != null && markIn >= vs && markIn <= vs + viewDur && (
+            <div title="IN" style={{ position: 'absolute', left: `${((markIn - vs) / viewDur) * 100}%`, top: 6, bottom: 6, width: 2, background: T.info, pointerEvents: 'none' }}>
+              <div style={{ position: 'absolute', top: -2, left: 3, fontSize: 9, color: T.info, fontWeight: 700, fontFamily: T.fontMono, whiteSpace: 'nowrap' }}>IN</div>
+            </div>
+          )}
+
           {draft && draft.end - draft.start > 0.01 && (
             <div style={{
               position: 'absolute', left: `${((draft.start - vs) / viewDur) * 100}%`, width: `${((draft.end - draft.start) / viewDur) * 100}%`,
@@ -300,8 +322,8 @@ export default function TimelineBar({
         {savedClips.map(c => (
           <div key={c.clip_id} style={{ position: 'absolute', left: `${(c.start / duration) * 100}%`, width: `${Math.max(0.4, ((c.end - c.start) / duration) * 100)}%`, top: 6, bottom: 6, background: T.success, opacity: 0.7, borderRadius: 1 }} />
         ))}
-        {pendingClips.map(c => (
-          <div key={c._id} style={{ position: 'absolute', left: `${(c.start / duration) * 100}%`, width: `${Math.max(0.4, ((c.end - c.start) / duration) * 100)}%`, top: 6, bottom: 6, background: T.accent, opacity: 0.7, borderRadius: 1 }} />
+        {editable.map(c => (
+          <div key={c._id} style={{ position: 'absolute', left: `${(c.start / duration) * 100}%`, width: `${Math.max(0.4, ((c.end - c.start) / duration) * 100)}%`, top: 6, bottom: 6, background: c._id === MARK_ID ? T.info : T.accent, opacity: 0.7, borderRadius: 1 }} />
         ))}
         <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${(currentTime / duration) * 100}%`, width: 1.5, background: T.text, opacity: 0.6, pointerEvents: 'none' }} />
         <div style={{

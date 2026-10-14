@@ -8,6 +8,13 @@ import { sourceTitle, urlFilename } from '../utils/sourceTitle'
 
 const TAB = { LOCAL: 'local', PLEX: 'plex', URL: 'url' }
 
+// Header "Marquer un clip" walks the player's IN / OUT model (utils/inOut markStep).
+const MARK_BTN = {
+  none: { label: 'Marquer un clip', title: 'Marque IN à la tête de lecture (I) · 2e clic : OUT (O)' },
+  in: { label: 'Marquer la fin', title: 'Marque OUT à la tête de lecture (O)' },
+  range: { label: 'Ajouter le clip', title: 'Ajoute la plage IN → OUT aux clips en attente, puis marquez le suivant' },
+}
+
 function Spinner({ size = 11, color = T.accent }) {
   return <span style={{ width: size, height: size, borderRadius: '50%', border: `2px solid ${color}`, borderTopColor: 'transparent', animation: 'brspin 0.7s linear infinite', display: 'inline-block', flexShrink: 0 }} />
 }
@@ -23,7 +30,7 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
   const [audioStream, setAudioStream] = useState(null)
   const [audioSrc, setAudioSrc] = useState(null)  // extracted audio track URL
   const [plexStatus, setPlexStatus] = useState(null)
-  const [editorState, setEditorState] = useState({ count: 0, saving: false, duration: 0, marking: false })
+  const [editorState, setEditorState] = useState({ count: 0, saving: false, duration: 0, phase: 'none' })
   const editorActions = useRef(null)
   const sourceIdRef = useRef(null)
   const pollRef = useRef(null)
@@ -226,7 +233,9 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
   const videoOptions = streams?.video_streams ?? []
   const audioOptions = streams?.audio_streams ?? []
   const plexHost = plexStatus?.url ? plexStatus.url.replace(/^https?:\/\//, '') : 'bibliothèque locale'
-  const { count, saving, duration, marking } = editorState
+  const { count, saving, duration, phase } = editorState
+  const markBtn = MARK_BTN[phase] || MARK_BTN.none
+  const sourceFps = videoOptions[videoStream ?? 0]?.fps
 
   const meta = video ? [
     duration ? fmtClockHours(duration) : null,
@@ -253,12 +262,12 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
           {video && (
             <>
               <Btn variant="outline" icon={ICONS.back} onClick={clearSource}>{tab === TAB.PLEX ? 'Bibliothèque' : 'Changer de source'}</Btn>
-              <Btn variant="solid" icon={ICONS.scissors} onClick={() => editorActions.current?.mark()} active={marking}
-                title="1er clic : IN à la tête de lecture · 2e clic : OUT">
-                {marking ? 'Marquer la fin' : 'Marquer un clip'}
+              <Btn variant="solid" icon={ICONS.scissors} onClick={() => editorActions.current?.mark()} active={phase !== 'none'}
+                title={markBtn.title}>
+                {markBtn.label}
               </Btn>
               <Btn variant="primary" size="lg" onClick={() => editorActions.current?.save()} disabled={saving || count === 0}
-                title={saving ? 'Création des clips en cours…' : count === 0 ? 'Tracez au moins un clip sur la timeline' : 'Créer les clips en attente (Ctrl+S)'}>
+                title={saving ? 'Création des clips en cours…' : count === 0 ? 'Tracez un clip sur la timeline ou marquez IN / OUT (I, O)' : 'Créer les clips en attente (Ctrl+S)'}>
                 {saving
                   ? <><Spinner size={12} color={T.text3} /> Création…</>
                   : <>Créer {count} clip{count > 1 ? 's' : ''} <span style={{ display: 'inline-flex', gap: 3, marginLeft: 4 }}><Kbd>Ctrl</Kbd><Kbd>S</Kbd></span></>}
@@ -308,6 +317,7 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
               videoStream={videoStream}
               audioStream={audioStream}
               audioSrc={audioSrc}
+              fps={sourceFps}
               actionsRef={editorActions}
               onStateChange={setEditorState}
             />
