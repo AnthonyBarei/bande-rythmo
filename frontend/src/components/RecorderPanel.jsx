@@ -428,8 +428,9 @@ const RecorderPanel = forwardRef(function RecorderPanel({
     }
   }
 
+  // Re-validating the current best is a harmless no-op on the server.
   async function markBest(take) {
-    if (!take || take.best) return
+    if (!take) return
     try {
       const res = await fetch(`/api/takes/${take.id}/best`, { method: 'PUT' })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -469,8 +470,9 @@ const RecorderPanel = forwardRef(function RecorderPanel({
     return t.character || 'Prise libre'
   }
 
+  // Selection ≠ best: Studio defaults to the newest take, "meilleure" only moves on Valider.
   const selected = shown.find(t => t.id === selectedId)
-    || (studio ? shown.find(t => t.best) || shown[0] : null)
+    || (studio ? shown[0] : null)
     || null
   const takeA = takes.find(t => t.id === abA)
   const takeB = takes.find(t => t.id === abB)
@@ -563,10 +565,10 @@ const RecorderPanel = forwardRef(function RecorderPanel({
           onAB={() => assignAB(t.id)}
           onDelete={() => removeTake(t.id)} />
       ))}
-      <Btn variant="solid" full icon={ICONS.check} disabled={!selected || selected.best}
+      <Btn variant="solid" full icon={ICONS.check} disabled={!selected}
         title={!selected
           ? (shown.length ? "Sélectionnez d'abord une prise" : "Enregistrez d'abord une prise (R)")
-          : selected.best ? 'Cette prise est déjà la meilleure' : 'Marquer la prise sélectionnée comme meilleure prise de la réplique'}
+          : selected.best ? 'Cette prise est déjà la meilleure — la valider à nouveau' : 'Marquer la prise sélectionnée comme meilleure prise de la réplique'}
         onClick={() => markBest(selected)}>
         Valider la prise sélectionnée
       </Btn>
@@ -731,8 +733,8 @@ function TakeCard({ take, label, selected, isPlaying, isSyncing, ab, hasVideo, o
   const best = !!take.best
   return (
     <div onClick={onSelect} style={{
-      background: isSyncing ? T.accentDim : selected ? T.surface2 : T.surface,
-      border: `1px solid ${best ? alpha(T.accent, '55') : selected || ab ? T.border3 : isSyncing ? alpha(T.accent, '44') : T.border}`,
+      background: isSyncing ? T.accentDim : T.surface,
+      border: `1px solid ${selected ? T.accent : best ? alpha(T.accent, '55') : ab ? T.border3 : isSyncing ? alpha(T.accent, '44') : T.border}`,
       borderRadius: T.r.ctl, padding: 13, flexShrink: 0, cursor: 'pointer',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 9 }}>

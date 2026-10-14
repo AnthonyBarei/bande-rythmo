@@ -67,7 +67,7 @@ const fmtTime = t => {
 }
 
 export default function MemeGenerator({
-  clip: clipProp = null, onBack = null, initialTab = null,
+  clip: clipProp = null, initialTab = null,
   clips: clipsProp, onSelectClip, onClipsCreated, onOpenInImporter,
 }) {
   const progress = useProgress()
@@ -142,6 +142,7 @@ export default function MemeGenerator({
   const [videoTime, setVideoTime] = useState(0)
   const [videoDuration, setVideoDuration] = useState(0)
   const [videoReady, setVideoReady] = useState(false)
+  const [videoAr, setVideoAr] = useState(16 / 9)
 
   // GIF / Audio range selection state
   const [inPoint, setInPoint] = useState(0)
@@ -188,6 +189,7 @@ export default function MemeGenerator({
     setVideoTime(0)
     setVideoDuration(0)
     setVideoReady(false)
+    setVideoAr(16 / 9)
     setInPoint(0)
     setOutPoint(0)
     setPlaying(false)
@@ -421,12 +423,23 @@ export default function MemeGenerator({
     setImageUrl(URL.createObjectURL(f))
   }
 
+  // Clip changes made here keep the current mode: mark them as already seen
+  // so the App-prop reset effect (entry intent) does not fire.
   function selectClip(id) {
     if (!id || id === clip?.clip_id) return
     setError(null)
     setPickedId(id)
     const picked = clipList.find(c => c.clip_id === id)
-    if (picked) onSelectClip?.(picked)
+    if (!picked) return
+    prevPropIdRef.current = picked.clip_id
+    onSelectClip?.(picked)
+  }
+
+  function closeSource() {
+    setError(null)
+    setPickedId(null)
+    prevPropIdRef.current = undefined
+    onSelectClip?.(null)
   }
 
   // F12: ≤ 60 s → imported inline as a clip of MEME_PROJECT (no transcription) and
@@ -470,6 +483,7 @@ export default function MemeGenerator({
       setCreatedClips(prev => [created, ...prev.filter(c => c.clip_id !== created.clip_id)])
       onClipsCreated?.([created])
       setPickedId(created.clip_id)
+      prevPropIdRef.current = created.clip_id
       onSelectClip?.(created)
     } catch (e) {
       setError('Import de la vidéo échoué : ' + e.message)
@@ -480,6 +494,8 @@ export default function MemeGenerator({
 
   function onVideoLoaded(e) {
     const dur = e.target.duration
+    const { videoWidth: vw, videoHeight: vh } = e.target
+    if (vw > 0 && vh > 0) setVideoAr(vw / vh)
     setVideoDuration(dur)
     setOutPoint(prev => prev === 0 ? dur : prev)
     setVideoReady(true)
@@ -701,11 +717,11 @@ export default function MemeGenerator({
 
   const transport = (
     <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-      <Btn size="sm" icon={ICONS.skipBack} onClick={() => seekRelative(-1)} title="−1 s (Maj+←)" disabled={noClip} />
-      <Btn size="sm" icon={ICONS.prevFrame} onClick={() => seekRelative(-0.1)} title="−0,1 s (←)" disabled={noClip} />
-      <Btn size="sm" variant="solid" icon={playing ? ICONS.pause : ICONS.play} onClick={togglePlay} title="Lecture / pause (Espace)" disabled={noClip} />
-      <Btn size="sm" icon={ICONS.nextFrame} onClick={() => seekRelative(0.1)} title="+0,1 s (→)" disabled={noClip} />
-      <Btn size="sm" icon={ICONS.skipFwd} onClick={() => seekRelative(1)} title="+1 s (Maj+→)" disabled={noClip} />
+      <Btn size="sm" icon={ICONS.skipBack} onClick={() => seekRelative(-1)} title="−1 s (Maj+←)" />
+      <Btn size="sm" icon={ICONS.prevFrame} onClick={() => seekRelative(-0.1)} title="−0,1 s (←)" />
+      <Btn size="sm" variant="solid" icon={playing ? ICONS.pause : ICONS.play} onClick={togglePlay} title="Lecture / pause (Espace)" />
+      <Btn size="sm" icon={ICONS.nextFrame} onClick={() => seekRelative(0.1)} title="+0,1 s (→)" />
+      <Btn size="sm" icon={ICONS.skipFwd} onClick={() => seekRelative(1)} title="+1 s (Maj+→)" />
     </div>
   )
 
@@ -724,45 +740,54 @@ export default function MemeGenerator({
     onDrop: e => { e.preventDefault(); setDragOver(false); handleFile(e.dataTransfer.files?.[0]) },
   }
 
-  // F12 / FIXES_R3 §16 — no source yet: a centered chooser instead of a dead preview.
+  // FIXES_R4 #3 — no source: one compact 16:9 card, no mode actions.
+  const sourceWhat = { image: 'capturer un frame', video: 'extraire un GIF', audio: 'exporter l’audio' }[sourceTab]
   const emptySource = (
-    <div {...dropProps} style={{
-      position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14,
-      outline: dragOver ? `2px dashed ${T.accent}` : 'none', outlineOffset: -10,
-    }}>
-      <div style={{ width: 52, height: 52, borderRadius: T.r.card, background: T.surface2, border: `1px solid ${T.border2}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <Icon d={ICONS.film} size={24} stroke={T.text3} />
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+      <div {...dropProps} style={{
+        width: 'min(100%, 720px, calc((100vh - 330px) * 16 / 9))', aspectRatio: '16/9', borderRadius: T.r.card,
+        border: `2px dashed ${dragOver ? T.accent : T.border2}`, background: dragOver ? alpha(T.accent, '0d') : T.bg2, transition: 'border-color .15s, background .15s',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, padding: 24, textAlign: 'center',
+      }}>
+        <div style={{ width: 52, height: 52, borderRadius: 14, background: T.surface2, border: `1px solid ${T.border2}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Icon d={ICONS.film} size={22} stroke={T.text2} />
+        </div>
+        <div>
+          <div style={{ fontSize: T.fs.md, fontWeight: 600, color: T.text }}>Choisissez une source</div>
+          <div style={{ fontSize: T.fs.xs, color: T.text3, marginTop: 4 }}>pour {sourceWhat}</div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
+          {clipSelect}
+          {uploadBtn}
+        </div>
+        <div style={{ fontSize: T.fs.micro, color: T.text3 }}>
+          ou glissez une image / vidéo ici · MP4 ≤ {SHORT_VIDEO_MAX_S} s, plus longue → <span style={{ color: T.accent }}>Importer</span>
+        </div>
       </div>
-      <div style={{ fontSize: T.fs.md, fontWeight: 600, color: T.text }}>Choisissez un clip</div>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-        {clipSelect}
-        {uploadBtn}
-      </div>
-      <div style={{ fontSize: T.fs.xs, color: T.text3 }}>ou glissez une image / vidéo ici</div>
+      {error && <div style={{ width: 'min(100%, 720px, calc((100vh - 330px) * 16 / 9))' }}>{errorBox}</div>}
     </div>
   )
 
+  // FIXES_R4 #4 — player sized to the video (16:9 until metadata), capped so its
+  // controls stay on screen: no black bars, no scrolling.
   const videoStub = footer => (
-    <div style={{ background: '#000', borderRadius: T.r.card, border: `1px solid ${T.border}`, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-      <div onClick={segmentUrl ? togglePlay : undefined} style={{
-        aspectRatio: '16/9', position: 'relative', cursor: segmentUrl ? 'pointer' : 'default',
-        background: segmentUrl ? '#000' : 'repeating-linear-gradient(0deg,#16161c 0 2px,#1b1b22 2px 6px)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}>
-        {segmentUrl ? (
-          <video
-            key={segmentUrl}
-            ref={videoRef}
-            src={segmentUrl}
-            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
-            onLoadedMetadata={onVideoLoaded}
-            onTimeUpdate={e => sourceTab === 'image' ? setVideoTime(e.target.currentTime) : onGifTimeUpdate(e)}
-            onPlay={() => setPlaying(true)}
-            onPause={() => setPlaying(false)}
-          />
-        ) : emptySource}
+    <div style={{
+      background: '#000', borderRadius: T.r.card, border: `1px solid ${T.border}`, overflow: 'hidden', display: 'flex', flexDirection: 'column',
+      width: `min(100%, calc((100vh - 400px) * ${videoAr}))`, justifySelf: 'center',
+    }}>
+      <div onClick={togglePlay} style={{ aspectRatio: String(videoAr), position: 'relative', cursor: 'pointer', background: '#000' }}>
+        <video
+          key={segmentUrl}
+          ref={videoRef}
+          src={segmentUrl}
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+          onLoadedMetadata={onVideoLoaded}
+          onTimeUpdate={e => sourceTab === 'image' ? setVideoTime(e.target.currentTime) : onGifTimeUpdate(e)}
+          onPlay={() => setPlaying(true)}
+          onPause={() => setPlaying(false)}
+        />
       </div>
-      {!noClip && footer}
+      {footer}
     </div>
   )
 
@@ -818,20 +843,16 @@ export default function MemeGenerator({
       {...dropProps}
       style={{ padding: 22, border: `2px dashed ${dragOver ? T.accent : T.border2}`, borderRadius: T.r.card, textAlign: 'center', color: T.text3, cursor: 'pointer', transition: 'border-color .2s' }}>
       <Icon d={ICONS.upload} size={26} stroke={T.text3} style={{ margin: '0 auto' }} />
-      <div style={{ fontSize: T.fs.xs, fontWeight: 600, marginTop: 8, color: T.text2 }}>{importing ? 'Import de la vidéo…' : 'Glisser une image ou une vidéo'}</div>
-      <div style={{ fontSize: 11, marginTop: 2 }}>PNG · JPG · WEBP · GIF · MP4 ≤ 60 s</div>
-      <div style={{ fontSize: 11, marginTop: 8, color: T.text4, lineHeight: 1.5 }}>Plus longue ? Elle s'ouvre dans <span style={{ color: T.accent }}>Importer</span> pour découper.</div>
+      <div style={{ fontSize: T.fs.xs, fontWeight: 600, marginTop: 8, color: T.text2 }}>{importing ? 'Import de la vidéo…' : 'Ou utiliser votre image'}</div>
+      <div style={{ fontSize: 11, marginTop: 2 }}>PNG · JPG · WEBP · GIF</div>
     </div>
   )
 
   let sourcePanel
-  const pickClipTitle = "Choisissez un clip d'abord"
-  const pickClipHint = 'Choisissez un clip en haut à droite pour '
   // Why a source action is unavailable — shown as the disabled button's tooltip.
-  const rangeBlocker = busyMsg => noClip ? pickClipTitle
-    : busyMsg ? busyMsg
-      : !videoReady ? 'Chargement de la vidéo…'
-        : outPoint <= inPoint ? 'Le point OUT doit être après IN' : undefined
+  const rangeBlocker = busyMsg => busyMsg ? busyMsg
+    : !videoReady ? 'Chargement de la vidéo…'
+      : outPoint <= inPoint ? 'Le point OUT doit être après IN' : undefined
   if (sourceTab === 'video') {
     const gifTitle = rangeBlocker(gifLoading && 'GIF en cours de génération…')
     sourcePanel = (<>
@@ -839,7 +860,7 @@ export default function MemeGenerator({
         {gifLoading ? 'Génération GIF…' : 'Créer le GIF'}
       </Btn>
       {errorBox}
-      {hint(noClip ? pickClipHint + 'en extraire un GIF.' : "Réglez IN / OUT puis créez le GIF. Il s'ouvre dans l'éditeur de texte.")}
+      {hint("Réglez IN / OUT puis créez le GIF. Il s'ouvre dans l'éditeur de texte.")}
     </>)
   } else if (sourceTab === 'audio') {
     const audioTitle = rangeBlocker(audioLoading && 'Export audio en cours…')
@@ -850,16 +871,14 @@ export default function MemeGenerator({
       </Btn>
       <Btn variant="solid" full icon={ICONS.download} onClick={() => createAudio('wav')} disabled={audioDisabled} title={audioTitle}>Télécharger WAV</Btn>
       {errorBox}
-      {hint(noClip ? pickClipHint + 'en exporter l’audio.' : "Exporte l'audio de la sélection. MP3 compact, WAV lossless.")}
+      {hint("Exporte l'audio de la sélection. MP3 compact, WAV lossless.")}
     </>)
   } else {
     sourcePanel = (<>
-      <Btn variant="primary" size="lg" full icon={ICONS.film} onClick={captureFrame} disabled={noClip || !videoReady}
-        title={noClip ? pickClipTitle : !videoReady ? 'Chargement de la vidéo…' : 'Capturer l’image affichée pour en faire un meme'}>Capturer ce frame</Btn>
+      <Btn variant="primary" size="lg" full icon={ICONS.film} onClick={captureFrame} disabled={!videoReady}
+        title={!videoReady ? 'Chargement de la vidéo…' : 'Capturer l’image affichée pour en faire un meme'}>Capturer ce frame</Btn>
       {errorBox}
-      {hint(noClip
-        ? 'Glissez votre propre image — ou choisissez un clip pour en capturer un frame.'
-        : 'Naviguez puis capturez le frame souhaité — ou glissez votre propre image.')}
+      {hint('Naviguez puis capturez le frame souhaité — ou glissez votre propre image.')}
       {dropZone}
     </>)
   }
@@ -884,15 +903,17 @@ export default function MemeGenerator({
       <ScreenHeader
         kicker="ATELIER"
         title="Meme · GIF · Audio"
-        sub={clip ? `source · ${clip.name || `Clip ${clip.clip_id.slice(0, 6)}`} · ${fmtDur(Math.max(0, (clip.end ?? 0) - (clip.start ?? 0)))}` : 'aucun clip ouvert'}
-        right={
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            {onBack && <Btn variant="outline" icon={ICONS.back} onClick={onBack}>Mes clips</Btn>}
-            {editing
-              ? <Btn variant="outline" onClick={resetMeme} icon={ICONS.chevron} style={{ transform: 'none' }}>Sources</Btn>
-              : <>{clipSelect}{uploadBtn}</>}
-          </div>
-        }
+        sub={clip ? `source · ${clip.name || `Clip ${clip.clip_id.slice(0, 6)}`} · ${fmtDur(Math.max(0, (clip.end ?? 0) - (clip.start ?? 0)))}`
+          : editing && imageName ? `image · ${imageName}` : 'aucune source'}
+        right={editing
+          ? <Btn variant="outline" onClick={resetMeme} icon={ICONS.chevron} style={{ transform: 'none' }}>Sources</Btn>
+          : noClip ? null : (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              {clipSelect}
+              {uploadBtn}
+              <Btn icon={ICONS.close} title="Fermer la source" onClick={closeSource} />
+            </div>
+          )}
       />
       {!editing && (
         <div style={{ padding: '0 32px 14px', flexShrink: 0 }}>
@@ -902,7 +923,7 @@ export default function MemeGenerator({
         </div>
       )}
       <div style={{ flex: 1, minHeight: 0, padding: '0 32px 28px', overflow: 'auto' }}>
-        {!editing ? (
+        {!editing && noClip ? emptySource : !editing ? (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: 22, height: '100%', alignItems: 'start' }}>
             {videoStub(sourceTab === 'image' ? imageFooter : rangeFooter)}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -1036,7 +1057,7 @@ export default function MemeGenerator({
           </div>
         )}
 
-        <input ref={fileInputRef} type="file" accept=".png,.jpg,.jpeg,.webp,.gif,video/*"
+        <input ref={fileInputRef} type="file" accept=".png,.jpg,.jpeg,.webp,.gif"
           onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; handleFile(f) }} style={{ display: 'none' }} />
         <input ref={videoInputRef} type="file" accept="video/*"
           onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) handleVideoFile(f) }} style={{ display: 'none' }} />
