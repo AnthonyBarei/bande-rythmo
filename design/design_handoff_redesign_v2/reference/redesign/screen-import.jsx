@@ -1,6 +1,6 @@
 /* Screen — Import (sources, stream/track picker, zoomable drag-to-create timeline, batch) */
 (function () {
-  const { T, Icon, ICONS, Btn, Chip, Dot, Kbd, fmtTC } = window.RD;
+  const { T, Icon, ICONS, Btn, Chip, Dot, Kbd, Segmented, fmtTC } = window.RD;
   const { PLEX } = window.RDATA;
 
   function Import({ go, accent }) {
@@ -54,7 +54,7 @@
           {src === 'plex' ? <PlexBrowse accent={accent} /> : (
             <>
               {/* Left: preview + timeline + pending */}
-              <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto', overflowX: 'hidden', paddingRight: 2 }}>
                 <Preview accent={accent} />
                 <ZoomTimeline accent={accent} />
                 <PendingList accent={accent} />
@@ -69,15 +69,80 @@
   }
 
   function Preview({ accent }) {
+    const DUR = 42 * 60 + 18, FPS = 24;
+    const [t, setT] = React.useState(12 * 60 + 34.25);
+    const [playing, setPlaying] = React.useState(false);
+    const [spd, setSpd] = React.useState(1);
+    const [muted, setMuted] = React.useState(false);
+    const [inT, setIn] = React.useState(12 * 60 + 30);
+    const [outT, setOut] = React.useState(null);
+    const [hover, setHover] = React.useState(null);
+    const [editTC, setEditTC] = React.useState(false);
+    const clamp = (v) => Math.max(0, Math.min(DUR, v));
+    React.useEffect(() => {
+      if (!playing) return;
+      let raf, last = performance.now();
+      const loop = (now) => { const dt = (now - last) / 1000; last = now; setT(p => { const n = p + dt * spd; if (outT != null && inT != null && n > outT) return inT; return clamp(n); }); raf = requestAnimationFrame(loop); };
+      raf = requestAnimationFrame(loop); return () => cancelAnimationFrame(raf);
+    }, [playing, spd, inT, outT]);
+    const tc = (sec) => { const p = (n) => String(n).padStart(2, '0'); const f = Math.floor((sec % 1) * FPS); return `${p(Math.floor(sec / 3600))}:${p(Math.floor(sec / 60) % 60)}:${p(Math.floor(sec) % 60)}:${p(f)}`; };
+    const parseTC = (str) => { const n = str.split(/[:.]/).map(Number); if (n.some(isNaN)) return null; while (n.length < 4) n.unshift(0); return n[0] * 3600 + n[1] * 60 + n[2] + n[3] / FPS; };
+    const seekFromEvent = (e, box) => clamp(((e.clientX - box.left) / box.width) * DUR);
+    const onScrubDown = (e) => {
+      e.preventDefault(); const box = e.currentTarget.getBoundingClientRect(); const was = playing; setPlaying(false); setT(seekFromEvent(e, box));
+      const mv = (ev) => setT(seekFromEvent(ev, box));
+      const up = () => { window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); if (was) setPlaying(true); };
+      window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up);
+    };
+    const pct = (v) => (v / DUR) * 100;
+    const TB = ({ ic, title, onClick }) => <Btn size="sm" icon={ic} title={title} onClick={onClick} />;
     return (
-      <div style={{
-        flex: 1, minHeight: 0, background: '#000', borderRadius: T.r.card, border: `1px solid ${T.border}`,
-        position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}>
-        <div style={{ width: '58%', aspectRatio: '16/9', background: `repeating-linear-gradient(0deg,#181820 0 2px,#1c1c24 2px 6px)`, borderRadius: 6,
-          display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.text4, fontSize: 11, letterSpacing: 4, fontFamily: T.fontMono }}>SOURCE</div>
-        <div style={{ position: 'absolute', top: 14, left: 16, padding: '4px 10px', background: 'rgba(0,0,0,.6)', borderRadius: 6, fontFamily: T.fontMono, fontSize: 11, color: T.text2, backdropFilter: 'blur(6px)' }}>
-          <span style={{ color: accent }}>●</span> 12:34:06 / 42:18:00
+      <div style={{ flex: '1 0 300px', minHeight: 300, background: '#000', borderRadius: T.r.card, border: `1px solid ${T.border}`, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        <div onClick={() => setPlaying(p => !p)} style={{ flex: 1, minHeight: 0, position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+          <div style={{ width: '58%', aspectRatio: '16/9', maxHeight: '90%', background: `repeating-linear-gradient(0deg,#181820 0 2px,#1c1c24 2px 6px)`, borderRadius: 6,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.text4, fontSize: 11, letterSpacing: 4, fontFamily: T.fontMono }}>SOURCE</div>
+          <div style={{ position: 'absolute', top: 14, left: 16, padding: '4px 10px', background: 'rgba(0,0,0,.6)', borderRadius: 6, fontFamily: T.fontMono, fontSize: 11, color: T.text2, backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Dot color={playing ? T.danger : accent} size={6} /> {tc(t)} <span style={{ color: T.text4 }}>/ {tc(DUR)}</span>
+          </div>
+        </div>
+        {/* Seek bar — click / drag anywhere; IN–OUT range + hover timecode */}
+        <div onPointerDown={onScrubDown} onMouseMove={e => { const b = e.currentTarget.getBoundingClientRect(); setHover({ x: e.clientX - b.left, t: seekFromEvent(e, b) }); }} onMouseLeave={() => setHover(null)}
+          style={{ height: 22, flexShrink: 0, position: 'relative', background: T.surface, borderTop: `1px solid ${T.border}`, cursor: 'pointer', touchAction: 'none' }}>
+          <div style={{ position: 'absolute', left: 10, right: 10, top: 9, height: 4, borderRadius: 2, background: T.surface3 }}>
+            <div style={{ position: 'absolute', left: 0, width: `${pct(t)}%`, top: 0, bottom: 0, background: accent + '88', borderRadius: 2 }} />
+            {inT != null && <div style={{ position: 'absolute', left: `${pct(inT)}%`, width: `${pct((outT ?? t) - inT)}%`, top: -3, bottom: -3, background: T.info + '33', borderLeft: `2px solid ${T.info}`, borderRight: outT != null ? `2px solid ${accent}` : 'none' }} />}
+            <div style={{ position: 'absolute', left: `${pct(t)}%`, top: -4, width: 12, height: 12, borderRadius: '50%', background: accent, transform: 'translateX(-50%)', boxShadow: '0 1px 4px rgba(0,0,0,.5)' }} />
+          </div>
+          {hover && <div style={{ position: 'absolute', left: hover.x, bottom: 'calc(100% + 4px)', transform: 'translateX(-50%)', padding: '2px 6px', borderRadius: 4, background: T.surface2, border: `1px solid ${T.border2}`, fontFamily: T.fontMono, fontSize: 11, color: T.text, pointerEvents: 'none', whiteSpace: 'nowrap' }}>{tc(hover.t)}</div>}
+        </div>
+        {/* Player controls */}
+        <div style={{ minHeight: 48, flexShrink: 0, padding: '7px 10px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, rowGap: 6, background: T.surface }}>
+          <TB ic={ICONS.skipBack} title="−10 s (J)" onClick={() => setT(v => clamp(v - 10))} />
+          <TB ic={ICONS.prevFrame} title="Image −1 (,)" onClick={() => setT(v => clamp(v - 1 / FPS))} />
+          <button onClick={() => setPlaying(p => !p)} title="Lecture / pause (Espace)" style={{ width: 40, height: 34, borderRadius: T.r.ctl, background: accent, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <Icon d={playing ? ICONS.pause : ICONS.play} size={15} stroke="#0b0b0d" fill="#0b0b0d" />
+          </button>
+          <TB ic={ICONS.nextFrame} title="Image +1 (.)" onClick={() => setT(v => clamp(v + 1 / FPS))} />
+          <TB ic={ICONS.skipFwd} title="+10 s (L)" onClick={() => setT(v => clamp(v + 10))} />
+          {/* Editable timecode — click, type HH:MM:SS:FF, Entrée */}
+          {editTC
+            ? <input autoFocus defaultValue={tc(t)} onBlur={() => setEditTC(false)}
+                onKeyDown={e => { if (e.key === 'Enter') { const v = parseTC(e.currentTarget.value); if (v != null) setT(clamp(v)); setEditTC(false); } if (e.key === 'Escape') setEditTC(false); }}
+                style={{ width: 112, height: 30, padding: '0 8px', background: T.bg2, border: `1px solid ${accent}`, borderRadius: T.r.chip, color: T.text, fontFamily: T.fontMono, fontSize: 12, outline: 'none', marginLeft: 4 }} />
+            : <button onClick={() => { setPlaying(false); setEditTC(true); }} title="Aller au timecode (cliquer pour saisir)" style={{ height: 30, padding: '0 8px', marginLeft: 4, background: 'transparent', border: `1px solid ${T.border}`, borderRadius: T.r.chip, cursor: 'text', fontFamily: T.fontMono, fontSize: 12, color: T.text2, whiteSpace: 'nowrap' }}>
+                <span style={{ color: T.text }}>{tc(t)}</span> / {tc(DUR)}
+              </button>}
+          <div style={{ width: 1, height: 22, background: T.border, margin: '0 4px' }} />
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 2, background: T.surface2, border: `1px solid ${T.border}`, borderRadius: T.r.ctl, padding: 3 }}>
+            <button onClick={() => { setIn(t); if (outT != null && outT <= t) setOut(null); }} title="Marquer IN (I) · clic droit : aller à IN" onContextMenu={e => { e.preventDefault(); inT != null && setT(inT); }}
+              style={{ height: 26, padding: '0 9px', borderRadius: T.r.chip, border: 'none', cursor: 'pointer', background: inT != null ? T.info + '22' : 'transparent', color: inT != null ? T.info : T.text2, fontFamily: T.fontMono, fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap' }}>[ IN {inT != null ? tc(inT).slice(0, 8) : '—'}</button>
+            <button onClick={() => { if (inT == null || t > inT) setOut(t); }} title="Marquer OUT (O) · clic droit : aller à OUT" onContextMenu={e => { e.preventDefault(); outT != null && setT(outT); }}
+              style={{ height: 26, padding: '0 9px', borderRadius: T.r.chip, border: 'none', cursor: 'pointer', background: outT != null ? accent + '22' : 'transparent', color: outT != null ? accent : T.text2, fontFamily: T.fontMono, fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap' }}>OUT {outT != null ? tc(outT).slice(0, 8) : '—'} ]</button>
+            <Btn size="sm" icon={ICONS.loop} title="Lire IN → OUT en boucle" onClick={() => { if (inT != null) { setT(inT); setPlaying(true); } }} style={{ height: 26, minWidth: 26 }} />
+          </div>
+          <div style={{ flex: 1 }} />
+          <Segmented size="sm" value={spd} onChange={setSpd} options={[{ v: 0.5, l: '0.5×' }, { v: 1, l: '1×' }, { v: 2, l: '2×' }]} />
+          <Btn size="sm" icon={muted ? ICONS.mute : ICONS.volume} title="Son (M)" onClick={() => setMuted(m => !m)} />
         </div>
       </div>
     );

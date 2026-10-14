@@ -52,6 +52,63 @@ These fixes are listed in priority order. Every item is either **not done**, **p
 17. **Éditeur undo/redo** are disabled with no history, which is correct, but they are too faint. Apply the disabled style from item 15.
 18. **Activité:** the expanded list (`02-activity-expanded`) puts the yellow Télécharger buttons back on old rows, which breaks F7.1. The rule is that only the **newest row per file name** gets the primary button, and every other row gets outline. This also applies after expanding.
 
+## 🆕 Importer: player controls
+**Source:** `screen-import.jsx` → `Preview` (updated)
+**File:** `ImportSection.jsx` / `VideoEditor.jsx`
+
+The preview card becomes a column: the video (flex 1, **min-height 260px**, and the left column scrolls if needed) plus a **control bar**: at least 48px high, `flex-wrap: wrap` so it drops to two rows on narrow widths instead of overflowing, with a `surface` background and a top border. Left to right:
+1. −10 s, −1 image
+2. **play/pause**: a 40×34 accent button
+3. +1 image, +10 s
+4. mono time `courant / total`
+5. a divider
+6. an **IN / OUT cluster**, in a `surface2` cluster box:
+   - `[ IN hh:mm:ss` (info color once set)
+   - `OUT hh:mm:ss ]` (accent once set)
+   - a loop button that plays IN → OUT
+
+   When both IN and OUT are set, the pending block appears on the timeline. Pressing **⌘S / Ctrl+S** (or "Créer N clips") commits it.
+7. a spacer
+8. a speed `Segmented` (0.5× · 1× · 2×)
+9. a mute toggle
+
+**Seek bar.** Put it between the video and the controls: 22px high, a 4px track and a 12px accent knob.
+- Click or drag anywhere on it to seek. If the video was playing, it resumes after the drag.
+- The played part is tinted accent `88`.
+- The IN→OUT range is drawn in info `33`, with an info edge at IN and an accent edge at OUT.
+- While hovering, a tooltip shows the timecode under the cursor.
+
+**Timecode field.** The time readout is a button showing `HH:MM:SS:FF / total`. Clicking it turns it into an input. Type `HH:MM:SS:FF` (or a shorter form like `12:34`) and press Enter to seek; Échap cancels.
+
+**IN / OUT behaviour.**
+- IN can't be after OUT; setting IN past OUT clears OUT.
+- Right-click IN or OUT to jump to it.
+- The loop button seeks to IN and plays; playback wraps from OUT back to IN.
+- Clicking the video toggles play.
+
+Keyboard (only while the import screen is focused): Space, J/L ±10 s, comma/period ±1 frame, I, O, M.
+
+The "Cliquez pour activer le son" overlay stays. The first click on play or mute also unlocks audio.
+
+## 🆕 Atelier: no-source state, 16:9 player, contextual actions (replaces item 16 and the F12 header controls)
+**Source:** `screen-misc.jsx` → `Meme`, `EmptySource`, `VideoStub` (updated)
+
+1. **With no source, show one compact 16:9 card and nothing else.** There is no side column, and no Capturer / Créer le GIF / Télécharger buttons, because they make no sense without media.
+   - The card is centered and its width is `min(100%, 720px, (100vh − 330px) × 16/9)`, so it never gets taller than the viewport allows. It has a dashed `border2` border and a `bg2` background. During a drag it turns accent.
+   - Inside the card:
+     - a 52px icon tile
+     - "Choisissez une source"
+     - a sub line that changes with the mode ("pour capturer un frame" / "extraire un GIF" / "exporter l'audio")
+     - the **clip `Select` plus a "Vidéo courte…" button on the card itself** (Claude Code's proposal, adopted)
+     - the hint "ou glissez une image / vidéo ici · MP4 ≤ 60 s, plus longue → Importer"
+   - The header's right side is empty. The sub line reads "aucune source". The Image · GIF · Audio switch stays visible, so the user knows what they can make.
+2. **With a source:**
+   - The header shows the clip `Select` (to switch), "Vidéo courte…" and a ✕ to close the source.
+   - The player is **16:9**, with width `min(100%, (100vh − 400px) × 16/9)`, centered in its column, so its controls stay on screen without scrolling.
+   - Then the side column appears, with the mode's action (Capturer / Créer le GIF / MP3 · WAV).
+   - The Image mode drop zone becomes "Ou utiliser votre image" (PNG · JPG · WEBP · GIF), because video sources are now handled by the source picker.
+3. Remove the disabled-button versions of these actions entirely. Item 15's disabled style still applies everywhere else.
+
 ## Proof for this round (add these to `shoot.py`)
 - `editor/01-editor.png` with the inspector **hidden** (`\`) and with the band resized to its maximum
 - `import/02-import-minimap-drag.png` taken mid-drag

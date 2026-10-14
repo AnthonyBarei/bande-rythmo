@@ -8,18 +8,22 @@
   function Meme({ go, accent }) {
     const [mode, setMode] = React.useState('image');
     const [edit, setEdit] = React.useState(false);
+    const [src, setSrc] = React.useState(null);
     const H = window.RScreens._Header;
+    const CLIPS_OPT = [
+      { v: 'c1', l: 'S02E04 — confrontation cuisine', dot: T.accent, d: '41.2s' }, { v: 'c2', l: 'S02E04 — réveil dans la grange', dot: T.accent, d: '27.6s' },
+      { v: 'c3', l: 'S02E03 — annonce du capitaine', dot: T.accent, d: '52.0s' }, { v: 'm1', l: 'Réaction — Léa surprise', dot: T.violet, d: '4.2s' },
+    ];
+    const cur = CLIPS_OPT.find(c => c.v === src);
     return (
       <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <H kicker="ATELIER" title="Meme · GIF · Audio" sub="source · S02E04 — confrontation cuisine · 41.2s"
+        <H kicker="ATELIER" title="Meme · GIF · Audio" sub={cur ? `source · ${cur.l} · ${cur.d}` : 'aucune source'}
           right={edit ? <Btn variant="outline" onClick={() => setEdit(false)} icon={ICONS.chevron} style={{ transform: 'none' }}>Sources</Btn> :
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <Select width={250} value="c1" onChange={() => {}} options={[
-                { v: 'c1', l: 'S02E04 — confrontation cuisine', dot: T.accent }, { v: 'c2', l: 'S02E04 — réveil dans la grange', dot: T.accent },
-                { v: 'c3', l: 'S02E03 — annonce du capitaine', dot: T.accent }, { v: 'm1', l: 'Réaction — Léa surprise', dot: T.violet },
-              ]} />
+            cur ? <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <Select width={250} value={src} onChange={setSrc} options={CLIPS_OPT} />
               <Btn variant="outline" icon={ICONS.upload}>Vidéo courte…</Btn>
-            </div>} />
+              <Btn icon={ICONS.close} title="Fermer la source" onClick={() => setSrc(null)} />
+            </div> : null} />
         {!edit && (
           <div style={{ padding: '0 32px 14px', flexShrink: 0 }}>
             <Segmented value={mode} onChange={setMode} options={[
@@ -29,6 +33,7 @@
         )}
         <div style={{ flex: 1, minHeight: 0, padding: '0 32px 28px', overflow: 'hidden' }}>
           {edit ? <MemeEditor accent={accent} /> :
+            !cur ? <EmptySource accent={accent} options={CLIPS_OPT} onPick={setSrc} mode={mode} /> :
             mode === 'image' ? <ImageMode accent={accent} onNext={() => setEdit(true)} /> :
             <RangeMode accent={accent} kind={mode} onNext={() => setEdit(true)} />}
         </div>
@@ -36,9 +41,37 @@
     );
   }
 
+  // Empty state — no source yet: one compact 16:9 card, no mode actions
+  function EmptySource({ accent, options, onPick, mode }) {
+    const [over, setOver] = React.useState(false);
+    const what = { image: 'capturer un frame', gif: 'extraire un GIF', audio: 'exporter l\u2019audio' }[mode];
+    return (
+      <div style={{ height: '100%', display: 'flex', alignItems: 'flex-start', justifyContent: 'center' }}>
+        <div onDragOver={e => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)} onDrop={e => { e.preventDefault(); setOver(false); onPick(options[0].v); }}
+          style={{ width: 'min(100%, 720px, calc((100vh - 330px) * 16 / 9))', aspectRatio: '16/9', borderRadius: T.r.card,
+            border: `2px dashed ${over ? accent : T.border2}`, background: over ? accent + '0d' : T.bg2, transition: 'border-color .15s, background .15s',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, padding: 24, textAlign: 'center' }}>
+          <div style={{ width: 52, height: 52, borderRadius: 14, background: T.surface2, border: `1px solid ${T.border2}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Icon d={ICONS.film} size={22} stroke={T.text2} />
+          </div>
+          <div>
+            <div style={{ fontSize: T.fs.md, fontWeight: 600 }}>Choisissez une source</div>
+            <div style={{ fontSize: T.fs.xs, color: T.text3, marginTop: 4 }}>pour {what}</div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
+            <Select width={250} value={null} placeholder="Choisir un clip…" onChange={onPick} options={options} />
+            <Btn variant="outline" icon={ICONS.upload} onClick={() => onPick('m1')}>Vidéo courte…</Btn>
+          </div>
+          <div style={{ fontSize: T.fs.micro, color: T.text3 }}>ou glissez une image / vidéo ici · MP4 ≤ 60 s, plus longue → <span style={{ color: accent }}>Importer</span></div>
+        </div>
+      </div>
+    );
+  }
+
   function VideoStub({ children, ratio = '16/9' }) {
     return (
-      <div style={{ background: '#000', borderRadius: T.r.card, border: `1px solid ${T.border}`, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ background: '#000', borderRadius: T.r.card, border: `1px solid ${T.border}`, overflow: 'hidden', display: 'flex', flexDirection: 'column',
+        width: 'min(100%, calc((100vh - 400px) * 16 / 9))', justifySelf: 'center' }}>
         <div style={{ aspectRatio: ratio, position: 'relative', background: `repeating-linear-gradient(0deg,#16161c 0 2px,#1b1b22 2px 6px)`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <span style={{ color: T.text4, fontSize: 11, letterSpacing: 4, fontFamily: T.fontMono }}>APERÇU</span>
         </div>
@@ -63,9 +96,8 @@
           <p style={{ fontSize: T.fs.xs, color: T.text3, lineHeight: 1.6, margin: 0 }}>Naviguez puis capturez le frame souhaité — ou glissez votre propre image.</p>
           <div style={{ padding: 22, border: `2px dashed ${T.border2}`, borderRadius: T.r.card, textAlign: 'center', color: T.text3 }}>
             <Icon d={ICONS.upload} size={26} stroke={T.text3} style={{ margin: '0 auto' }} />
-            <div style={{ fontSize: T.fs.xs, fontWeight: 600, marginTop: 8, color: T.text2 }}>Glisser une image ou une vidéo</div>
-            <div style={{ fontSize: 11, marginTop: 2 }}>PNG · JPG · WEBP · GIF · MP4 ≤ 60 s</div>
-            <div style={{ fontSize: 11, marginTop: 8, color: T.text4, lineHeight: 1.5 }}>Plus longue ? Elle s'ouvre dans <span style={{ color: accent }}>Importer</span> pour découper.</div>
+            <div style={{ fontSize: T.fs.xs, fontWeight: 600, marginTop: 8, color: T.text2 }}>Ou utiliser votre image</div>
+            <div style={{ fontSize: 11, marginTop: 2 }}>PNG · JPG · WEBP · GIF</div>
           </div>
         </div>
       </div>
