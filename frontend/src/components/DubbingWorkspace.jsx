@@ -476,7 +476,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
     try {
       const jobId = await fireJob()
       progress.start({
-        kind: 'proxy', title: 'Proxy 720p', jobId, retry: fireJob,
+        kind: 'proxy', title: 'Proxy 720p', clipId: clip.clip_id, jobId, retry: fireJob,
         onDone: () => { setHasProxy(true); setUseProxy(true); setProxyJob(false) },
         onError: () => { setProxyJob(false) },
         onCancel: () => { setProxyJob(false) },
@@ -554,7 +554,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
     try {
       const jobId = await fireJob()
       progress.start({
-        kind: 'vocals', title: 'Séparation vocale (Demucs)', jobId, retry: fireJob,
+        kind: 'vocals', title: 'Séparation vocale (Demucs)', clipId: clip.clip_id, jobId, retry: fireJob,
         onDone: () => { setSeparatingVocals(false); undoToast.show({ msg: 'Voix isolée — pistes prêtes dans segments/stems', kind: 'success', duration: 4000 }) },
         onError: (err) => { setSeparatingVocals(false); undoToast.show({ msg: 'Séparation : ' + err.message, kind: 'error', duration: 5000 }) },
         onCancel: () => setSeparatingVocals(false),
@@ -1966,6 +1966,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
       const jobId = await fireJob()
       progress.start({
         kind: 'transcribe',
+        clipId: clip.clip_id,
         title: 'Transcription Whisper',
         jobId,
         retry: fireJob,
