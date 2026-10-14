@@ -12,6 +12,8 @@ import { ToastProvider, useToast } from './ToastContext'
 import ShortcutsOverlay from './components/ShortcutsOverlay'
 import CommandPalette from './components/CommandPalette'
 import ActivityCenter from './components/ActivityCenter'
+import StudioScreen from './components/StudioScreen'
+import { ExportScreenContext } from './components/exportScreen'
 
 export default function App() {
   return (
@@ -24,7 +26,8 @@ export default function App() {
 }
 
 const NAV_KEY = 'br-nav'
-const RESTORABLE = new Set(['import', 'clips', 'dub', 'memes', 'settings', 'activity'])
+const RESTORABLE = new Set(['import', 'clips', 'dub', 'record', 'memes', 'settings', 'activity'])
+const CLIP_SCREENS = new Set(['dub', 'record'])
 
 function loadNav() {
   try {
@@ -77,7 +80,7 @@ function AppInner() {
   const [memeClip, setMemeClip] = useState(null)
   const [memeInitialTab, setMemeInitialTab] = useState(null)
   const [dubExportOpen, setDubExportOpen] = useState(false)
-  const [dubMode, setDubMode] = useState('dub')
+  const [exportSlot, setExportSlot] = useState(null)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [cmdOpen, setCmdOpen] = useState(false)
 
@@ -90,7 +93,7 @@ function AppInner() {
         const data = await res.json()
         if (!live) return
         setClips(data)
-        if (initialNav.section === 'dub') {
+        if (CLIP_SCREENS.has(initialNav.section)) {
           const clip = data.find(c => c.clip_id === initialNav.clipId)
           if (clip) setActiveClip(clip)
           else setSection('clips')
@@ -99,7 +102,7 @@ function AppInner() {
         console.error('Failed to fetch clips:', e)
         if (!live) return
         toast.error('Impossible de charger les clips — le serveur est-il lancé ?')
-        setSection(s => s === 'dub' ? 'clips' : s)
+        setSection(s => CLIP_SCREENS.has(s) ? 'clips' : s)
       }
     }
     fetchClips()
@@ -107,7 +110,7 @@ function AppInner() {
   }, [])
 
   useEffect(() => {
-    if (section === 'dub' && !activeClip) return // still restoring
+    if (CLIP_SCREENS.has(section) && !activeClip) return // still restoring
     saveNav({ section, clipId: activeClip?.clip_id || null })
   }, [section, activeClip])
 
@@ -139,8 +142,13 @@ function AppInner() {
 
   function handleDub(clip) {
     setActiveClip(clip)
-    setDubMode('dub')
     setSection('dub')
+  }
+
+  function handleRecord(clip) {
+    setDubExportOpen(false)
+    setActiveClip(clip)
+    setSection('record')
   }
 
   function handleMeme(clip, initialTab = null) {
@@ -237,20 +245,26 @@ function AppInner() {
   function navigate(s) {
     setDubExportOpen(false)
     if (s === 'memes') { setMemeClip(null); setMemeInitialTab(null); setSection('memes'); return }
-    if (s === 'record' || s === 'dub') { const tgt = activeClip || clips[0]; if (tgt) { setActiveClip(tgt); setDubMode(s); setSection('dub') } else setSection('clips'); return }
+    if (CLIP_SCREENS.has(s)) { const tgt = activeClip || clips[0]; if (tgt) { setActiveClip(tgt); setSection(s) } else setSection('clips'); return }
     setSection(s)
   }
+
+  // Export screen: opened from the editor (E / Exporter). The editor stays
+  // mounted (hidden) so closing returns to it intact; its ExportPanel portals
+  // into the slot below.
+  const exportScreen = section === 'dub' && !!activeClip && dubExportOpen
+  const closeExport = () => setDubExportOpen(false)
 
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: 'var(--bg)' }}>
 
       {/* Full-height rail (redesign shell — rail spans the whole window) */}
-      <Sidebar section={section} dubMode={dubMode} onNavigate={navigate} />
+      <Sidebar section={exportScreen ? 'export' : section} onNavigate={navigate} />
 
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden', position: 'relative' }}>
 
         {/* Top bar — only over content; hidden on the full-bleed editor. */}
-        {section !== 'dub' && (
+        {(section !== 'dub' || exportScreen) && (
           <TopBar accent={settings.accent} onCmd={() => setCmdOpen(true)} onHelp={() => setShortcutsOpen(true)} onActivity={() => navigate('activity')} />
         )}
 
@@ -266,6 +280,7 @@ function AppInner() {
           <ClipsLibrary
             clips={clips}
             onDub={handleDub}
+            onRecord={handleRecord}
             onMeme={handleMeme}
             onDelete={handleDelete}
             onRename={handleRename}
@@ -276,15 +291,24 @@ function AppInner() {
         )}
         {section === 'activity' && <ActivityCenter />}
         {section === 'dub' && activeClip && (
-          <DubbingWorkspace
-            key={activeClip.clip_id}
-            clip={activeClip}
-            onUpdate={handleClipUpdated}
-            onBack={() => { setDubExportOpen(false); setSection('clips') }}
-            exportOpen={dubExportOpen}
-            onToggleExport={() => setDubExportOpen(v => !v)}
-            initialPanel={dubMode}
-          />
+          <ExportScreenContext.Provider value={exportScreen ? { slot: exportSlot, onClose: closeExport, clip: activeClip } : null}>
+            <div style={exportScreen
+              ? { position: 'absolute', inset: 0, visibility: 'hidden', display: 'flex', flexDirection: 'column' }
+              : { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+              <DubbingWorkspace
+                key={activeClip.clip_id}
+                clip={activeClip}
+                onUpdate={handleClipUpdated}
+                onBack={() => { setDubExportOpen(false); setSection('clips') }}
+                exportOpen={dubExportOpen}
+                onToggleExport={() => setDubExportOpen(v => !v)}
+              />
+            </div>
+          </ExportScreenContext.Provider>
+        )}
+        {exportScreen && <div ref={setExportSlot} style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }} />}
+        {section === 'record' && activeClip && (
+          <StudioScreen key={activeClip.clip_id} clip={activeClip} onBack={() => navigate('dub')} />
         )}
         {section === 'memes' && (
           <MemeGenerator clip={memeClip} initialTab={memeInitialTab} onBack={memeClip ? () => setSection('clips') : null} />

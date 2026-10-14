@@ -1,14 +1,27 @@
-import React, { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react'
-import { Icon, ICONS, Btn, Dot, SectionLabel } from '../ui'
+import React, { useState, useEffect, useRef, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react'
+import { T, alpha, Icon, ICONS, Btn, Chip, Dot, Avatar } from '../ui'
+import { TRACK_HEXES } from '../config/tracks'
+import { fmtClock, fmtSMPTE } from '../utils/timecode'
 
-const RecorderPanel = forwardRef(function RecorderPanel({ clipId, subtitles = [], activeCharacter = '', activeIndex = null, videoRef = null }, ref) {
+// Recorder — port of redesign screen-record-export.jsx → Record.
+// variant 'studio'   : full Studio screen body (booth left · PRISES + A/B 340px right).
+// variant 'embedded' : compact stack for the editor inspector.
+const RecorderPanel = forwardRef(function RecorderPanel({
+  clipId, subtitles = [], activeCharacter = '', activeIndex = null, videoRef = null,
+  variant = 'embedded', fps = 25, onSelectIndex,
+}, ref) {
+  const studio = variant === 'studio'
+  const BARS = studio ? 48 : 44
   const [takes, setTakes] = useState([])
   const [recording, setRecording] = useState(false)
+  const [elapsed, setElapsed] = useState(0)
   const [error, setError] = useState(null)
+  const [abOpen, setAbOpen] = useState(false)
   const [abA, setAbA] = useState(null)
   const [abB, setAbB] = useState(null)
   const [playing, setPlaying] = useState(null)
   const [syncPlaying, setSyncPlaying] = useState(null)
+  const [micLabel, setMicLabel] = useState('')
 
   const mrRef = useRef(null)
   const startingRef = useRef(false)
@@ -18,7 +31,6 @@ const RecorderPanel = forwardRef(function RecorderPanel({ clipId, subtitles = []
   const audioRef = useRef(null)
   const syncCleanupRef = useRef(null)
 
-  const BARS = 44
   const [lvl, setLvl] = useState(() => Array(BARS).fill(0.06))
   const analyserRef = useRef(null)
   const meterRafRef = useRef(null)
@@ -71,6 +83,26 @@ const RecorderPanel = forwardRef(function RecorderPanel({ clipId, subtitles = []
     stopMeter()
   }, [])
 
+  // Mic name for the booth chip — labels are only exposed once mic access was granted.
+  useEffect(() => {
+    if (!studio || !navigator.mediaDevices?.enumerateDevices) return
+    let live = true
+    navigator.mediaDevices.enumerateDevices()
+      .then(devices => {
+        const inputs = devices.filter(d => d.kind === 'audioinput')
+        const mic = inputs.find(d => d.deviceId === 'default') || inputs[0]
+        if (live && mic?.label) setMicLabel(mic.label.replace(/^(Par défaut|Default) - /, ''))
+      })
+      .catch(e => console.warn('enumerateDevices failed', e))
+    return () => { live = false }
+  }, [studio])
+
+  useEffect(() => {
+    if (!recording) return
+    const id = setInterval(() => setElapsed((Date.now() - recStartRef.current) / 1000), 100)
+    return () => clearInterval(id)
+  }, [recording])
+
   async function uploadTake() {
     const dur = (Date.now() - recStartRef.current) / 1000
     const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
@@ -98,6 +130,8 @@ const RecorderPanel = forwardRef(function RecorderPanel({ clipId, subtitles = []
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       streamRef.current = stream
+      const label = stream.getAudioTracks()[0]?.label
+      if (label) setMicLabel(label.replace(/^(Par défaut|Default) - /, ''))
       const mr = new MediaRecorder(stream)
       chunksRef.current = []
       mr.ondataavailable = e => { if (e.data.size) chunksRef.current.push(e.data) }
@@ -108,6 +142,7 @@ const RecorderPanel = forwardRef(function RecorderPanel({ clipId, subtitles = []
       recStartRef.current = Date.now()
       mr.start()
       mrRef.current = mr
+      setElapsed(0)
       setRecording(true)
       startMeter(stream)
     } catch (e) {
@@ -128,7 +163,7 @@ const RecorderPanel = forwardRef(function RecorderPanel({ clipId, subtitles = []
 
   const isRecording = () => startingRef.current || mrRef.current?.state === 'recording'
 
-  // Keyboard R (DubbingWorkspace) drives the same start/stop as the button.
+  // Keyboard R (editor / Studio screen) drives the same start/stop as the button.
   useImperativeHandle(ref, () => ({
     isRecording,
     toggle: () => {
@@ -145,6 +180,11 @@ const RecorderPanel = forwardRef(function RecorderPanel({ clipId, subtitles = []
     a.src = take.audio_url
     a.play().catch(e => { setPlaying(null); setError('Lecture impossible : ' + e.message) })
     setPlaying(take.id)
+  }
+
+  function togglePlay(take) {
+    if (playing === take.id) { audioRef.current?.pause(); setPlaying(null) }
+    else playTake(take)
   }
 
   function stopSync() {
@@ -178,7 +218,7 @@ const RecorderPanel = forwardRef(function RecorderPanel({ clipId, subtitles = []
       if (!triggered && v.currentTime >= startAt) {
         triggered = true
         a.currentTime = 0
-        a.play().catch(() => {})
+        a.play().catch(e => console.warn('take playback failed', e))
       }
     }
 
@@ -200,7 +240,7 @@ const RecorderPanel = forwardRef(function RecorderPanel({ clipId, subtitles = []
     syncCleanupRef.current = cleanup
     v.addEventListener('timeupdate', onTimeUpdate)
     v.addEventListener('pause', onVideoPause)
-    v.play().catch(() => {})
+    v.play().catch(e => console.warn('video playback failed', e))
   }
 
   function handleAudioEnded() {
@@ -226,11 +266,16 @@ const RecorderPanel = forwardRef(function RecorderPanel({ clipId, subtitles = []
   }
 
   function assignAB(id) {
+    setAbOpen(true)
     if (abA === id) { setAbA(null); return }
     if (abB === id) { setAbB(null); return }
     if (abA == null) setAbA(id)
-    else if (abB == null) setAbB(id)
     else setAbB(id)
+  }
+
+  function toggleAB() {
+    if (showAB) { setAbOpen(false); setAbA(null); setAbB(null) }
+    else setAbOpen(true)
   }
 
   function takeLabel(t) {
@@ -243,130 +288,209 @@ const RecorderPanel = forwardRef(function RecorderPanel({ clipId, subtitles = []
 
   const takeA = takes.find(t => t.id === abA)
   const takeB = takes.find(t => t.id === abB)
+  const showAB = abOpen || !!takeA || !!takeB
   const hasSub = activeIndex != null && subtitles[activeIndex]
   const hasVideo = !!videoRef?.current
 
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: 14 }}>
-      <audio ref={audioRef} onEnded={handleAudioEnded} style={{ display: 'none' }} />
+  const errorBox = error && (
+    <div style={{ fontSize: T.fs.micro, color: T.danger, background: alpha(T.danger, '22'), padding: '6px 8px', borderRadius: T.r.chip }}>
+      {error}
+    </div>
+  )
 
-      {/* Mic stage — prototype Record */}
-      <div style={{
-        background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 14,
-        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-        gap: 18, padding: '22px 16px', position: 'relative',
-      }}>
-        {/* live meter */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 2, height: 64 }}>
-          {lvl.map((v, i) => (
-            <div key={i} style={{
-              width: 4, height: `${Math.max(6, v * 100)}%`, borderRadius: 2,
-              background: recording ? (v > 0.8 ? 'var(--danger)' : 'var(--accent)') : 'var(--border3)',
-              transition: 'height .07s',
-            }} />
-          ))}
-        </div>
-        {/* record button */}
-        <button onClick={recording ? stopRec : startRec} title={recording ? 'Arrêter (R)' : 'Enregistrer (R)'}
-          style={{
-            width: 68, height: 68, borderRadius: '50%', cursor: 'pointer',
-            background: recording ? 'var(--danger)' : 'var(--accent)',
-            border: `4px solid ${recording ? 'rgba(232,89,93,0.27)' : 'var(--accent-ring)'}`,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            boxShadow: recording ? '0 0 28px rgba(232,89,93,0.4)' : '0 0 22px var(--accent-ring)',
-          }}>
-          <Icon d={recording ? ICONS.pause : ICONS.mic} size={27} stroke="#0b0b0d" fill={recording ? '#0b0b0d' : 'none'} />
-        </button>
-        <div style={{ fontSize: 12.5, color: 'var(--text2)', fontFamily: 'var(--font-mono)' }}>
-          {recording
-            ? <span style={{ color: 'var(--danger)', display: 'inline-flex', alignItems: 'center', gap: 8 }}><Dot color="var(--danger)" pulse />ENREGISTREMENT</span>
-            : 'Appuyer pour enregistrer · R'}
-        </div>
-        {(hasSub && hasVideo) && (
-          <div style={{ position: 'absolute', top: 12, right: 12 }}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--text3)', background: 'var(--surface2)', border: '1px solid var(--border2)', borderRadius: 99, padding: '3px 8px' }}>
-              <Icon d={ICONS.film} size={10} /> réplique {activeIndex + 1}
-            </span>
-          </div>
-        )}
-      </div>
+  const micStage = (
+    <MicStage studio={studio} lvl={lvl} recording={recording} elapsed={elapsed}
+      onToggle={recording ? stopRec : startRec}
+      chips={studio
+        ? (micLabel && <Chip soft color={T.text2} style={{ maxWidth: 280 }}><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Micro · {micLabel}</span></Chip>)
+        : (hasSub && hasVideo && <Chip soft color={T.text3}><Icon d={ICONS.film} size={11} stroke={T.text3} /> réplique {activeIndex + 1}</Chip>)} />
+  )
 
-      {error && (
-        <div style={{ fontSize: 11, color: 'var(--danger)', background: 'var(--danger-soft)', padding: '6px 8px', borderRadius: 6 }}>
-          {error}
-        </div>
-      )}
-
-      {/* Takes header */}
+  const takesColumn = (
+    <>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <SectionLabel>PRISES</SectionLabel>
-        <span style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>{takes.length}</span>
+        <span style={{ fontSize: T.fs.micro, letterSpacing: 1.4, color: T.text3, fontWeight: 700 }}>PRISES</span>
+        <span style={{ fontSize: T.fs.micro, color: T.text3, fontFamily: T.fontMono }}>{takes.length}</span>
+        <div style={{ flex: 1 }} />
+        <button data-rd onClick={toggleAB} style={{ background: 'transparent', padding: 0 }}>
+          <Chip soft={!showAB} active={showAB} color={T.info}>A/B comparer</Chip>
+        </button>
       </div>
-
-      {/* A/B compare */}
-      {(takeA || takeB) && (
-        <div style={{ background: 'var(--surface)', border: '1px solid rgba(90,169,240,0.27)', borderRadius: 9, padding: 12, display: 'flex', flexDirection: 'column', gap: 9 }}>
-          <SectionLabel style={{ color: 'var(--info)' }}>COMPARAISON A / B</SectionLabel>
-          {[{ t: takeA, k: 'A', c: 'var(--accent)' }, { t: takeB, k: 'B', c: 'var(--info)' }].map(({ t, k, c }) => (
-            <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-              <div style={{ width: 22, height: 22, borderRadius: 6, background: 'color-mix(in srgb, ' + c + ' 14%, transparent)', color: c, fontWeight: 800, fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{k}</div>
-              <button onClick={() => t && playTake(t)} disabled={!t} style={{ width: 32, height: 32, borderRadius: 7, background: 'var(--surface2)', border: '1px solid var(--border2)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: t ? 'pointer' : 'default' }}>
-                <Icon d={ICONS.play} size={12} style={{ color: c }} />
-              </button>
-              <span style={{ flex: 1, fontSize: 12, color: 'var(--text)' }}>{t ? takeLabel(t) : '—'}</span>
-              <span style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>{t ? `${t.duration.toFixed(1)}s` : ''}</span>
+      {showAB && (
+        <div style={{ background: T.surface, border: `1px solid ${alpha(T.info, '44')}`, borderRadius: T.r.ctl, padding: 12, display: 'flex', flexDirection: 'column', gap: 9 }}>
+          <div style={{ fontSize: T.fs.micro, color: T.info, letterSpacing: 1, fontWeight: 700 }}>COMPARAISON A / B</div>
+          {[{ s: 'A', t: takeA, c: T.accent }, { s: 'B', t: takeB, c: T.info }].map(x => (
+            <div key={x.s} style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+              <div style={{ width: 22, height: 22, borderRadius: 6, background: alpha(x.c, '22'), color: x.c, fontWeight: 800, fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{x.s}</div>
+              <Btn size="sm" icon={x.t && playing === x.t.id ? ICONS.pause : ICONS.play} disabled={!x.t} title="Écouter"
+                onClick={() => x.t && togglePlay(x.t)} style={{ width: 28, height: 28, background: T.surface2 }} />
+              <span style={{ flex: 1, minWidth: 0, fontSize: T.fs.xs, color: x.t ? T.text : T.text3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {x.t ? takeLabel(x.t) : 'Choisir une prise (A/B)'}
+              </span>
+              <div style={{ display: 'flex', gap: 1, alignItems: 'center', height: 16 }}>
+                {Array.from({ length: 28 }).map((_, i) => <div key={i} style={{ width: 2, height: `${(Math.sin(i * 0.6 + x.s.charCodeAt(0)) * 0.4 + 0.5) * 100}%`, background: alpha(x.c, '88'), borderRadius: 1 }} />)}
+              </div>
             </div>
           ))}
         </div>
       )}
+      {errorBox}
+      {takes.length === 0 && (
+        <div style={{ fontSize: T.fs.micro, color: T.text3, textAlign: 'center', padding: '10px 0' }}>
+          Aucune prise enregistrée
+        </div>
+      )}
+      {takes.map((t, i) => (
+        <TakeCard key={t.id} take={t} seed={i} label={takeLabel(t)}
+          isPlaying={playing === t.id} isSyncing={syncPlaying === t.id}
+          ab={t.id === abA ? 'A' : t.id === abB ? 'B' : null}
+          hasVideo={hasVideo}
+          onPlay={() => togglePlay(t)}
+          onSync={() => syncPlaying === t.id ? (stopSync(), videoRef.current?.pause()) : previewWithVideo(t)}
+          onAB={() => assignAB(t.id)}
+          onDelete={() => removeTake(t.id)} />
+      ))}
+    </>
+  )
 
-      {/* Take cards */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {takes.length === 0 && (
-          <div style={{ fontSize: 11.5, color: 'var(--text3)', textAlign: 'center', padding: '10px 0' }}>
-            Aucune prise enregistrée
-          </div>
-        )}
-        {takes.map((t, i) => {
-          const isPlaying = playing === t.id
-          const isSyncing = syncPlaying === t.id
-          const sel = t.id === abA || t.id === abB
-          return (
-            <div key={t.id} style={{
-              background: isSyncing ? 'var(--accent-dim)' : 'var(--surface)',
-              border: `1px solid ${sel ? 'var(--accent)' : isSyncing ? 'var(--accent-ring)' : 'var(--border)'}`,
-              borderRadius: 9, padding: 12,
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 9 }}>
-                <button onClick={() => isPlaying ? (audioRef.current?.pause(), setPlaying(null)) : playTake(t)} title="Écouter"
-                  style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--surface2)', border: '1px solid var(--border2)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-                  <Icon d={isPlaying ? ICONS.pause : ICONS.play} size={13} style={{ color: isPlaying ? 'var(--accent)' : 'var(--text2)' }} />
-                </button>
-                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{takeLabel(t)}</span>
-                <div style={{ flex: 1 }} />
-                <span style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>{t.duration.toFixed(1)}s</span>
-                {hasVideo && (
-                  <Btn size="sm" active={isSyncing} icon={isSyncing ? ICONS.stop : ICONS.film} title="Écouter avec vidéo"
-                    onClick={() => isSyncing ? (stopSync(), videoRef.current?.pause()) : previewWithVideo(t)} />
-                )}
-                <Btn size="sm" active={sel} onClick={() => assignAB(t.id)} title="Comparer A/B" style={{ padding: '0 6px', fontWeight: 700 }}>
-                  {t.id === abA ? 'A' : t.id === abB ? 'B' : 'A/B'}
-                </Btn>
-                <Btn size="sm" icon={ICONS.trash} onClick={() => removeTake(t.id)} title="Supprimer" />
-              </div>
-              {/* mini waveform (placeholder bars from duration seed) */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 1.5, height: 24 }}>
-                {Array.from({ length: 48 }).map((_, j) => {
-                  const v = (Math.sin(j * 0.4 + i) * 0.4 + Math.sin(j * 0.9) * 0.3 + 0.45)
-                  return <div key={j} style={{ flex: 1, height: `${Math.abs(v) * 100}%`, background: sel ? 'var(--accent)' : 'var(--border3)', opacity: sel ? 0.7 : 1, borderRadius: 1 }} />
-                })}
-              </div>
-            </div>
-          )
-        })}
+  const audio = <audio ref={audioRef} onEnded={handleAudioEnded} style={{ display: 'none' }} />
+
+  if (!studio) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: 14 }}>
+        {audio}
+        {micStage}
+        {takesColumn}
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ flex: 1, minHeight: 0, padding: '8px 32px 28px', display: 'flex', gap: 20, overflow: 'hidden' }}>
+      {audio}
+      {/* Left: recording stage */}
+      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <LineCard subtitles={subtitles} index={activeIndex} fps={fps} onSelectIndex={onSelectIndex} />
+        {micStage}
+      </div>
+      {/* Right: take queue + A/B */}
+      <div style={{ width: 340, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto' }}>
+        {takesColumn}
       </div>
     </div>
   )
 })
+
+function MicStage({ studio, lvl, recording, elapsed, onToggle, chips }) {
+  const btn = studio ? 76 : 68
+  return (
+    <div style={{
+      ...(studio ? { flex: 1, minHeight: 0, gap: 24 } : { gap: 18, padding: '22px 16px' }),
+      background: T.bg2, border: `1px solid ${T.border}`, borderRadius: T.r.card,
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', position: 'relative',
+    }}>
+      {/* live meter */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 2, height: studio ? 80 : 64 }}>
+        {lvl.map((v, i) => (
+          <div key={i} style={{ width: 4, height: `${v * 100}%`, background: recording ? (v > 0.8 ? T.danger : T.accent) : T.border3, borderRadius: 2, transition: 'height .08s' }} />
+        ))}
+      </div>
+      <button data-rd onClick={onToggle} title={recording ? 'Arrêter (R)' : 'Enregistrer (R)'} style={{
+        width: btn, height: btn, borderRadius: '50%', cursor: 'pointer', flexShrink: 0,
+        background: recording ? T.danger : T.accent, border: `4px solid ${recording ? alpha(T.danger, '44') : alpha(T.accent, '44')}`,
+        display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: recording ? `0 0 30px ${alpha(T.danger, '66')}` : `0 0 24px ${alpha(T.accent, '44')}`,
+      }}>
+        <Icon d={recording ? ICONS.pause : ICONS.mic} size={studio ? 30 : 27} stroke="#0b0b0d" fill={recording ? '#0b0b0d' : 'none'} />
+      </button>
+      <div style={{ fontSize: T.fs.sm, color: T.text2, fontFamily: T.fontMono }}>
+        {recording
+          ? <span style={{ color: T.danger, display: 'inline-flex', alignItems: 'center', gap: 8 }}><Dot color={T.danger} pulse />ENREGISTREMENT · {fmtClock(elapsed)}</span>
+          : 'Appuyer pour enregistrer · R'}
+      </div>
+      {chips && (
+        <div style={{ position: 'absolute', top: studio ? 14 : 12, right: studio ? 16 : 12, display: 'flex', gap: 8 }}>
+          {chips}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function LineCard({ subtitles, index, fps, onSelectIndex }) {
+  const charIndex = useMemo(() => {
+    const seen = []
+    for (const s of subtitles) {
+      const c = s.character || ''
+      if (!seen.includes(c)) seen.push(c)
+    }
+    return Object.fromEntries(seen.map((c, i) => [c, i]))
+  }, [subtitles])
+  const target = index != null ? subtitles[index] : null
+  const tc = target ? TRACK_HEXES[(charIndex[target.character || ''] || 0) % TRACK_HEXES.length] : T.border3
+  const n = subtitles.length
+  return (
+    <div style={{ background: T.surface, border: `1px solid ${alpha(tc, '33')}`, borderRadius: T.r.card, padding: 22, display: 'flex', alignItems: 'center', gap: 16, flexShrink: 0 }}>
+      <Avatar name={target?.character || '?'} color={tc} size={46} ring />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {target ? (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 5 }}>
+              <span style={{ fontSize: T.fs.md, fontWeight: 700, color: tc }}>{target.character || 'Sans personnage'}</span>
+              <span style={{ fontSize: 10.5, color: T.text3, fontFamily: T.fontMono }}>réplique {index + 1} · {fmtSMPTE(target.start, fps)} → {fmtSMPTE(target.end, fps)}</span>
+            </div>
+            <div style={{ fontSize: 22, fontWeight: 600, color: T.text, fontFamily: "'Caveat', cursive", letterSpacing: 0.3 }}>{target.text}</div>
+            {target.note && <div style={{ fontSize: T.fs.xs, color: T.accent, fontStyle: 'italic', marginTop: 4 }}>{target.note}</div>}
+          </>
+        ) : (
+          <div style={{ fontSize: T.fs.sm, color: T.text3 }}>
+            {n ? 'Choisissez une réplique — la prise y sera rattachée.' : 'Aucune réplique — la prise sera enregistrée comme prise libre.'}
+          </div>
+        )}
+      </div>
+      {n > 0 && onSelectIndex && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <Btn size="sm" icon={ICONS.prev} title="Réplique précédente" disabled={index == null || index <= 0}
+            onClick={() => onSelectIndex(Math.max(0, (index ?? 0) - 1))} />
+          <span style={{ fontSize: 10.5, color: T.text3, fontFamily: T.fontMono, minWidth: 44, textAlign: 'center' }}>{index != null ? index + 1 : '–'} / {n}</span>
+          <Btn size="sm" icon={ICONS.next} title="Réplique suivante" disabled={index != null && index >= n - 1}
+            onClick={() => onSelectIndex(index == null ? 0 : Math.min(n - 1, index + 1))} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function TakeCard({ take, seed, label, isPlaying, isSyncing, ab, hasVideo, onPlay, onSync, onAB, onDelete }) {
+  const marked = !!ab
+  return (
+    <div style={{
+      background: isSyncing ? T.accentDim : T.surface,
+      border: `1px solid ${marked ? alpha(T.accent, '55') : isSyncing ? alpha(T.accent, '44') : T.border}`,
+      borderRadius: T.r.ctl, padding: 13, flexShrink: 0,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 9 }}>
+        <Btn size="sm" icon={isPlaying ? ICONS.pause : ICONS.play} active={isPlaying} title="Écouter" onClick={onPlay}
+          style={{ background: T.surface2, width: 30, height: 30 }} />
+        <span style={{ fontSize: T.fs.sm, fontWeight: 600, color: T.text, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>
+        <div style={{ flex: 1 }} />
+        <span style={{ fontSize: 10.5, color: T.text3, fontFamily: T.fontMono }}>{(take.duration || 0).toFixed(1)}s</span>
+        {hasVideo && (
+          <Btn size="sm" active={isSyncing} icon={isSyncing ? ICONS.stop : ICONS.film} title="Écouter avec vidéo" onClick={onSync} />
+        )}
+        <Btn size="sm" active={marked} onClick={onAB} title="Comparer A/B" style={{ padding: '0 8px', fontWeight: 700 }}>
+          {ab || 'A/B'}
+        </Btn>
+        <Btn size="sm" icon={ICONS.trash} title="Supprimer" onClick={onDelete} />
+      </div>
+      {/* mini waveform (placeholder bars seeded by position) */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 1.5, height: 28 }}>
+        {Array.from({ length: 56 }).map((_, j) => {
+          const v = (Math.sin(j * 0.4 + seed) * 0.4 + Math.sin(j * 0.9) * 0.3 + 0.45)
+          return <div key={j} style={{ flex: 1, height: `${Math.abs(v) * 100}%`, background: marked ? alpha(T.accent, 'aa') : T.border3, borderRadius: 1 }} />
+        })}
+      </div>
+    </div>
+  )
+}
 
 export default RecorderPanel
