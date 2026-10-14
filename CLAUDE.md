@@ -316,9 +316,30 @@ Backend: `_BR_FONT_FILES["lisible"]` → fallback atkinson si fichier absent.
   - **UI Mixage** (ExportPanel) : prises cochables + gain −12..+12 dB, VO
     duck/muette, Remplacer l'audio / Instrumental / reset, export 1-clic
 
+### Fait — Usable v1 (2026-10-14, branche `feat/usable-v1`)
+- Export **Dubpack** (pack Choicer Voicer : OGV Theora + 1 ogg/png/txt par réplique, ZIP) — `dubpack_service.py`, `POST /api/export/dubpack-job`
+- Audit complet backend/éditeur/shell (~80 fixes) — détail + suite ordonnée : `REMAKE_PLAN.md` §5b
+- Annulation de job = `kill_process_tree` (ffmpeg Chocolatey = shim → l'enfant survivait à `kill()`)
+- Ids clip validés (middleware anti `..`/`\` + `SafeId` sur `segment_id`)
+- Rechargement page → restaure la vue + le clip ouvert (`sessionStorage` `br-nav`)
+
 ### Reste à faire (non démarré)
 - **Phase 2 (REMAKE_PLAN)** : split DubbingWorkspace (3 650 lignes) en hooks,
   export côté serveur (DB source of truth), Vitest
 - **Gestion utilisateurs** : auth (JWT/session), multi-user, contenu par user
 - **Intégrations tierces** : Stremio (lecture vidéo), qBittorrent (download → import auto)
 - `.rythmo.txt` import (DetX XML déjà couvert)
+
+### Idées — gamification (plus tard, [TryToAct](https://trytoact.com/))
+Boucle du jeu, pas à construire maintenant. Dépend de la gestion utilisateurs.
+L'app reste l'outil studio ; ça serait une couche jeu par-dessus clips + prises.
+L'export Dubpack (pack Choicer Voicer) est déjà le format « créer un pack ».
+
+1. **Choisir une scène** — bibliothèque de packs (films/séries) ou sa propre vidéo.
+2. **Enregistrer** — une prise par réplique, réécoutes libres (prises + A/B déjà là).
+3. **Solo ou multijoueur live** — s'entraîner seul, ou défier des amis sur la même scène en direct.
+4. **Partager** — publier le pack pour que d'autres le doublent (mode créateur).
+5. **Classement** — meilleurs doubleurs, et packs les plus joués. Découverte des nouveaux doublages.
+
+Contraintes annoncées côté TryToAct, à garder en tête si on s'en inspire :
+gratuit (compte, pas d'abonnement), navigateur sans install, communauté FR.

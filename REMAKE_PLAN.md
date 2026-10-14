@@ -140,6 +140,40 @@ All 9 formats pass. Two design issues:
 
 ---
 
+## 5b · Usable v1 — audit pass (2026-10-14, branch `feat/usable-v1`)
+
+Done: 3 parallel audits (backend / editor / app shell) → ~80 logic/UI/UX fixes,
+Dubpack export shipped, cancel really kills ffmpeg (Chocolatey shim → process-tree
+kill), path-traversal guard, reload restores view + open clip.
+Gates: `npm run lint` 0 errors · Vitest 25/25 · `vite build` OK · backend TestClient
+scenarios · live UI smoke (library, editor playback, Dubpack job + cancel).
+
+### Ordered next steps
+
+**A — product decisions (block the fixes below)**
+1. Dubpack OGV audio: original voice or backing track/bed?
+2. Clip delete: also delete take audio + export files (today: DB rows only)?
+3. Persist réplique `hidden` / `take` flags (UI sets them, backend drops them; canvas ignores `hidden`)?
+4. Undo granularity: coalesce keystrokes into one step per edit burst?
+5. `brOffset` time base: keyboard I/O/S/Delete use raw video time, band uses time + offset — unify on which?
+6. Preferences `exportBrFont`/`exportBrStyle`: wire into export or remove?
+7. Hinted shortcuts "R" (record) / "E" (export) with no handler: implement or drop hint?
+
+**B — small fixes (no decision needed)**
+- [ ] Re-download of a purged export saves a JSON error file (410) → fetch + blob, show error
+- [ ] `files.py start_remux` returns `job_id` directly (frontend works around it)
+- [ ] Dubpack: clamp cues past media end (empty .ogg / missing .png)
+- [ ] Leaks: `/mp4-canvas` overlay webm, failed `mp4-dubbed` partial, cancelled remux .m4a, `JOBS` auto-prune
+- [ ] ASS re-import of our own scrolling ASS imports background/labels; `\{` mangled
+- [ ] Library: total duration shown as raw seconds ("4700s"); card actions hover-only (touch)
+- [ ] `translateAll` overwrites edits made during the request
+- [ ] Mid-run `exports/<uuid>/` staging dirs from pre-fix cancels can be deleted by hand
+
+**C — Phase 2 refactor** (section 5) → **D — Phase 3 pro workflow** → **E — users/auth** →
+**F — integrations (Stremio, qBittorrent, Plex series drill-down)** → **G — gamification** (CLAUDE.md ideas).
+
+---
+
 ## 6 · Explicit non-goals (for now)
 - PostgreSQL migration (WAL suffices ≤5 concurrent users)
 - Full TypeScript rewrite (incremental `types/` only)
