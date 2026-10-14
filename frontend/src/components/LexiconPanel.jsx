@@ -9,30 +9,46 @@ export default function LexiconPanel({ project = '' }) {
   const [translation, setTranslation] = useState('')
   const [phonetic, setPhonetic] = useState('')
   const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
 
   const refresh = useCallback(async () => {
     try {
       const r = await fetch(`/api/lexicon?project=${encodeURIComponent(project)}`)
-      if (r.ok) setEntries(await r.json())
-    } catch {}
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      setEntries(await r.json())
+    } catch (e) {
+      setError('Chargement du lexique impossible : ' + e.message)
+    }
   }, [project])
   useEffect(() => { refresh() }, [refresh])
 
   async function add() {
     const t = term.trim()
-    if (!t) return
+    if (!t || busy) return
     setBusy(true)
+    setError(null)
     try {
       const r = await fetch('/api/lexicon', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ project, term: t, translation: translation.trim(), phonetic: phonetic.trim() }),
       })
-      if (r.ok) { setTerm(''); setTranslation(''); setPhonetic(''); await refresh() }
-    } catch {} finally { setBusy(false) }
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      setTerm(''); setTranslation(''); setPhonetic('')
+      await refresh()
+    } catch (e) {
+      setError('Ajout impossible : ' + e.message)
+    } finally { setBusy(false) }
   }
 
   async function remove(id) {
-    try { await fetch(`/api/lexicon/${id}`, { method: 'DELETE' }); await refresh() } catch {}
+    setError(null)
+    try {
+      const r = await fetch(`/api/lexicon/${id}`, { method: 'DELETE' })
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      await refresh()
+    } catch (e) {
+      setError('Suppression impossible : ' + e.message)
+    }
   }
 
   const filtered = search.trim()
@@ -63,6 +79,7 @@ export default function LexiconPanel({ project = '' }) {
         <span style={{ fontSize: 10, color: 'var(--text4)' }}>
           {project ? `Projet « ${project} » + termes globaux` : 'Termes globaux (aucun projet)'}
         </span>
+        {error && <span style={{ fontSize: 11, color: 'var(--danger)' }}>{error}</span>}
       </div>
 
       {/* Search */}

@@ -26,13 +26,15 @@ export default function BRTimeline({
   const draw = useCallback(() => {
     const canvas = canvasRef.current
     if (!canvas) return
+    const dpr = window.devicePixelRatio || 1
     const cssW = canvas.offsetWidth
     const cssH = canvas.offsetHeight
-    if (cssW > 0 && canvas.width !== cssW) canvas.width = cssW
-    if (cssH > 0 && canvas.height !== cssH) canvas.height = cssH
+    if (cssW > 0 && canvas.width !== Math.round(cssW * dpr)) canvas.width = Math.round(cssW * dpr)
+    if (cssH > 0 && canvas.height !== Math.round(cssH * dpr)) canvas.height = Math.round(cssH * dpr)
     const ctx = canvas.getContext('2d')
-    const W = canvas.width
-    const H = canvas.height
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    const W = canvas.width / dpr
+    const H = canvas.height / dpr
     const dur = duration || waveform?.duration || 1
     const tToX = t => (t / dur) * W
 

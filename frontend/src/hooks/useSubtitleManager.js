@@ -10,6 +10,7 @@ import { createHistory, pushHistory, undoHistory, redoHistory, canUndo as hCanUn
 //   changeSubtitles(subs)      sort + selection-remap + history + save (1.5s)
 //   setSubtitlesTransient(subs) raw set — mid-drag working state
 //   commitDrag(subs)           set + save (0.8s), no sort, no history
+//   finishDrag()               end of a drag: sort + history + save now
 //   saveNow()                  flush the pending save immediately
 //   undo() / redo() / canUndo / canRedo / undoRedoRef (stable for keydown)
 export default function useSubtitleManager({ clipId, initialSubtitles, onSaved }) {
@@ -19,29 +20,48 @@ export default function useSubtitleManager({ clipId, initialSubtitles, onSaved }
   const [canUndo, setCanUndo] = useState(false)
   const [canRedo, setCanRedo] = useState(false)
 
+  // Kept in sync synchronously by every setter below, so saves and drag
+  // commits always read the latest array (not the last rendered one).
   const subtitlesRef = useRef(subtitles)
-  const saveStatusRef = useRef(saveStatus)
+  // True while there are edits not yet persisted (pending debounce, or a
+  // failed save) — drives the unmount flush and the post-save status.
+  const dirtyRef = useRef(false)
+  const saveSeqRef = useRef(0)
   const debounceRef = useRef(null)
   const historyRef = useRef(null)
   const onSavedRef = useRef(onSaved)
-  subtitlesRef.current = subtitles
-  saveStatusRef.current = saveStatus
-  onSavedRef.current = onSaved
+  useEffect(() => { onSavedRef.current = onSaved }, [onSaved])
+
+  const setSubs = useCallback((subs) => {
+    subtitlesRef.current = subs
+    setSubtitles(subs)
+  }, [])
 
   const doSave = useCallback(async (subs) => {
+    const seq = ++saveSeqRef.current
+    dirtyRef.current = false
     setSaveStatus('saving')
     try {
       const res = await fetch(`/api/clips/${clipId}/subtitles`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ subtitles: subs }),
       })
-      if (!res.ok) throw new Error()
-      onSavedRef.current?.(await res.json())
-      setSaveStatus('saved')
-    } catch { setSaveStatus('error') }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+      // A newer save was issued meanwhile — its response is authoritative.
+      if (seq !== saveSeqRef.current) return
+      onSavedRef.current?.(data)
+      setSaveStatus(dirtyRef.current ? 'unsaved' : 'saved')
+    } catch (e) {
+      console.warn('Sauvegarde des répliques échouée', e)
+      if (seq !== saveSeqRef.current) return
+      dirtyRef.current = true
+      setSaveStatus('error')
+    }
   }, [clipId])
 
   const scheduleSave = useCallback((subs, delay = 1500) => {
+    dirtyRef.current = true
     setSaveStatus('unsaved')
     clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => doSave(subs), delay)
@@ -60,72 +80,84 @@ export default function useSubtitleManager({ clipId, initialSubtitles, onSaved }
     seedRef.current = clipId
     historyRef.current = createHistory(initialSubtitles || [])
     syncHistoryFlags()
-  }, [clipId]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [clipId])
 
   const changeSubtitles = useCallback((subs) => {
+    const prevSubs = subtitlesRef.current
     const sorted = [...subs].sort((a, b) => a.start - b.start)
-    // Track selection through the sort (objects keep identity through spread-sort).
+    // Track the selected réplique: by identity first (insert / delete of
+    // another row shifts indexes), then by position for an in-place edit.
     setSelectedIdx(prev => {
-      if (prev != null && prev < subs.length) {
-        const newIdx = sorted.indexOf(subs[prev])
-        if (newIdx >= 0) return newIdx
+      if (prev == null) return prev
+      const kept = sorted.indexOf(prevSubs[prev])
+      if (kept >= 0) return kept
+      if (subs.length === prevSubs.length && prev < subs.length) {
+        const edited = sorted.indexOf(subs[prev])
+        if (edited >= 0) return edited
       }
-      return prev
+      return null
     })
-    setSubtitles(sorted)
+    setSubs(sorted)
     pushHistory(historyRef.current, sorted)
     syncHistoryFlags()
     scheduleSave(sorted, 1500)
-  }, [scheduleSave])
+  }, [scheduleSave, setSubs])
 
-  function applyHistorySubs(subs) {
+  const applyHistorySubs = useCallback((subs) => {
     const sorted = [...subs].sort((a, b) => a.start - b.start)
-    setSubtitles(sorted)
+    setSubs(sorted)
     setSelectedIdx(null)
     scheduleSave(sorted, 1500)
-  }
+  }, [scheduleSave, setSubs])
 
   const undo = useCallback(() => {
     const prev = undoHistory(historyRef.current)
     if (prev) { applyHistorySubs(prev); syncHistoryFlags() }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [applyHistorySubs])
 
   const redo = useCallback(() => {
     const next = redoHistory(historyRef.current)
     if (next) { applyHistorySubs(next); syncHistoryFlags() }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [applyHistorySubs])
 
   // Stable identity for empty-dep keydown closures.
   const undoRedoRef = useRef({ undo, redo })
-  undoRedoRef.current = { undo, redo }
+  useEffect(() => { undoRedoRef.current = { undo, redo } }, [undo, redo])
 
   // Mid-drag working state: render only, no history/save.
-  const setSubtitlesTransient = useCallback((subs) => { setSubtitles(subs) }, [])
+  const setSubtitlesTransient = useCallback((subs) => { setSubs(subs) }, [setSubs])
 
   // Drag commit: positions changed live; shorter debounce, no sort (drag
-  // preserves order). Save reads the ref at fire time so the just-set state
-  // (current by the next render, well before 800ms) is what persists.
+  // preserves order). Save reads the ref at fire time so the latest drag
+  // position is what persists.
   const commitDrag = useCallback((subs) => {
-    setSubtitles(subs)
+    setSubs(subs)
+    dirtyRef.current = true
     setSaveStatus('unsaved')
     clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => doSave(subtitlesRef.current), 800)
-  }, [doSave])
+  }, [doSave, setSubs])
 
   const saveNow = useCallback(() => {
     clearTimeout(debounceRef.current)
     doSave(subtitlesRef.current)
   }, [doSave])
 
-  // Flush pending edits on unmount.
+  // Drag end: one undo step for the whole gesture, re-sorted, saved now.
+  const finishDrag = useCallback(() => {
+    changeSubtitles(subtitlesRef.current)
+    saveNow()
+  }, [changeSubtitles, saveNow])
+
+  // Flush pending (or failed) edits on unmount.
   useEffect(() => () => {
     clearTimeout(debounceRef.current)
-    if (saveStatusRef.current === 'unsaved') doSave(subtitlesRef.current)
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+    if (dirtyRef.current) doSave(subtitlesRef.current)
+  }, [doSave])
 
   return {
     subtitles, selectedIdx, setSelectedIdx, saveStatus,
-    changeSubtitles, setSubtitlesTransient, commitDrag, saveNow,
+    changeSubtitles, setSubtitlesTransient, commitDrag, finishDrag, saveNow,
     undo, redo, canUndo, canRedo, undoRedoRef,
   }
 }

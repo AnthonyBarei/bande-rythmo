@@ -11,6 +11,7 @@ export default function RecorderPanel({ clipId, subtitles = [], activeCharacter 
   const [syncPlaying, setSyncPlaying] = useState(null)
 
   const mrRef = useRef(null)
+  const startingRef = useRef(false)
   const chunksRef = useRef([])
   const streamRef = useRef(null)
   const recStartRef = useRef(0)
@@ -39,12 +40,14 @@ export default function RecorderPanel({ clipId, subtitles = [], activeCharacter 
         meterRafRef.current = requestAnimationFrame(loop)
       }
       loop()
-    } catch (_) {}
+    } catch (e) {
+      console.warn('Vumètre indisponible', e)
+    }
   }
   function stopMeter() {
     if (meterRafRef.current) cancelAnimationFrame(meterRafRef.current)
     meterRafRef.current = null
-    try { analyserRef.current?.ac.close() } catch (_) {}
+    analyserRef.current?.ac.close().catch(e => console.warn('Fermeture AudioContext', e))
     analyserRef.current = null
     setLvl(Array(BARS).fill(0.06))
   }
@@ -53,8 +56,11 @@ export default function RecorderPanel({ clipId, subtitles = [], activeCharacter 
     if (!clipId) return
     try {
       const res = await fetch(`/api/takes/${clipId}`)
-      if (res.ok) setTakes(await res.json())
-    } catch (_) {}
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      setTakes(await res.json())
+    } catch (e) {
+      setError('Chargement des prises impossible : ' + e.message)
+    }
   }, [clipId])
 
   useEffect(() => { fetchTakes() }, [fetchTakes])
@@ -68,7 +74,7 @@ export default function RecorderPanel({ clipId, subtitles = [], activeCharacter 
   async function uploadTake() {
     const dur = (Date.now() - recStartRef.current) / 1000
     const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
-    if (!blob.size) return
+    if (!blob.size) { setError('Prise vide — aucun son capté.'); return }
     const form = new FormData()
     form.append('clip_id', clipId)
     form.append('character', activeCharacter || '')
@@ -85,9 +91,12 @@ export default function RecorderPanel({ clipId, subtitles = [], activeCharacter 
   }
 
   async function startRec() {
+    if (startingRef.current || mrRef.current?.state === 'recording') return
+    startingRef.current = true
     setError(null)
+    let stream = null
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       streamRef.current = stream
       const mr = new MediaRecorder(stream)
       chunksRef.current = []
@@ -102,7 +111,12 @@ export default function RecorderPanel({ clipId, subtitles = [], activeCharacter 
       setRecording(true)
       startMeter(stream)
     } catch (e) {
-      setError('Micro inaccessible : ' + e.message)
+      stream?.getTracks().forEach(t => t.stop())
+      setError(e.name === 'NotAllowedError'
+        ? 'Accès au micro refusé — autorisez-le dans le navigateur puis réessayez.'
+        : 'Micro inaccessible : ' + e.message)
+    } finally {
+      startingRef.current = false
     }
   }
 
@@ -117,7 +131,7 @@ export default function RecorderPanel({ clipId, subtitles = [], activeCharacter 
     const a = audioRef.current
     if (!a) return
     a.src = take.audio_url
-    a.play()
+    a.play().catch(e => { setPlaying(null); setError('Lecture impossible : ' + e.message) })
     setPlaying(take.id)
   }
 
@@ -146,6 +160,7 @@ export default function RecorderPanel({ clipId, subtitles = [], activeCharacter 
     setSyncPlaying(take.id)
 
     let triggered = false
+    let done = false
 
     function onTimeUpdate() {
       if (!triggered && v.currentTime >= startAt) {
@@ -156,10 +171,13 @@ export default function RecorderPanel({ clipId, subtitles = [], activeCharacter 
     }
 
     function cleanup() {
+      if (done) return
+      done = true
       v.removeEventListener('timeupdate', onTimeUpdate)
       v.removeEventListener('pause', onVideoPause)
       v.muted = wasMuted
       setSyncPlaying(null)
+      if (syncCleanupRef.current === cleanup) syncCleanupRef.current = null
     }
 
     function onVideoPause() {
@@ -178,19 +196,21 @@ export default function RecorderPanel({ clipId, subtitles = [], activeCharacter 
     if (syncCleanupRef.current) {
       const v = videoRef?.current
       if (v && !v.paused) v.pause()
-      syncCleanupRef.current()
-      syncCleanupRef.current = null
+      syncCleanupRef.current?.()
     }
     setSyncPlaying(null)
   }
 
   async function removeTake(id) {
     try {
-      await fetch(`/api/takes/${id}`, { method: 'DELETE' })
+      const res = await fetch(`/api/takes/${id}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
       if (abA === id) setAbA(null)
       if (abB === id) setAbB(null)
       fetchTakes()
-    } catch (_) {}
+    } catch (e) {
+      setError('Suppression de la prise impossible : ' + e.message)
+    }
   }
 
   function assignAB(id) {

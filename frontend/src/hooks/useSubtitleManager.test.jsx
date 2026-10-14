@@ -106,4 +106,63 @@ describe('useSubtitleManager', () => {
         await act(async () => { unmount() })
         expect(fetchFn).toHaveBeenCalledOnce()
     })
+    it('keeps the selection on the same réplique when another row is deleted', () => {
+        mockFetchOk()
+        const { result } = setup([sub(0, 'a'), sub(2, 'b'), sub(4, 'c')])
+        act(() => { result.current.setSelectedIdx(2) })
+        act(() => { result.current.changeSubtitles(result.current.subtitles.filter((_, i) => i !== 0)) })
+        expect(result.current.selectedIdx).toBe(1)
+        expect(result.current.subtitles[1].text).toBe('c')
+    })
+
+    it('clears the selection when the selected réplique is deleted', () => {
+        mockFetchOk()
+        const { result } = setup([sub(0, 'a'), sub(2, 'b'), sub(4, 'c')])
+        act(() => { result.current.setSelectedIdx(1) })
+        act(() => { result.current.changeSubtitles(result.current.subtitles.filter((_, i) => i !== 1)) })
+        expect(result.current.selectedIdx).toBe(null)
+    })
+
+    it('stays unsaved when edits land while a save is in flight, and flushes them on unmount', async () => {
+        let resolveFirst
+        const fetchFn = vi.fn((url, opts) => new Promise(resolve => {
+            const reply = () => resolve({ ok: true, json: async () => ({ clip_id: 'c1', subtitles: JSON.parse(opts.body).subtitles }) })
+            if (!resolveFirst) resolveFirst = reply
+            else reply()
+        }))
+        globalThis.fetch = fetchFn
+        const { result, unmount } = setup([sub(0, 'a')])
+        act(() => { result.current.changeSubtitles([sub(0, 'first')]) })
+        await act(async () => { await vi.advanceTimersByTimeAsync(1600) })
+        expect(fetchFn).toHaveBeenCalledOnce()
+        act(() => { result.current.changeSubtitles([sub(0, 'second')]) })
+        await act(async () => { resolveFirst() })
+        expect(result.current.saveStatus).toBe('unsaved')
+        await act(async () => { unmount() })
+        expect(fetchFn).toHaveBeenCalledTimes(2)
+        expect(JSON.parse(fetchFn.mock.calls[1][1].body).subtitles[0].text).toBe('second')
+    })
+
+    it('retries a failed save on unmount', async () => {
+        globalThis.fetch = vi.fn(async () => ({ ok: false, status: 500 }))
+        const { result, unmount } = setup([sub(0, 'a')])
+        act(() => { result.current.changeSubtitles([sub(0, 'x')]) })
+        await act(async () => { await vi.advanceTimersByTimeAsync(1600) })
+        expect(result.current.saveStatus).toBe('error')
+        await act(async () => { unmount() })
+        expect(globalThis.fetch).toHaveBeenCalledTimes(2)
+    })
+
+    it('finishDrag records the whole drag as one sorted undo step', async () => {
+        const fetchFn = mockFetchOk()
+        const { result } = setup([sub(0, 'a'), sub(2, 'b')])
+        act(() => { result.current.commitDrag([sub(3, 'a'), sub(2, 'b')]) })
+        act(() => { result.current.commitDrag([sub(5, 'a'), sub(2, 'b')]) })
+        await act(async () => { result.current.finishDrag() })
+        expect(result.current.subtitles.map(s => s.text)).toEqual(['b', 'a'])
+        expect(fetchFn).toHaveBeenCalledOnce()
+        expect(result.current.canUndo).toBe(true)
+        act(() => { result.current.undo() })
+        expect(result.current.subtitles.map(s => s.start)).toEqual([0, 2])
+    })
 })

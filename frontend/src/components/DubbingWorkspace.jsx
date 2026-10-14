@@ -35,6 +35,10 @@ const Hint = ({ children }) => (
   <span style={{ fontSize: 9, color: 'var(--text4)', fontFamily: 'var(--font-mono)', padding: '0 4px', borderRadius: 2, background: 'var(--surface3)' }}>{children}</span>
 )
 
+const Kbd = ({ children }) => (
+  <span style={{ display: 'inline-flex', alignItems: 'center', padding: '1px 5px', border: '1px solid var(--border2)', background: 'var(--surface2)', borderRadius: 3, fontFamily: 'var(--font-mono)', fontSize: 9.5, color: 'var(--text3)' }}>{children}</span>
+)
+
 const REACTION_TAGS = ['rire', 'souffle', 'cri', 'chuchoté', 'pleure', 'soupir', 'grogne', 'gémit', 'ahane', 'bégaie']
 const RESP_TAGS = ['inspire', 'expire', 'soupire', 'halète', 'souffle', 'retient son souffle', 'respire fort']
 
@@ -162,7 +166,7 @@ function CanvasCoachmark() {
   })
   if (!open) return null
   function dismiss() {
-    try { localStorage.setItem('br-coachmark-seen', '1') } catch {}
+    try { localStorage.setItem('br-coachmark-seen', '1') } catch { /* storage unavailable — coachmark just reappears */ }
     setOpen(false)
   }
   return (
@@ -198,7 +202,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   const {
     subtitles, selectedIdx, setSelectedIdx, saveStatus,
     changeSubtitles: handleSubtitlesChange,
-    setSubtitlesTransient, commitDrag: dragCommit, saveNow,
+    setSubtitlesTransient, commitDrag: dragCommit, finishDrag, saveNow,
     undo, redo, canUndo, canRedo, undoRedoRef,
   } = useSubtitleManager({ clipId: clip.clip_id, initialSubtitles: clip.subtitles || [], onSaved: onUpdate })
   const [boucles, setBoucles] = useState(clip.boucles || [])
@@ -211,7 +215,8 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   const [transcribing, setTranscribing] = useState(false)
   const [toast, setToast] = useState(null)
   const showExport = !!exportOpen
-  const [brExporting, setBrExporting] = useState(false)
+  const exportOpenRef = useRef(showExport)
+  useEffect(() => { exportOpenRef.current = showExport }, [showExport])
   const [brOffset, setBrOffset] = useState(0)
   // DOUBLAGE_IA_REVIEW §7 — default 150 px/s (comfortable reading cadence at
   // normal speech). pxPerSec is also re-measured per clip in the auto-fit block.
@@ -220,7 +225,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   const progress = useProgress()
   const undoToast = useToast()
   const [rythmoStyle, setRythmoStyle] = useState(settings.brStyle || 'classique')
-  const [lang, setLang] = useState('fr')
+  const [lang, setLang] = useState(settings.whisperLang || 'fr')
 
   const [brInPlayer, setBrInPlayer] = useState('play')
   const [brFont, setBrFont] = useState(() => {
@@ -305,7 +310,6 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   const hoverRef = useRef(null)
   const charMapRef = useRef({})
   const numTracksRef = useRef(1)
-  const canvasHRef = useRef(64)
   const brInPlayerRef = useRef('play')
   const playingRef = useRef(false)
   const fontScaleRef = useRef(1.0)
@@ -317,7 +321,6 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   const clipFpsRef = useRef(clipFps)
   const sceneCutsRef = useRef([])
   const resumeTimeRef = useRef(null)
-  const exportingRef = useRef(false)
   // Smooth time interpolation: video.currentTime only updates at video fps (e.g. 24fps).
   // Between updates, we interpolate using wall clock so the canvas scrolls at 60fps.
   const interpTimeRef = useRef({ videoTime: 0, wallMs: 0, active: false })
@@ -359,7 +362,6 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   const charList = useMemo(() => Object.keys(charMap), [charMap])
   charMapRef.current = charMap
   numTracksRef.current = numTracks
-  canvasHRef.current = canvasH
 
   const activeSubtitle = useMemo(() => {
     const t = currentTime + brOffset
@@ -397,7 +399,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   function setComedien(char, name) {
     setComediens(prev => {
       const next = { ...prev, [char]: name }
-      try { localStorage.setItem(`br-comediens-${clip.clip_id}`, JSON.stringify(next)) } catch {}
+      try { localStorage.setItem(`br-comediens-${clip.clip_id}`, JSON.stringify(next)) } catch { /* storage unavailable — name kept for this session */ }
       return next
     })
   }
@@ -414,12 +416,12 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   useEffect(() => { onSaveStatus?.(saveStatus) }, [saveStatus, onSaveStatus])
 
   // Persist BR font choice
-  useEffect(() => { try { localStorage.setItem('br-font', brFont) } catch {} }, [brFont])
+  useEffect(() => { try { localStorage.setItem('br-font', brFont) } catch { /* storage unavailable — preference not persisted */ } }, [brFont])
 
   // Persist détection toggles
-  useEffect(() => { try { localStorage.setItem('br-detection', JSON.stringify(detection)) } catch {} }, [detection])
-  useEffect(() => { try { localStorage.setItem('br-detection-auto', String(detectionAuto)) } catch {} }, [detectionAuto])
-  useEffect(() => { try { localStorage.setItem('br-word-by-word', String(wordByWord)) } catch {} }, [wordByWord])
+  useEffect(() => { try { localStorage.setItem('br-detection', JSON.stringify(detection)) } catch { /* not persisted */ } }, [detection])
+  useEffect(() => { try { localStorage.setItem('br-detection-auto', String(detectionAuto)) } catch { /* not persisted */ } }, [detectionAuto])
+  useEffect(() => { try { localStorage.setItem('br-word-by-word', String(wordByWord)) } catch { /* not persisted */ } }, [wordByWord])
 
   // Sync boucles in from clip whenever clip swaps
   useEffect(() => { setBoucles(clip.boucles || []) }, [clip.clip_id])
@@ -435,8 +437,12 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
           method: 'PUT', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ boucles: next }),
         })
-        if (res.ok) onUpdate(await res.json())
-      } catch {}
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        onUpdate(await res.json())
+      } catch (e) {
+        console.warn('Sauvegarde des boucles échouée', e)
+        undoToast.error('Sauvegarde des boucles échouée : ' + e.message)
+      }
     }, 800)
   }
 
@@ -561,9 +567,11 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
       el.textContent = css
       // Nudge the FontFace set so the canvas (which reads resolved fonts) repaints.
       if (document.fonts && list.length) {
-        list.forEach(f => { try { document.fonts.load(`16px 'bru-${f.id}'`) } catch {} })
+        list.forEach(f => { document.fonts.load(`16px 'bru-${f.id}'`).catch(e => console.warn('Police non chargée', f.id, e)) })
       }
-    } catch {}
+    } catch (e) {
+      console.warn('Chargement des polices importées échoué', e)
+    }
   }, [])
   useEffect(() => { refreshFonts() }, [refreshFonts])
 
@@ -638,10 +646,14 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   }
   async function deleteFont(id) {
     try {
-      await fetch(`/api/fonts/${id}`, { method: 'DELETE' })
+      const r = await fetch(`/api/fonts/${id}`, { method: 'DELETE' })
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
       if (brFont === id) setBrFont('atkinson')
       await refreshFonts()
-    } catch {}
+    } catch (e) {
+      setToast({ msg: 'Suppression de la police : ' + e.message, type: 'error' })
+      setTimeout(() => setToast(null), 4000)
+    }
   }
 
   // Fetch waveform once on mount
@@ -665,21 +677,24 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
       const canvas = canvasRef.current
       if (!canvas || !video) { rafRef.current = requestAnimationFrame(draw); return }
 
+      // Backing store at device pixels (crisp text on HiDPI); all drawing and
+      // hit-testing below works in CSS pixels.
+      const dpr = window.devicePixelRatio || 1
       const cssW = canvas.offsetWidth
       const cssH = canvas.offsetHeight
-      if (!exportingRef.current) {
-        if (cssW > 0 && canvas.width !== cssW) canvas.width = cssW
-        if (cssH > 0 && canvas.height !== cssH) canvas.height = cssH
-      }
+      if (cssW > 0 && canvas.width !== Math.round(cssW * dpr)) canvas.width = Math.round(cssW * dpr)
+      if (cssH > 0 && canvas.height !== Math.round(cssH * dpr)) canvas.height = Math.round(cssH * dpr)
 
       const ctx = canvas.getContext('2d')
-      const W = canvas.width
-      const H = canvas.height || canvasH
-      // Use interpolated time during export so each 60fps canvas frame has a distinct
-      // position — prevents bunched-then-jump artifacts from video.currentTime's 24fps steps
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      const W = canvas.width / dpr
+      const H = canvas.height / dpr || canvasH
+      // Interpolate between timeupdates so each 60fps canvas frame has a distinct
+      // position — prevents bunched-then-jump artifacts from video.currentTime's 24fps steps.
+      // Scaled by playbackRate; raw currentTime while paused/seeking.
       const interp = interpTimeRef.current
-      const rawTime = interp.active
-        ? interp.videoTime + (performance.now() - interp.wallMs) / 1000
+      const rawTime = (interp.active && !video.paused && !video.seeking)
+        ? interp.videoTime + (performance.now() - interp.wallMs) / 1000 * (video.playbackRate || 1)
         : video.currentTime
       const t = rawTime + brOffsetRef.current
       const pxSec = pxPerSecRef.current
@@ -834,7 +849,6 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
         const leftX = cursor_x + (sub.start - t) * pxSec
         const rightX = cursor_x + (sub.end - t) * pxSec
         if (rightX < -10 || leftX > W + 10) continue
-        const blockW = rightX - leftX
         const isActive = t >= sub.start && t <= sub.end
         const bx = Math.max(0, leftX)
         const bw = Math.min(W, rightX) - bx
@@ -1412,13 +1426,17 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   // Keyboard shortcuts
   useEffect(() => {
     function onKey(e) {
-      if (['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return
-      // Undo / redo — Ctrl+Z, Ctrl+Y, Ctrl+Shift+Z. Intercept before transport.
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName) || e.target.isContentEditable) return
+      if (exportOpenRef.current) return
+      // Undo / redo — Ctrl+Z, Ctrl+Y, Ctrl+Shift+Z. Ctrl+S saves now. Intercept before transport.
       if ((e.ctrlKey || e.metaKey) && !e.altKey) {
         const k = e.key.toLowerCase()
         if (k === 'z' && !e.shiftKey) { e.preventDefault(); undoRedoRef.current.undo(); return }
         if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); undoRedoRef.current.redo(); return }
+        if (k === 's') { e.preventDefault(); saveNow(); return }
       }
+      // Single-key shortcuts must not fire on browser/app combos (Ctrl+S, Ctrl+K, Alt+…).
+      if ((e.ctrlKey || e.metaKey || e.altKey) && !e.key.startsWith('Arrow')) return
       const v = videoRef.current; if (!v) return
       const t = v.currentTime
       const subs = subtitlesRef.current
@@ -1445,11 +1463,11 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
           } else {
             // Shift+→ = one frame forward; → = 1s forward
             const step = e.shiftKey ? 1 / (clipFpsRef.current || 25) : 1
-            v.currentTime = Math.min(v.duration || 0, t + step)
+            v.currentTime = Math.min(v.duration || t + step, t + step)
           }
           break
         case ',': e.preventDefault(); v.pause(); v.currentTime = Math.max(0, t - 0.04); break
-        case '.': e.preventDefault(); v.pause(); v.currentTime = Math.min(v.duration || 0, t + 0.04); break
+        case '.': e.preventDefault(); v.pause(); v.currentTime = Math.min(v.duration || t, t + 0.04); break
         case 'Delete': case 'Backspace':
           if (activeI >= 0) { e.preventDefault(); deleteReplicaWithUndo(activeI) }
           break
@@ -1457,6 +1475,11 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
           if (e.shiftKey) {
             e.preventDefault()
             handleSubtitlesChange([...subs, { start: t, end: t + 1.5, character: '', text: '', reactions: [] }].sort((a, b) => a.start - b.start))
+          } else if (activeI >= 0 && e.target.tagName !== 'BUTTON') {
+            e.preventDefault()
+            v.pause()
+            setEditingIdx(activeI)
+            setEditText(subs[activeI].text || '')
           }
           break
         case 'Escape': if (loopRegionRef.current) { setLoopRegion(null); e.preventDefault() } break
@@ -1496,7 +1519,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
     const t = v.currentTime
     const subs = subtitlesRef.current
     const i = subs.findIndex(s => s.start > t - 0.01)
-    const ti = i <= 0 ? 0 : i - 1
+    const ti = i < 0 ? subs.length - 1 : Math.max(0, i - 1)
     if (subs[ti]) { v.currentTime = subs[ti].start; setSelectedIdx(ti) }
   }
   function gotoNextSub() {
@@ -1537,23 +1560,22 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   function canvasCoords(e) {
     const canvas = canvasRef.current
     if (!canvas) return null
+    // CSS pixels — same space as the draw loop (backing store is DPR-scaled).
     const rect = canvas.getBoundingClientRect()
-    const scaleX = canvas.width / rect.width
-    const scaleY = canvas.height / rect.height
-    const x = (e.clientX - rect.left) * scaleX
-    const y = (e.clientY - rect.top) * scaleY
-    const W = canvas.width
+    const x = e.clientX - rect.left
+    const y = e.clientY - rect.top
+    const W = rect.width
+    const H = rect.height
     const t = (videoRef.current?.currentTime || 0) + brOffsetRef.current
     const pxSec = pxPerSecRef.current
     const cursor_x = W * CURSOR_X_RATIO
-    return { x, y, W, t, pxSec, cursor_x, time: t + (x - cursor_x) / pxSec }
+    return { x, y, W, H, t, pxSec, cursor_x, time: t + (x - cursor_x) / pxSec }
   }
 
   function hitTest(e) {
     const c = canvasCoords(e); if (!c) return null
-    const cH = canvasHRef.current
     const n = numTracksRef.current
-    const trackH = cH / n
+    const trackH = c.H / n
     const trackIdx = Math.min(n - 1, Math.max(0, Math.floor(c.y / trackH)))
     const cMap = charMapRef.current
     const subs = subtitlesRef.current
@@ -1580,9 +1602,8 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   // render geometry (cursor_x, pxSec, word stretch). Mirrors the draw loop math.
   function hitTestLetter(e) {
     const c = canvasCoords(e); if (!c) return null
-    const cH = canvasHRef.current
     const n = numTracksRef.current
-    const trackH = cH / n
+    const trackH = c.H / n
     const trackIdx = Math.min(n - 1, Math.max(0, Math.floor(c.y / trackH)))
     const cMap = charMapRef.current
     const subs = subtitlesRef.current
@@ -1602,7 +1623,8 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
       const left = c.cursor_x + (sub.start - c.t) * c.pxSec
       const right = c.cursor_x + (sub.end - c.t) * c.pxSec
       if (c.x < left || c.x > right) continue
-      const words = (wordByWord ? validWords(sub) : null) || [{ w: sub.text || '', start: sub.start, end: sub.end }]
+      const words = wordByWord ? validWords(sub) : null
+      if (!words) continue
       for (let wIdx = 0; wIdx < words.length; wIdx++) {
         const wd = words[wIdx]
         if (!wd.w) continue
@@ -1711,7 +1733,8 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
       const mode = hit.zone === 'left' ? 'resize-start' : hit.zone === 'right' ? 'resize-end' : 'shift'
       // Alt+drag in mid → duplicate before shifting
       let subIdx = hit.subIdx
-      let workingSubs = subtitlesRef.current
+      const baseSubs = subtitlesRef.current
+      let workingSubs = baseSubs
       if (e.altKey && mode === 'shift') {
         const dur = sub.end - sub.start
         const dupe = { ...sub, start: sub.end, end: sub.end + dur }
@@ -1725,6 +1748,8 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
         startX: hit.x, startY: hit.y, startTime: hit.time,
         origSub: { ...workingSubs[subIdx] },
         origTrack: charMapRef.current[(workingSubs[subIdx].character || '')] ?? 0,
+        duplicated: workingSubs !== baseSubs,
+        baseSubs,
         didMove: false,
       }
       const canvas = canvasRef.current
@@ -1765,12 +1790,14 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
 
     drag.didMove = drag.didMove || Math.abs(hit.x - drag.startX) > 2 || Math.abs(hit.y - drag.startY) > 2
     const dt = hit.time - drag.startTime
+    // Keep blocks inside the clip (duration unknown until metadata → no clamp).
+    const clipEnd = videoRef.current?.duration || Infinity
 
     if (drag.mode === 'shift') {
-      const newStart = snapTime(drag.origSub.start + dt, e)
       const dur = drag.origSub.end - drag.origSub.start
+      const newStart = Math.min(snapTime(drag.origSub.start + dt, e), Math.max(0, clipEnd - dur))
       const verticalDelta = hit.y - drag.startY
-      const trackH = canvasHRef.current / numTracksRef.current
+      const trackH = hit.H / numTracksRef.current
       let newChar = drag.origSub.character
       if (Math.abs(verticalDelta) > trackH * 0.5 && hit.trackIdx !== drag.origTrack && charList[hit.trackIdx] != null) {
         newChar = charList[hit.trackIdx]
@@ -1780,7 +1807,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
       const newStart = Math.min(snapTime(drag.origSub.start + dt, e, true), drag.origSub.end - 0.1)
       dragCommit(subtitlesRef.current.map((s, i) => i !== drag.subIdx ? s : { ...s, start: newStart }))
     } else if (drag.mode === 'resize-end') {
-      const newEnd = Math.max(snapTime(drag.origSub.end + dt, e, true), drag.origSub.start + 0.1)
+      const newEnd = Math.max(Math.min(snapTime(drag.origSub.end + dt, e, true), clipEnd), drag.origSub.start + 0.1)
       dragCommit(subtitlesRef.current.map((s, i) => i !== drag.subIdx ? s : { ...s, end: newEnd }))
     } else if (drag.mode === 'loop') {
       const t1 = hit.time
@@ -1788,7 +1815,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
       const b = Math.max(0, Math.max(drag.startTime, t1))
       if (b - a > 0.1) setLoopRegion({ start: a, end: b })
     } else if (drag.mode === 'create') {
-      const t1 = snapTime(hit.time, e, true)
+      const t1 = Math.min(snapTime(hit.time, e, true), clipEnd)
       if (!drag.created && Math.abs(t1 - drag.startTime) > 0.1) {
         drag.created = true
         const start = Math.min(drag.startTime, t1)
@@ -1804,6 +1831,26 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
     hoverRef.current = { x: hit.x, time: hit.time }
   }
 
+  // End of an edit gesture: one undo step + immediate save. A create-drag that
+  // never created anything changes nothing; an alt-click that never moved
+  // drops its transient duplicate.
+  function endEditDrag(drag) {
+    if (drag.mode === 'create') return
+    if (!drag.didMove) {
+      if (drag.duplicated) setSubtitlesTransient(drag.baseSubs)
+      return
+    }
+    finishDrag()
+  }
+
+  function onCanvasMouseLeave() {
+    const drag = dragRef.current
+    dragRef.current = null
+    hoverRef.current = null
+    setHoverHint(null)
+    if (drag && drag.mode !== 'loop') endEditDrag(drag)
+  }
+
   function onCanvasMouseUp(e) {
     const drag = dragRef.current
     dragRef.current = null
@@ -1817,9 +1864,11 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
       return
     }
     if (!drag.didMove && drag.mode !== 'create') {
-      // Plain click on a block — try letter cycle first (no modifiers, mid zone).
+      endEditDrag(drag)
+      // Plain click on a block — try letter cycle first (no modifiers, mid zone,
+      // détection layer visible so the user sees what changes).
       // Falls through to seek if no letter hit.
-      if (!e.shiftKey && !e.altKey && !e.ctrlKey && drag.mode === 'shift') {
+      if (!e.shiftKey && !e.altKey && !e.ctrlKey && drag.mode === 'shift' && detectionRef.current.layer) {
         const letterHit = hitTestLetter(e)
         if (letterHit) {
           cycleSignAt(letterHit.subIdx, letterHit.wordIdx, letterHit.charIdx)
@@ -1829,7 +1878,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
       const hit = hitTest(e)
       if (hit) seekTo(Math.max(0, hit.time))
     } else {
-      saveNow()
+      endEditDrag(drag)
     }
   }
 
@@ -1842,21 +1891,29 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
     }
   }
 
-  function onCanvasWheel(e) {
-    if (!e.ctrlKey && !e.shiftKey) return
-    e.preventDefault()
-    setPxPerSec(p => Math.max(40, Math.min(600, p + (e.deltaY < 0 ? 20 : -20))))
-  }
+  // Native non-passive listener: React's onWheel is passive, so its
+  // preventDefault can't stop Ctrl+wheel from zooming the whole page.
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const onWheel = e => {
+      if (!e.ctrlKey && !e.shiftKey) return
+      e.preventDefault()
+      setPxPerSec(p => Math.max(40, Math.min(600, p + (e.deltaY < 0 ? 20 : -20))))
+    }
+    canvas.addEventListener('wheel', onWheel, { passive: false })
+    return () => canvas.removeEventListener('wheel', onWheel)
+  }, [])
 
   function onCanvasContextMenu(e) {
     e.preventDefault()
     dragRef.current = null
     const hit = hitTest(e); if (!hit) return
     if (hit.subIdx >= 0) {
-      const rect = canvasRef.current.getBoundingClientRect()
+      // Viewport coordinates — the menu is position:fixed.
       setCtxMenu({
-        x: e.clientX - rect.left,
-        y: e.clientY - rect.top,
+        x: e.clientX,
+        y: e.clientY,
         subIdx: hit.subIdx,
         time: hit.time,
       })
@@ -1911,6 +1968,8 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   }
 
   async function transcribe() {
+    const existing = subtitlesRef.current.length
+    if (existing && !window.confirm(`Remplacer les ${existing} réplique${existing > 1 ? 's' : ''} existante${existing > 1 ? 's' : ''} par la transcription Whisper ? (annulable avec Ctrl+Z)`)) return
     setTranscribing(true)
     const fireJob = async () => {
       const res = await fetch('/api/transcription/transcribe-job', {
@@ -1952,106 +2011,6 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
     }
   }
 
-  async function exportBRCanvas() {
-    const video = videoRef.current
-    const canvas = canvasRef.current
-    if (!video || !canvas) return
-    setBrExporting(true)
-    setToast({ msg: '⏺ Enregistrement BR en cours…', type: 'success' })
-
-    const vw = video.videoWidth || canvas.width
-    const origW = canvas.width
-    const origH = canvas.height
-    const origPxSec = pxPerSecRef.current
-    const origFontScale = fontScaleRef.current
-    const scale = vw > origW ? vw / origW : 1
-
-    try {
-      // Seek to start and wait
-      video.currentTime = 0
-      await new Promise(r => { video.onseeked = () => { video.onseeked = null; r() } })
-
-      // Scale canvas to video native width so overlay needs no upscaling
-      if (scale > 1) {
-        exportingRef.current = true
-        canvas.width = vw
-        canvas.height = Math.round(origH * scale)
-        pxPerSecRef.current = origPxSec * scale
-        fontScaleRef.current = origFontScale * scale
-        // Wait 2 RAF frames for drawing at new resolution
-        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
-      }
-
-      const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
-        ? 'video/webm;codecs=vp9'
-        : MediaRecorder.isTypeSupported('video/webm;codecs=vp8')
-          ? 'video/webm;codecs=vp8'
-          : 'video/webm'
-
-      const stream = canvas.captureStream(60)
-      const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 15_000_000 })
-      const chunks = []
-      recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data) }
-
-      // Activate smooth time interpolation: resync anchor on each video timeupdate,
-      // interpolate with wall clock between updates so the canvas scrolls at true 60fps
-      // instead of stepping at video fps (24fps) which causes visible jumping in the export.
-      const onTimeUpdate = () => {
-        interpTimeRef.current = { videoTime: video.currentTime, wallMs: performance.now(), active: true }
-      }
-      video.addEventListener('timeupdate', onTimeUpdate)
-
-      await new Promise((resolve, reject) => {
-        recorder.onstop = resolve
-        recorder.onerror = e => reject(e.error || new Error('MediaRecorder error'))
-        recorder.start(16)
-        interpTimeRef.current = { videoTime: 0, wallMs: performance.now(), active: true }
-        video.play()
-        video.onended = () => { video.onended = null; recorder.stop() }
-      })
-
-      video.removeEventListener('timeupdate', onTimeUpdate)
-      interpTimeRef.current.active = false
-
-      const blob = new Blob(chunks, { type: 'video/webm' })
-      setToast({ msg: '📤 Export MP4+BR…', type: 'success' })
-
-      const fd = new FormData()
-      fd.append('segment_id', clip.clip_id)
-      fd.append('overlay', blob, 'br_overlay.webm')
-
-      const res = await fetch('/api/export/mp4-canvas', { method: 'POST', body: fd })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        throw new Error(err.detail || `HTTP ${res.status}`)
-      }
-      const dlBlob = await res.blob()
-      const url = URL.createObjectURL(dlBlob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `${clip.name}_bande_rythmo.mp4`
-      a.click()
-      URL.revokeObjectURL(url)
-      setToast({ msg: '✓ Export terminé', type: 'success' })
-      setTimeout(() => setToast(null), 3000)
-    } catch (e) {
-      setToast({ msg: 'Erreur export : ' + e.message, type: 'error' })
-      setTimeout(() => setToast(null), 5000)
-    } finally {
-      interpTimeRef.current.active = false
-      if (scale > 1) {
-        exportingRef.current = false
-        pxPerSecRef.current = origPxSec
-        fontScaleRef.current = origFontScale
-        // RAF will restore canvas.width to CSS size on next frame
-      }
-      setBrExporting(false)
-    }
-  }
-
-  const Kbd = ({ children }) => (
-    <span style={{ display: 'inline-flex', alignItems: 'center', padding: '1px 5px', border: '1px solid var(--border2)', background: 'var(--surface2)', borderRadius: 3, fontFamily: 'var(--font-mono)', fontSize: 9.5, color: 'var(--text3)' }}>{children}</span>
-  )
   const tBtn = { background: 'var(--surface2)', border: '1px solid var(--border2)', color: 'var(--text2)', borderRadius: 6, minWidth: 30, minHeight: 30, padding: '0 8px', cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.15s, border-color 0.15s' }
 
   return (
@@ -2190,7 +2149,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
                 setDuration(e.target.duration)
                 // Restore playhead after a Master/Proxy source swap.
                 if (resumeTimeRef.current != null) {
-                  try { e.target.currentTime = resumeTimeRef.current } catch {}
+                  try { e.target.currentTime = resumeTimeRef.current } catch (err) { console.warn('Reprise de la position impossible', err) }
                   resumeTimeRef.current = null
                 }
               }}
@@ -2350,7 +2309,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
                     <RecorderPanel
                       clipId={clip.clip_id}
                       subtitles={subtitles}
-                      activeCharacter={activeSubtitle?.character || ''}
+                      activeCharacter={(selectedIdx != null ? subtitles[selectedIdx]?.character : activeSubtitle?.character) || ''}
                       activeIndex={selectedIdx}
                       videoRef={videoRef}
                     />
@@ -2539,9 +2498,6 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
           selectedIdx={selectedIdx}
           setSelectedIdx={setSelectedIdx}
           videoRef={videoRef}
-          playing={playing}
-          speed={speed}
-          onSpeedChange={changeSpeed}
           brOffset={brOffset}
           setBrOffset={setBrOffset}
           pxPerSec={pxPerSec}
@@ -2589,9 +2545,8 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
             onMouseDown={onCanvasMouseDown}
             onMouseMove={onCanvasMouseMove}
             onMouseUp={onCanvasMouseUp}
-            onMouseLeave={() => { dragRef.current = null; hoverRef.current = null; setHoverHint(null) }}
+            onMouseLeave={onCanvasMouseLeave}
             onDoubleClick={onCanvasDoubleClick}
-            onWheel={onCanvasWheel}
             onContextMenu={onCanvasContextMenu}
           />
           <CanvasCoachmark />
@@ -2609,13 +2564,12 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
             const canvas = canvasRef.current
             if (!sub || !canvas) return null
             const rect = canvas.getBoundingClientRect()
-            const scaleX = rect.width / canvas.width
-            const cur_x = canvas.width * CURSOR_X_RATIO
+            const cur_x = rect.width * CURSOR_X_RATIO
             const t = (videoRef.current?.currentTime || 0) + brOffset
-            const left = (cur_x + (sub.start - t) * pxPerSec) * scaleX
-            const right = (cur_x + (sub.end - t) * pxPerSec) * scaleX
+            const left = cur_x + (sub.start - t) * pxPerSec
+            const right = cur_x + (sub.end - t) * pxPerSec
             const trackIdx = charMap[sub.character || ''] ?? 0
-            const trackH = (canvasRef.current?.height || canvasH) / numTracks
+            const trackH = (rect.height || canvasH) / numTracks
             const top = trackIdx * trackH + trackH / 2 - 16
             const width = Math.max(120, right - left)
             const clampLeft = Math.max(4, Math.min(rect.width - width - 4, left))
@@ -2639,7 +2593,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
               />
             )
           })()}
-          {hoverHint && !editingIdx && (
+          {hoverHint && editingIdx == null && (
             <div style={{ position: 'absolute', bottom: 4, right: 8, fontSize: 9, color: 'var(--text3)', fontFamily: 'var(--font-mono)', background: 'rgba(0,0,0,0.6)', padding: '2px 6px', borderRadius: 2, pointerEvents: 'none' }}>{hoverHint}</div>
           )}
           {ctxMenu && (() => {
@@ -2649,7 +2603,10 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
             return (
               <>
                 <div onClick={() => setCtxMenu(null)} onContextMenu={e => { e.preventDefault(); setCtxMenu(null) }} style={{ position: 'fixed', inset: 0, zIndex: 'var(--z-dropdown)' }} />
-                <div style={{ position: 'fixed', left: ctxMenu.x, top: ctxMenu.y, background: '#0c0c0c', border: '1px solid #2a2a2a', borderRadius: 4, padding: 4, zIndex: 'var(--z-dropdown)', fontSize: 12, minWidth: 180, boxShadow: '0 4px 16px rgba(0,0,0,0.6)' }}>
+                <div style={{
+                  position: 'fixed', left: Math.max(4, Math.min(ctxMenu.x, window.innerWidth - 200)),
+                  ...(ctxMenu.y > window.innerHeight / 2 ? { bottom: window.innerHeight - ctxMenu.y } : { top: ctxMenu.y }),
+                  maxHeight: '80vh', overflowY: 'auto', background: '#0c0c0c', border: '1px solid #2a2a2a', borderRadius: 4, padding: 4, zIndex: 'var(--z-dropdown)', fontSize: 12, minWidth: 180, boxShadow: '0 4px 16px rgba(0,0,0,0.6)' }}>
                   <div style={menuHeader}>{sub.character || '(défaut)'} · {sub.text.slice(0, 30) || '∅'}</div>
                   <MenuBtn onClick={() => ctxAction('edit')}>✎ Éditer texte</MenuBtn>
                   {canSplit && <MenuBtn onClick={() => ctxAction('split')}>✂ Couper ici ({fmt(ctxMenu.time)})</MenuBtn>}
@@ -2673,7 +2630,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
         </div>
         {/* Full-clip nav timeline — whole clip at a glance, click/drag to seek */}
         {(() => {
-          const span = ((canvasRef.current?.width || 800) / (pxPerSec || 1))
+          const span = ((canvasRef.current?.offsetWidth || 800) / (pxPerSec || 1))
           const vStart = (currentTime + brOffset) - CURSOR_X_RATIO * span
           return (
             <BRTimeline
@@ -2721,7 +2678,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
                 pxPerSec={pxPerSec}
                 brOffset={brOffset}
                 canvasH={canvasH}
-                getCanvasWidth={() => canvasRef.current?.width || 1200}
+                getCanvasWidth={() => canvasRef.current?.offsetWidth || 1200}
                 brFont={brFont}
                 brStyle={rythmoStyle}
                 duration={duration}
@@ -2745,7 +2702,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
 
 function BandeRythmoToolbar({
   subtitles, onSubtitlesChange, selectedIdx, setSelectedIdx,
-  videoRef, playing, speed, onSpeedChange,
+  videoRef,
   brOffset, setBrOffset, pxPerSec, setPxPerSec,
   charMap, brInPlayer, setBrInPlayer, rythmoStyle, setRythmoStyle,
   fontScale, setFontScale,
@@ -2793,7 +2750,7 @@ function BandeRythmoToolbar({
       const r = el.getBoundingClientRect()
       setter({ bottom: window.innerHeight - r.top + 4, left: r.left })
       if (name) el.setAttribute('data-popover-trigger', name)
-    } catch {}
+    } catch (err) { console.warn('Ancrage du menu impossible', err) }
   }
 
   // Global click-away: portaled dropdowns + their triggers carry data-popover[-trigger].
@@ -2836,34 +2793,6 @@ function BandeRythmoToolbar({
     updateTarget({ end: Math.max(v.currentTime, target.start + 0.1) })
   }
 
-  function gotoPrev() {
-    const v = videoRef.current; if (!v) return
-    const t = v.currentTime
-    const i = subtitles.findIndex(s => s.start > t - 0.01)
-    const ti = i <= 0 ? 0 : i - 1
-    if (subtitles[ti]) { v.currentTime = subtitles[ti].start; setSelectedIdx(ti) }
-  }
-  function gotoNext() {
-    const v = videoRef.current; if (!v) return
-    const t = v.currentTime
-    const i = subtitles.findIndex(s => s.start > t + 0.01)
-    if (i >= 0) { v.currentTime = subtitles[i].start; setSelectedIdx(i) }
-  }
-  function gotoStart() { const v = videoRef.current; if (v) v.currentTime = 0 }
-  function gotoEnd() {
-    const v = videoRef.current; if (!v) return
-    v.currentTime = subtitles.length ? Math.max(...subtitles.map(s => s.end)) : 0
-  }
-  function togglePlay() {
-    const v = videoRef.current; if (!v) return
-    v.paused ? v.play() : v.pause()
-  }
-  function deleteTarget() {
-    if (targetIdx == null) return
-    onSubtitlesChange(subtitles.filter((_, i) => i !== targetIdx))
-    setSelectedIdx(null)
-  }
-
   function splitAtCurrentTime() {
     if (!target || targetIdx == null) return
     const v = videoRef.current; if (!v) return
@@ -2878,23 +2807,11 @@ function BandeRythmoToolbar({
   function insertTagSub(text, dur = 0.5) {
     const v = videoRef.current
     const t = v ? v.currentTime : 0
-    const newSub = { start: t, end: t + dur, text, character: '', reactions: [] }
+    const newSub = { start: t, end: t + dur, text, character: activeChar, reactions: [] }
     const next = [...subtitles, newSub].sort((a, b) => a.start - b.start)
     onSubtitlesChange(next)
     setShowResp(false)
     setShowReact(false)
-  }
-
-  function openDropdown(type, e) {
-    try {
-      const el = e.currentTarget || e.nativeEvent?.currentTarget || e.target
-      const r = el.getBoundingClientRect()
-      setDropdownAnchor({ bottom: window.innerHeight - r.top + 4, left: r.left })
-      if (el && el.setAttribute) el.setAttribute('data-popover-trigger', type)
-    } catch {}
-    if (type === 'resp') { setShowResp(s => !s); setShowReact(false) }
-    else { setShowReact(s => !s); setShowResp(false) }
-    setShowNote(false)
   }
 
   function newCharacterPrompt() {
@@ -2926,7 +2843,6 @@ function BandeRythmoToolbar({
     display: 'inline-flex', alignItems: 'center', gap: 2,
     background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 9, padding: 3,
   }
-  const sep = <div style={{ width: 1, alignSelf: 'stretch', background: 'var(--border)', margin: '2px 4px' }} />
 
   return (
     <div ref={toolbarRef} style={{
@@ -3162,7 +3078,7 @@ function BandeRythmoToolbar({
               const r = el.getBoundingClientRect()
               setDropdownAnchor({ bottom: window.innerHeight - r.top + 4, left: Math.max(8, r.right - 320) })
               if (el.setAttribute) el.setAttribute('data-popover-trigger', 'affichage')
-            } catch {}
+            } catch (err) { console.warn('Ancrage du menu impossible', err) }
             setShowAffichage(s => !s)
           }}
           title="Affichage : style, zoom, décalage, police, sous-titre dans le player"
@@ -3506,7 +3422,7 @@ function DetRow({ label, on, onClick, accent }) {
   return (
     <div onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', cursor: 'pointer', borderBottom: '1px solid var(--surface2)' }}>
       <span style={{ flex: 1, fontSize: 12.5, color: on ? 'var(--text)' : 'var(--text2)', fontWeight: accent && on ? 600 : 400 }}>{label}</span>
-      <UIToggle on={on} onClick={onClick} />
+      <UIToggle on={on} />
     </div>
   )
 }

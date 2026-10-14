@@ -174,7 +174,7 @@ function SubtitleRow({ sub, idx, active, selected, compact, charMap, charList, o
     mouseDownPos.current = { x: e.clientX, y: e.clientY }
   }
 
-  function handleRowClick(e) {
+  function handleRowClick() {
     mouseDownPos.current = null
     onSelect()
   }
