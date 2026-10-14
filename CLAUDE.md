@@ -13,7 +13,7 @@
 # Backend
 cd backend
 venv\Scripts\activate
-uvicorn main:app --reload --port 8000
+uvicorn main:app --reload --port 8000 --timeout-graceful-shutdown 2
 
 # Frontend
 cd frontend
@@ -88,6 +88,7 @@ frontend/src/
 - ~~BR décalée ~1s~~ : `-ss` après `-i` dans extract_segment (fix appliqué). Slider `brOffset` (-2s/+2s) = échappatoire.
 - ~~Deadlock jobs ffmpeg~~ : `run_ffmpeg_with_progress` stderr PIPE non drainé → DEVNULL (fix).
 - Vite proxy doit cibler `http://127.0.0.1:8000` (pas `localhost`) — Windows IPv6
+- `uvicorn --reload` figé sous Windows : au reload il attend la fermeture de toutes les connexions (WebSocket des jobs, streaming vidéo) → le worker ne redémarre jamais et l'API ne répond plus. Toujours lancer avec `--timeout-graceful-shutdown 2`.
 
 ## Export MP4 + BR — bonnes pratiques (texte défilant lisible)
 
