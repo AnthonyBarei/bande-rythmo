@@ -11,6 +11,7 @@ This time the design source is included. **`reference/` is the spec.** It is pla
 
 ## What's in this folder
 
+- `FIXES.md` plus `fixes/*-compare.png`: **round 2.** Design and app side by side, with numbered fix spots. Do these after TASKS.md.
 - `TASKS.md`: **the work, split into 15 small tasks (T0–T14).** Each task names a picture, a source function and a target file. Start here.
 - `reference/redesign.html` plus `reference/redesign/*.jsx`: the runnable prototype. Open it in a browser at **1440×900** or larger and keep it next to the app while you work.
 - `screens/<screen>/`: captures at 1440×900. Each screen has a clean shot and an `-annotated` shot. The annotated shots outline each region and label it with its size in px. The Éditeur folder also has close-ups of the toolbar and inspector, every inspector tab, and the Sous-titres menu.
