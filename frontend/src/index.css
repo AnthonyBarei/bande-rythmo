@@ -32,53 +32,74 @@ input[type="range"]::-webkit-slider-runnable-track {
 }
 
 :root {
+  /* Tokens = design_handoff_redesign_v2/reference/redesign/foundation.jsx → T */
   /* Backgrounds */
-  --bg:        #0a0a0c;
-  --bg2:       #0e0e11;
-  --surface:   #131318;
-  --surface2:  #1a1a20;
-  --surface3:  #23232b;
+  --bg:        #0b0b0d;
+  --bg2:       #101013;
+  --surface:   #16161a;
+  --surface2:  #1c1c21;
+  --surface3:  #24242b;
   --hover:     #2a2a33;
 
   /* Strokes */
-  --border:    #26262e;
-  --border2:   #33333d;
-  --border3:   #44444f;
+  --border:    #26262d;
+  --border2:   #32323b;
+  --border3:   #3f3f4a;
 
   /* Text */
-  --text:      #ededf0;
-  --text2:     #9c9ca6;
-  --text3:     #7a7a85;   /* reviewed: lighter for legible meta (≈4.4:1 on bg) */
-  --text4:     #565660;   /* reviewed: lighter for hints/disabled */
+  --text:      #ECECEF;
+  --text2:     #A6A6AE;
+  --text3:     #7A7A85;
+  --text4:     #565660;
 
-  /* Yellow accent */
-  --accent:      #f5c518;
-  --accent-soft: rgba(245,197,24,0.13);
-  --accent-dim:  rgba(245,197,24,0.06);
-  --accent-text: #ffd84a;
-  --accent-ring: rgba(245,197,24,0.28);
-  --accent-glow: rgba(245,197,24,0.35);
+  /* Yellow accent — swappable from Réglages (SettingsContext rewrites these) */
+  --accent:       #F5C518;
+  --accent-dim:   rgba(245,197,24,0.13);
+  --accent-soft:  rgba(245,197,24,0.13);
+  --accent-hover: #ffd83a;
+  --accent-text:  #f8d452;
+  --accent-ring:  rgba(245,197,24,0.27);
+  --accent-glow:  rgba(245,197,24,0.33);
 
-  /* Character tracks — mirrors config/tracks.js TRACK_HEXES */
-  --track-1: #f5c518;
-  --track-2: #7ec0ff;
-  --track-3: #f08aaf;
-  --track-4: #7ed4a8;
-  --violet:  #A98BF0;
+  /* Character tracks — mirrors config/tracks.js TRACK_HEXES (LÉA · MARC · SARAH · NOAH) */
+  --track-1: #F5C518;
+  --track-2: #5AA9F0;
+  --track-3: #F06AA0;
+  --track-4: #5EC27C;
 
   /* Semantic */
-  --danger:    #e85d5d;
-  --success:   #5ec27c;
-  --info:      #7ec0ff;
-  --danger-soft:  rgba(232,93,93,0.13);
+  --danger:    #E8595D;
+  --success:   #5EC27C;
+  --info:      #5AA9F0;
+  --violet:    #A98BF0;
+  --danger-soft:  rgba(232,89,93,0.13);
   --success-soft: rgba(94,194,124,0.13);
-  --info-soft:    rgba(126,192,255,0.13);
+  --info-soft:    rgba(90,169,240,0.13);
 
+  /* Radii — chip 6 · ctl 9 · card 14 · lg 18 */
+  --r-chip: 6px;
+  --r-ctl:  9px;
+  --r-card: 14px;
+  --r-lg:   18px;
   --radius:    6px;
   --radius-lg: 10px;
 
-  --font-ui:   'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --font-mono: 'JetBrains Mono', 'Courier New', monospace;
+  /* Shadows */
+  --shadow:   0 8px 30px rgba(0,0,0,.40);
+  --shadow-l: 0 18px 60px rgba(0,0,0,.55);
+
+  /* Type scale — 11 / 12 / 13 / 14 / 16 / 20 / 26 / 34 */
+  --fs-micro: 11px;
+  --fs-xs:    12px;
+  --fs-sm:    13px;
+  --fs-base:  14px;
+  --fs-md:    16px;
+  --fs-lg:    20px;
+  --fs-xl:    26px;
+  --fs-xxl:   34px;
+
+  --font-ui:   'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', monospace;
   --font-br:   'JetBrains Mono', 'Courier New', monospace;
 
   /* Z-index scale (DOUBLAGE_IA_REVIEW §8) — one source of truth, no scattered 9999s. */
@@ -95,14 +116,13 @@ html, body, #root {
   color: var(--text);
   font-family: var(--font-ui);
   font-size: 14px;
-  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
 
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: var(--surface); }
-::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: var(--border3); }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #2a2a33; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #3a3a45; }
 
 input, textarea {
   font-family: var(--font-ui);
@@ -145,8 +165,9 @@ button {
   outline: none;
 }
 button:disabled { opacity: 0.35; cursor: not-allowed; }
-button:not(:disabled):hover { opacity: 0.88; }
-button:not(:disabled):active { opacity: 0.75; }
+/* Legacy hover feedback — ui.jsx primitives (data-rd) own their hover states. */
+button:not(:disabled):not([data-rd]):hover { opacity: 0.88; }
+button:not(:disabled):not([data-rd]):active { opacity: 0.75; }
 
 video { display: block; }
 

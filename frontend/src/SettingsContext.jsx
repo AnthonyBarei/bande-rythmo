@@ -35,15 +35,22 @@ function lighten(hex, amount) {
   return `#${hx(r)}${hx(g)}${hx(b)}`
 }
 
+// Primary-button hover: the reference's #ffd83a for the default yellow,
+// a lightened accent for any other swatch.
+function accentHover(hex) {
+  return hex.toLowerCase() === DEFAULTS.accent ? '#ffd83a' : lighten(hex, 0.2)
+}
+
 function applySettings(s) {
   const root = document.documentElement
   const { r, g, b } = hexToRgb(s.accent)
   root.style.setProperty('--accent', s.accent)
   root.style.setProperty('--accent-soft', `rgba(${r},${g},${b},0.13)`)
-  root.style.setProperty('--accent-dim', `rgba(${r},${g},${b},0.06)`)
-  root.style.setProperty('--accent-ring', `rgba(${r},${g},${b},0.28)`)
-  root.style.setProperty('--accent-glow', `rgba(${r},${g},${b},0.35)`)
+  root.style.setProperty('--accent-dim', `rgba(${r},${g},${b},0.13)`)
+  root.style.setProperty('--accent-ring', `rgba(${r},${g},${b},0.27)`)
+  root.style.setProperty('--accent-glow', `rgba(${r},${g},${b},0.33)`)
   root.style.setProperty('--accent-text', lighten(s.accent, 0.25))
+  root.style.setProperty('--accent-hover', accentHover(s.accent))
   root.style.fontSize = `${DENSITY_FONT[s.density] || 14}px`
 }
 

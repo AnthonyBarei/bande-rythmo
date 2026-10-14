@@ -1,66 +1,36 @@
 import React, { useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { Btn, Kbd, SectionLabel, ICONS } from '../ui'
+import { T, Icon, ICONS, Btn, Kbd } from '../ui'
 
-// PRO_BR_HANDOFF §7 + DubbingWorkspace keymap, condensed.
+// Port of redesign shell.jsx ShortcutsOverlay — reference rows + the app's
+// extra keys (⌫, R, /, E).
 const GROUPS = [
-  {
-    title: 'Transport',
-    rows: [
-      { keys: ['Espace', 'K'],           label: 'Lecture / pause' },
-      { keys: ['J'],                     label: 'Vitesse 0,5×' },
-      { keys: ['L'],                     label: 'Vitesse 1,5×' },
-      { keys: ['M'],                     label: 'Mute' },
-      { keys: ['←', '→'],                label: '±1 s' },
-      { keys: ['⇧←', '⇧→'],              label: '±1 image (fps clip)' },
-      { keys: [',', '.'],                label: '±40 ms (~1 image 25 fps)' },
-    ],
-  },
-  {
-    title: 'Bande rythmo',
-    rows: [
-      { keys: ['I'],                     label: 'Marquer IN' },
-      { keys: ['O'],                     label: 'Marquer OUT' },
-      { keys: ['S'],                     label: 'Couper à la tête' },
-      { keys: ['Entrée'],                label: 'Éditer la réplique active' },
-      { keys: ['⇧Entrée'],               label: 'Nouvelle réplique' },
-      { keys: ['Suppr', '⌫'],            label: 'Supprimer la réplique active' },
-      { keys: ['R'],                     label: 'Enregistrer / arrêter la prise' },
-      { keys: ['Échap'],                 label: 'Quitter loop / édition' },
-    ],
-  },
-  {
-    title: 'Canvas (gestes cachés)',
-    rows: [
-      { keys: ['glisser'],               label: 'Créer une réplique' },
-      { keys: ['⇧ glisser'],             label: 'Définir une région de boucle' },
-      { keys: ['alt glisser'],           label: 'Dupliquer une réplique' },
-      { keys: ['ctrl molette'],          label: 'Zoom pixels/seconde' },
-      { keys: ['clic lettre'],           label: 'Cycle signe de détection' },
-      { keys: ['double-clic'],           label: 'Éditer le texte' },
-      { keys: ['clic droit'],            label: 'Menu contextuel' },
-    ],
-  },
-  {
-    title: 'Général',
-    rows: [
-      { keys: ['Ctrl', 'Z'],             label: 'Annuler' },
-      { keys: ['Ctrl', 'Y'],             label: 'Rétablir' },
-      { keys: ['⌘', 'K'],                label: 'Palette de commandes' },
-      { keys: ['/'],                     label: 'Palette de commandes' },
-      { keys: ['Ctrl', 'S'],             label: 'Sauvegarder (auto-save 1,5 s)' },
-      { keys: ['E'],                     label: 'Exporter' },
-      { keys: ['?'],                     label: 'Cette aide' },
-    ],
-  },
+  { title: 'Transport', rows: [
+    { k: ['Espace', 'K'], l: 'Lecture / pause' }, { k: ['J'], l: 'Vitesse 0,5×' }, { k: ['L'], l: 'Vitesse 1,5×' },
+    { k: ['M'], l: 'Mute' }, { k: ['←', '→'], l: '±1 s' }, { k: ['⇧←', '⇧→'], l: '±1 image' }, { k: [',', '.'], l: '±40 ms' },
+  ]},
+  { title: 'Bande rythmo', rows: [
+    { k: ['I'], l: 'Marquer IN' }, { k: ['O'], l: 'Marquer OUT' }, { k: ['S'], l: 'Couper à la tête' },
+    { k: ['Entrée'], l: 'Éditer la réplique' }, { k: ['⇧Entrée'], l: 'Nouvelle réplique' },
+    { k: ['Suppr', '⌫'], l: 'Supprimer la réplique' }, { k: ['R'], l: 'Enregistrer / arrêter la prise' },
+    { k: ['Échap'], l: 'Quitter loop / édition' },
+  ]},
+  { title: 'Canvas — gestes', rows: [
+    { k: ['maintenir'], l: 'Déplacer le curseur' }, { k: ['glisser'], l: 'Créer une réplique' }, { k: ['⇧ glisser'], l: 'Région de boucle' },
+    { k: ['alt glisser'], l: 'Dupliquer' }, { k: ['ctrl molette'], l: 'Zoom px/s' }, { k: ['clic lettre'], l: 'Signe de détection' },
+    { k: ['double-clic'], l: 'Éditer le texte' }, { k: ['clic droit'], l: 'Menu contextuel' },
+  ]},
+  { title: 'Général', rows: [
+    { k: ['Ctrl', 'Z'], l: 'Annuler' }, { k: ['Ctrl', 'Y'], l: 'Rétablir' }, { k: ['⌘', 'K'], l: 'Palette de commandes' },
+    { k: ['/'], l: 'Palette de commandes' }, { k: ['Ctrl', 'S'], l: 'Sauvegarder' }, { k: ['E'], l: 'Exporter' },
+    { k: ['?'], l: 'Cette aide' },
+  ]},
 ]
 
 export default function ShortcutsOverlay({ open, onClose }) {
   useEffect(() => {
     if (!open) return
-    function onKey(e) {
-      if (e.key === 'Escape') onClose()
-    }
+    const onKey = e => { if (e.key === 'Escape') onClose() }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [open, onClose])
@@ -68,58 +38,25 @@ export default function ShortcutsOverlay({ open, onClose }) {
   if (!open) return null
 
   return createPortal(
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="Raccourcis clavier"
-      onClick={onClose}
-      style={{
-        position: 'fixed', inset: 0,
-        background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(3px)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        zIndex: 'var(--z-modal)',
-      }}>
-      <div
-        onClick={e => e.stopPropagation()}
-        style={{
-          background: 'var(--surface)',
-          border: '1px solid var(--border2)',
-          borderRadius: 14,
-          padding: 24,
-          width: 'min(860px, 92vw)',
-          maxHeight: '88vh', overflow: 'auto',
-          boxShadow: '0 18px 60px rgba(0,0,0,0.55)',
-        }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 20 }}>
-          <div>
-            <div style={{ fontSize: 11, color: 'var(--text3)', letterSpacing: 1.4, fontWeight: 600, marginBottom: 4, fontFamily: 'var(--font-mono)' }}>
-              AIDE · ÉCHAP POUR FERMER
-            </div>
-            <h2 style={{ margin: 0, fontSize: 20, fontWeight: 600, color: 'var(--text)' }}>Raccourcis clavier</h2>
-          </div>
+    <div role="dialog" aria-modal="true" aria-label="Raccourcis clavier" onClick={onClose}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', backdropFilter: 'blur(3px)', zIndex: 'var(--z-modal)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: 'min(860px,92vw)', maxHeight: '88vh', overflow: 'auto', background: T.surface, border: `1px solid ${T.border2}`, borderRadius: T.r.card, boxShadow: T.shadowL, padding: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
+          <Icon d={ICONS.keyboard} size={20} stroke={T.accent} />
+          <span style={{ fontSize: T.fs.lg, fontWeight: 600 }}>Raccourcis clavier</span>
+          <span style={{ fontSize: T.fs.xs, color: T.text3 }}>Échap pour fermer</span>
           <div style={{ flex: 1 }} />
-          <Btn size="sm" icon={ICONS.close} onClick={onClose} title="Fermer" />
+          <Btn size="sm" variant="outline" onClick={onClose}>Fermer</Btn>
         </div>
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))',
-          gap: '20px 28px',
-        }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 18 }}>
           {GROUPS.map(g => (
             <div key={g.title}>
-              <SectionLabel style={{ textTransform: 'uppercase', marginBottom: 6 }}>{g.title}</SectionLabel>
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                {g.rows.map((row, i) => (
-                  <div key={i} style={{
-                    display: 'flex', alignItems: 'center', gap: 8, padding: '7px 0',
-                    borderTop: i ? '1px solid var(--border)' : 'none',
-                  }}>
-                    <span style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                      {row.keys.map((k, j) => <Kbd key={j}>{k}</Kbd>)}
-                    </span>
-                    <span style={{ fontSize: 12, color: 'var(--text2)', flex: 1, textAlign: 'right' }}>
-                      {row.label}
-                    </span>
+              <div style={{ fontSize: 10.5, color: T.text3, letterSpacing: 1.2, fontWeight: 700, marginBottom: 9, textTransform: 'uppercase' }}>{g.title}</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                {g.rows.map((r, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: T.bg2, border: `1px solid ${T.border}`, borderRadius: T.r.ctl }}>
+                    <span style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>{r.k.map((k, j) => <Kbd key={j}>{k}</Kbd>)}</span>
+                    <span style={{ fontSize: T.fs.sm, color: T.text2, flex: 1, textAlign: 'right' }}>{r.l}</span>
                   </div>
                 ))}
               </div>

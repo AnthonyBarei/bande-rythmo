@@ -1,36 +1,77 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { Icon, ICONS } from './Icons'
 
-/* Design-system primitives — port of the redesign `foundation.jsx` (RD.*),
-   built on the app's CSS variables. Reusable across screens. */
+/* Design-system primitives — line-for-line port of
+   design/design_handoff_redesign_v2/reference/redesign/foundation.jsx (RD.*).
+   T.x reads the CSS variables of index.css so the accent stays swappable. */
 
 export { Icon, ICONS }
 
-const V = n => `var(--${n})`
+export const T = {
+  bg:        'var(--bg)',
+  bg2:       'var(--bg2)',
+  surface:   'var(--surface)',
+  surface2:  'var(--surface2)',
+  surface3:  'var(--surface3)',
+  border:    'var(--border)',
+  border2:   'var(--border2)',
+  border3:   'var(--border3)',
+  text:      'var(--text)',
+  text2:     'var(--text2)',
+  text3:     'var(--text3)',
+  text4:     'var(--text4)',
+  accent:    'var(--accent)',
+  accentDim: 'var(--accent-dim)',
+  danger:    'var(--danger)',
+  success:   'var(--success)',
+  info:      'var(--info)',
+  violet:    'var(--violet)',
+  tracks: [
+    { name: 'LÉA',   hex: 'var(--track-1)' },
+    { name: 'MARC',  hex: 'var(--track-2)' },
+    { name: 'SARAH', hex: 'var(--track-3)' },
+    { name: 'NOAH',  hex: 'var(--track-4)' },
+  ],
+  fontUI:   'var(--font-ui)',
+  fontMono: 'var(--font-mono)',
+  fs: { micro: 11, xs: 12, sm: 13, base: 14, md: 16, lg: 20, xl: 26, xxl: 34 },
+  r: { chip: 6, ctl: 9, card: 14, lg: 18 },
+  shadow:  'var(--shadow)',
+  shadowL: 'var(--shadow-l)',
+  glow: c => `0 0 0 1px ${alpha(c, '55')}, 0 0 24px ${alpha(c, '33')}`,
+}
 
-// ── Button — sm32 / md36 / lg42, variants ghost/primary/solid/outline ──
+// `color + 'aa'` from the reference — exact for #rrggbb, color-mix for CSS vars.
+export function alpha(color, aa) {
+  if (/^#[0-9a-f]{6}$/i.test(color)) return color + aa
+  const pct = Math.round(parseInt(aa, 16) / 255 * 1000) / 10
+  return `color-mix(in srgb, ${color} ${pct}%, transparent)`
+}
+
+// ── Primitives ────────────────────────────────────────────
 export function Btn({ children, variant = 'ghost', size = 'md', icon, iconR, active, danger, onClick, title, style, full, disabled }) {
   const [h, setH] = useState(false)
-  const H = { sm: 32, md: 36, lg: 42 }[size]
+  const H = { sm: 30, md: 36, lg: 42 }[size]
   const pad = { sm: '0 12px', md: '0 15px', lg: '0 20px' }[size]
-  const fz = { sm: 12, md: 13, lg: 14 }[size]
-  let bg = 'transparent', col = V('text2'), bord = '1px solid transparent'
-  if (variant === 'primary') { bg = h ? V('accent-text') : V('accent'); col = '#0b0b0d' }
-  else if (variant === 'solid') { bg = h ? V('surface3') : V('surface2'); col = V('text'); bord = `1px solid ${V('border2')}` }
-  else if (variant === 'outline') { bg = h ? V('surface') : 'transparent'; col = V('text'); bord = `1px solid ${V('border2')}` }
-  else { bg = h ? V('surface2') : 'transparent'; col = active ? V('accent') : V('text2') }
-  if (active && variant === 'ghost') bg = V('accent-soft')
-  if (danger) { col = V('danger'); if (h) bg = 'var(--danger-soft)' }
+  const fz = { sm: T.fs.xs, md: T.fs.sm, lg: T.fs.base }[size]
+  let bg = 'transparent', col = T.text2, bord = '1px solid transparent'
+  if (variant === 'primary') { bg = h ? 'var(--accent-hover)' : T.accent; col = '#0b0b0d' }
+  else if (variant === 'solid') { bg = h ? T.surface3 : T.surface2; col = T.text; bord = `1px solid ${T.border2}` }
+  else if (variant === 'outline') { bg = h ? T.surface : 'transparent'; col = T.text; bord = `1px solid ${T.border2}` }
+  else { bg = h ? T.surface2 : 'transparent'; col = active ? T.accent : T.text2 }
+  if (active && variant === 'ghost') bg = T.accentDim
+  if (danger) { col = T.danger; if (h) bg = 'rgba(232,89,93,.13)' }
   return (
-    <button onClick={onClick} title={title} disabled={disabled}
+    <button data-rd onClick={onClick} title={title} disabled={disabled}
       onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
       style={{
-        height: H, minWidth: H, padding: icon && !children ? 0 : pad, borderRadius: 9,
+        height: H, minWidth: H, padding: icon && !children ? 0 : pad, borderRadius: T.r.ctl,
         background: bg, color: col, border: bord, cursor: disabled ? 'default' : 'pointer',
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-        fontSize: fz, fontWeight: variant === 'primary' ? 600 : 500, fontFamily: V('font-ui'),
-        width: full ? '100%' : undefined, opacity: disabled ? 0.5 : 1,
-        transition: 'background .14s, color .14s', flexShrink: 0, ...style,
+        fontSize: fz, fontWeight: variant === 'primary' ? 600 : 500, fontFamily: T.fontUI,
+        width: full ? '100%' : undefined, transition: 'background .14s, color .14s', flexShrink: 0,
+        opacity: disabled ? 0.5 : 1,
+        ...style,
       }}>
       {icon && <Icon d={icon} size={fz + 3} stroke={col} fill={icon === ICONS.rec ? col : undefined} />}
       {children}
@@ -40,79 +81,90 @@ export function Btn({ children, variant = 'ghost', size = 'md', icon, iconR, act
 }
 
 export function Chip({ children, color, soft, active, onClick, style }) {
-  const c = color || V('accent')
+  const c = color || T.accent
   return (
     <span onClick={onClick} style={{
       display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 9px',
-      borderRadius: 99, fontSize: 12, fontWeight: 600, cursor: onClick ? 'pointer' : 'default',
-      background: active ? c : (soft ? c + '1c' : V('surface2')),
-      color: active ? '#0b0b0d' : c, border: `1px solid ${active ? c : (typeof c === 'string' && c.startsWith('#') ? c + '33' : 'var(--border)')}`,
-      ...style,
+      borderRadius: 99, fontSize: T.fs.xs, fontWeight: 600, cursor: onClick ? 'pointer' : 'default',
+      background: active ? c : (soft ? alpha(c, '1c') : T.surface2),
+      color: active ? '#0b0b0d' : c,
+      border: `1px solid ${active ? c : alpha(c, '33')}`, ...style,
     }}>{children}</span>
   )
 }
 
-export function Dot({ color, size = 8, pulse }) {
-  const c = color || V('accent')
+export function Dot({ color = T.accent, size = 8, pulse }) {
   return (
     <span style={{ position: 'relative', width: size, height: size, flexShrink: 0, display: 'inline-block' }}>
-      <span style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: c }} />
-      {pulse && <span style={{ position: 'absolute', inset: -3, borderRadius: '50%', border: `1.5px solid ${c}`, opacity: .4 }} />}
+      <span style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: color }} />
+      {pulse && <span style={{ position: 'absolute', inset: -3, borderRadius: '50%', border: `1.5px solid ${color}`, opacity: .4 }} />}
     </span>
   )
 }
 
-export function Avatar({ name, color, size = 28, ring }) {
-  const c = color || V('accent')
+export function Card({ children, pad = 16, style, hover, onClick }) {
+  const [h, setH] = useState(false)
+  return (
+    <div onClick={onClick}
+      onMouseEnter={() => hover && setH(true)} onMouseLeave={() => hover && setH(false)}
+      style={{
+        background: T.surface, border: `1px solid ${h ? T.border2 : T.border}`,
+        borderRadius: T.r.card, padding: pad, transition: 'border-color .15s, transform .15s',
+        transform: h ? 'translateY(-2px)' : 'none', cursor: onClick ? 'pointer' : 'default', ...style,
+      }}>{children}</div>
+  )
+}
+
+export function Avatar({ name, color = T.accent, size = 28, ring }) {
   return (
     <div style={{
       width: size, height: size, borderRadius: '50%', flexShrink: 0,
-      background: c + '24', border: `1.5px solid ${c}${ring ? '' : '99'}`,
-      boxShadow: ring ? `0 0 0 2px ${c}33` : 'none',
+      background: alpha(color, '24'), border: `1.5px solid ${ring ? color : alpha(color, '99')}`,
+      boxShadow: ring ? `0 0 0 2px ${alpha(color, '33')}` : 'none',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      fontSize: size * 0.42, fontWeight: 700, color: c, fontFamily: V('font-mono'),
+      fontSize: size * 0.42, fontWeight: 700, color, fontFamily: T.fontMono,
     }}>{(name || '?')[0].toUpperCase()}</div>
   )
 }
 
 export function SectionLabel({ children, style }) {
-  return <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1.4, color: V('text3'), ...style }}>{children}</div>
+  return <div style={{ fontSize: T.fs.micro, fontWeight: 700, letterSpacing: 1.4, color: T.text3, ...style }}>{children}</div>
 }
 
 export function Kbd({ children }) {
   return <span style={{
-    padding: '1px 6px', borderRadius: 5, background: V('surface2'), border: `1px solid ${V('border2')}`,
-    fontFamily: V('font-mono'), fontSize: 11, color: V('text2'), lineHeight: 1.6,
+    padding: '1px 6px', borderRadius: 5, background: T.surface2, border: `1px solid ${T.border2}`,
+    fontFamily: T.fontMono, fontSize: 10.5, color: T.text2, lineHeight: 1.6,
   }}>{children}</span>
 }
 
 export function Toggle({ on, onClick, color, title }) {
-  const c = color || V('accent')
+  const c = color || T.accent
   return (
-    <div onClick={onClick} title={title} role="switch" aria-checked={!!on}
-      style={{ height: 32, display: 'inline-flex', alignItems: 'center', flexShrink: 0, cursor: 'pointer' }}>
+    <div onClick={onClick} title={title} role="switch" aria-checked={!!on} style={{
+      width: 38, height: 22, borderRadius: 99, flexShrink: 0, position: 'relative', cursor: 'pointer',
+      background: on ? c : T.surface3, border: `1px solid ${on ? c : T.border2}`, transition: 'background .15s',
+    }}>
       <div style={{
-        width: 38, height: 22, borderRadius: 99, position: 'relative',
-        background: on ? c : V('surface3'), border: `1px solid ${on ? c : V('border2')}`, transition: 'background .15s',
-      }}>
-        <div style={{ width: 18, height: 18, borderRadius: '50%', background: on ? '#0b0b0d' : V('text3'), position: 'absolute', top: 1, left: on ? 17 : 1, transition: 'left .16s' }} />
-      </div>
+        width: 18, height: 18, borderRadius: '50%', background: on ? '#0b0b0d' : T.text3,
+        position: 'absolute', top: 1, left: on ? 17 : 1, transition: 'left .16s',
+      }} />
     </div>
   )
 }
 
 export function Segmented({ options, value, onChange, size = 'md' }) {
-  const H = size === 'sm' ? 32 : 34
+  const H = size === 'sm' ? 28 : 34
   return (
-    <div style={{ display: 'inline-flex', gap: 3, background: V('surface'), border: `1px solid ${V('border')}`, borderRadius: 9, padding: 3 }}>
+    <div style={{ display: 'inline-flex', gap: 3, background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.r.ctl, padding: 3 }}>
       {options.map(o => {
         const active = o.v === value
         return (
-          <button key={o.v} onClick={() => onChange?.(o.v)} title={o.desc}
+          <button data-rd key={o.v} onClick={() => onChange?.(o.v)} title={o.desc}
             style={{
-              height: H - 6, padding: '0 12px', borderRadius: 6, border: 'none', cursor: 'pointer',
-              background: active ? V('accent') : 'transparent', color: active ? '#0b0b0d' : V('text2'),
-              fontSize: 12, fontWeight: active ? 700 : 500, fontFamily: V('font-ui'),
+              height: H - 6, padding: '0 12px', borderRadius: T.r.chip, border: 'none', cursor: 'pointer',
+              background: active ? T.accent : 'transparent', color: active ? '#0b0b0d' : T.text2,
+              fontSize: T.fs.xs, fontWeight: active ? 700 : 500, fontFamily: T.fontUI,
               display: 'inline-flex', alignItems: 'center', gap: 6,
             }}>
             {o.icon && <Icon d={o.icon} size={13} stroke={active ? '#0b0b0d' : 'currentColor'} />}
@@ -124,16 +176,7 @@ export function Segmented({ options, value, onChange, size = 'md' }) {
   )
 }
 
-export function ProgressBar({ pct, color, h = 5 }) {
-  const c = color || V('accent')
-  return (
-    <div style={{ height: h, background: V('surface3'), borderRadius: h, overflow: 'hidden', width: '100%' }}>
-      <div style={{ width: `${pct}%`, height: '100%', background: c, borderRadius: h, transition: 'width .3s' }} />
-    </div>
-  )
-}
-
-// ── Popover + Select ──
+// ── Popover / Dropdown / Menu ─────────────────────────────
 export function Popover({ trigger, children, align = 'left', width = 240 }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
@@ -151,8 +194,8 @@ export function Popover({ trigger, children, align = 'left', width = 240 }) {
       {open && (
         <div style={{
           position: 'absolute', top: 'calc(100% + 6px)', [align]: 0, zIndex: 'var(--z-dropdown)', width,
-          background: V('surface'), border: `1px solid ${V('border2')}`, borderRadius: 12,
-          boxShadow: '0 18px 60px rgba(0,0,0,.55)', padding: 6, overflow: 'hidden',
+          background: T.surface, border: `1px solid ${T.border2}`, borderRadius: T.r.card,
+          boxShadow: T.shadowL, padding: 6, overflow: 'hidden',
         }}>
           {typeof children === 'function' ? children(() => setOpen(false)) : children}
         </div>
@@ -161,39 +204,47 @@ export function Popover({ trigger, children, align = 'left', width = 240 }) {
   )
 }
 
-export function MenuItem({ icon, children, onClick, active, danger, color }) {
+export function MenuItem({ icon, children, onClick, active, danger, color, right, sub }) {
   const [h, setH] = useState(false)
-  const c = danger ? V('danger') : (active ? V('accent') : (color || V('text')))
+  const c = danger ? T.danger : (active ? T.accent : (color || T.text))
   return (
-    <button onClick={onClick} onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
+    <button data-rd onClick={onClick} onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
       style={{
-        display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '8px 10px', borderRadius: 9,
-        background: h ? (danger ? 'var(--danger-soft)' : V('surface2')) : 'transparent', border: 'none', cursor: 'pointer',
-        color: c, textAlign: 'left', fontSize: 13, fontFamily: V('font-ui'), minHeight: 34,
+        display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '8px 10px', borderRadius: T.r.ctl,
+        background: h ? (danger ? 'rgba(232,89,93,.12)' : T.surface2) : 'transparent', border: 'none', cursor: 'pointer',
+        color: c, textAlign: 'left', fontSize: T.fs.sm, fontFamily: T.fontUI,
       }}>
-      {icon && <Icon d={icon} size={15} stroke={c} />}
-      <span style={{ flex: 1 }}>{children}</span>
-      {active && <Icon d={ICONS.check} size={14} stroke={V('accent')} />}
+      {icon && (typeof icon === 'string' && icon.length <= 2 ? <span style={{ width: 16, textAlign: 'center', fontFamily: T.fontMono, fontWeight: 700 }}>{icon}</span> : <Icon d={icon} size={15} stroke={c} />)}
+      <span style={{ flex: 1 }}>{children}{sub && <span style={{ display: 'block', fontSize: 10, color: T.text3, marginTop: 1 }}>{sub}</span>}</span>
+      {active && <Icon d={ICONS.check} size={14} stroke={T.accent} />}
+      {right}
     </button>
   )
 }
 
+export function MenuLabel({ children }) {
+  return <div style={{ padding: '6px 10px 4px', fontSize: 9.5, letterSpacing: 1.2, fontWeight: 700, color: T.text3, textTransform: 'uppercase' }}>{children}</div>
+}
+
+export function MenuSep() { return <div style={{ height: 1, background: T.border, margin: '5px 4px' }} /> }
+
+// Native-feeling Select (opens a Popover menu)
 export function Select({ value, options, onChange, width = 'auto', size = 'md', placeholder }) {
-  const H = { sm: 32, md: 36 }[size] || 36
+  const H = { sm: 30, md: 36 }[size] || 36
   const cur = options.find(o => o.v === value)
   return (
     <Popover width={typeof width === 'number' ? width : 200}
       trigger={(open, toggle) => (
-        <button onClick={toggle} style={{
-          height: H, padding: '0 11px', borderRadius: 9, cursor: 'pointer',
-          background: V('surface'), border: `1px solid ${open ? V('accent') : V('border2')}`, color: V('text'),
-          display: 'inline-flex', alignItems: 'center', gap: 9, fontSize: 13, fontFamily: V('font-ui'),
+        <button data-rd onClick={toggle} style={{
+          height: H, padding: '0 11px', borderRadius: T.r.ctl, cursor: 'pointer',
+          background: T.surface, border: `1px solid ${open ? T.accent : T.border2}`, color: T.text,
+          display: 'inline-flex', alignItems: 'center', gap: 9, fontSize: T.fs.sm, fontFamily: T.fontUI,
           width: typeof width === 'number' ? width : 'auto', justifyContent: 'space-between',
         }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 8, color: cur ? V('text') : V('text3'), overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8, color: cur ? T.text : T.text3, overflow: 'hidden', whiteSpace: 'nowrap' }}>
             {cur?.dot && <Dot color={cur.dot} size={7} />}{cur ? cur.l : (placeholder || 'Choisir…')}
           </span>
-          <Icon d={ICONS.chevron} size={13} stroke={V('text3')} style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s', flexShrink: 0 }} />
+          <Icon d={ICONS.chevron} size={13} stroke={T.text3} style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />
         </button>
       )}>
       {close => options.map(o => (
@@ -206,36 +257,55 @@ export function Select({ value, options, onChange, width = 'auto', size = 'md', 
   )
 }
 
-// ── Shared screen header (kicker · title · sub · right) ──
-export function ScreenHeader({ kicker, title, sub, right, pad = '24px 32px 0' }) {
+export function ProgressBar({ pct, color, h = 5 }) {
+  const c = color || T.accent
   return (
-    <div style={{ padding: pad, flexShrink: 0 }}>
-      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 16 }}>
-        <div>
-          {kicker && <div style={{ fontSize: 11, color: V('text3'), letterSpacing: 1.4, fontWeight: 600, marginBottom: 4, fontFamily: V('font-mono') }}>{kicker}</div>}
-          <div style={{ fontSize: 30, fontWeight: 600, letterSpacing: -0.5, color: V('text') }}>{title}</div>
-        </div>
-        {sub && <span style={{ fontSize: 13, color: V('text3'), fontFamily: V('font-mono'), paddingBottom: 7 }}>{sub}</span>}
-        <div style={{ flex: 1 }} />
-        {right}
+    <div style={{ height: h, background: T.surface3, borderRadius: h, overflow: 'hidden', width: '100%' }}>
+      <div style={{ width: `${pct}%`, height: '100%', background: c, borderRadius: h, transition: 'width .3s' }} />
+    </div>
+  )
+}
+
+export const fmtTC = (sec, fps = 24) => {
+  const f = Math.floor((sec % 1) * fps)
+  const s = Math.floor(sec) % 60, m = Math.floor(sec / 60) % 60, h = Math.floor(sec / 3600)
+  const p = n => String(n).padStart(2, '0')
+  return `${p(h)}:${p(m)}:${p(s)}:${p(f)}`
+}
+
+export const fmt = sec => {
+  const s = Math.floor(sec) % 60, m = Math.floor(sec / 60)
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+}
+
+// ── Shared screen header — reference screen-record-export.jsx ScreenHeader ──
+export function ScreenHeader({ kicker, title, sub, right, pad = '26px 32px 16px' }) {
+  return (
+    <div style={{ padding: pad, flexShrink: 0, display: 'flex', alignItems: 'flex-end', gap: 16 }}>
+      <div>
+        <div style={{ fontSize: T.fs.micro, color: T.text3, letterSpacing: 1.4, fontWeight: 600, marginBottom: 4 }}>{kicker}</div>
+        <div style={{ fontSize: T.fs.xxl, fontWeight: 600, letterSpacing: -0.6 }}>{title}</div>
+        {sub && <div style={{ fontSize: T.fs.xs, color: T.text3, fontFamily: T.fontMono, marginTop: 5 }}>{sub}</div>}
       </div>
+      <div style={{ flex: 1 }} />
+      {right}
     </div>
   )
 }
 
 // ── Save status — Dot + label, shared by editor header ──
 const SAVE_STATUS = {
-  saved:   { color: V('success'), label: 'Sauvegardé' },
-  saving:  { color: V('text2'),   label: 'Sauvegarde…', pulse: true },
-  unsaved: { color: V('accent'),  label: 'Non sauvegardé' },
-  error:   { color: V('danger'),  label: 'Erreur' },
+  saved:   { color: T.success, label: 'Sauvegardé' },
+  saving:  { color: T.text2,   label: 'Sauvegarde…', pulse: true },
+  unsaved: { color: T.accent,  label: 'Non sauvegardé' },
+  error:   { color: T.danger,  label: 'Erreur' },
 }
 
 export function SaveStatus({ status, style }) {
   const st = SAVE_STATUS[status]
   if (!st) return null
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 11, color: st.color, whiteSpace: 'nowrap', flexShrink: 0, ...style }}>
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: T.fs.micro, color: st.color, whiteSpace: 'nowrap', flexShrink: 0, ...style }}>
       <Dot color={st.color} size={7} pulse={st.pulse} />{st.label}
     </span>
   )

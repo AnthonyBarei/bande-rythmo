@@ -1,5 +1,7 @@
 # Handoff — Adopt the redesign (`redesign.html`)
 
+> **Superseded on visuals by `design_handoff_redesign_v2/`** (README.md + TASKS.md + `reference/`). Where this document and v2 disagree on tokens, sizes, layout or styling, v2 wins. This file remains the feature checklist (§4).
+
 > **Companion docs:** `README_HANDOFF.md` (index) · `PRO_BR_HANDOFF.md` · `DOUBLAGE_IA_REVIEW.md` · `MEME_PLEX_HANDOFF.md` · `ASYNC_EXPORT_HANDOFF.md`.
 > **Visual target:** `redesign.html` + `redesign/*.jsx` — a fully-interactive prototype of the whole app in the new design language. Open it side-by-side while implementing.
 
@@ -19,17 +21,19 @@ The redesign is a **look + IA** target, mocked with static data. It is NOT a dro
 ## 1 · Design tokens (port verbatim to `index.css` / a theme module)
 
 ```
-bg #0a0a0c · bg2 #0e0e11 · surface #131318 · surface2 #1a1a20 · surface3 #23232b · hover #2a2a33
-border #26262e · border2 #33333d · border3 #44444f
-text #EDEDF0 · text2 #9C9CA6 · text3 #7A7A85 · text4 #565660   ← text3/4 bumped lighter for legibility
-accent #F5C518 (CSS var --accent, swappable; --accent-soft/-dim/-ring/-glow follow) · danger #E85D5D · success #5EC27C · info #7EC0FF · violet #A98BF0
-tracks (--track-1…4, mirrors config/tracks.js): #F5C518 · #7EC0FF · #F08AAF · #7ED4A8
-fonts: UI 'IBM Plex Sans' · mono 'JetBrains Mono' · band 'Caveat' (manuscrite)
+bg #0b0b0d · bg2 #101013 · surface #16161a · surface2 #1c1c21 · surface3 #24242b · hover #2a2a33 (app extra)
+border #26262d · border2 #32323b · border3 #3f3f4a
+text #ECECEF · text2 #A6A6AE · text3 #7A7A85 · text4 #565660
+accent #F5C518 (CSS var --accent, swappable) · accent-dim rgba(245,197,24,.13) · danger #E8595D · success #5EC27C · info #5AA9F0 · violet #A98BF0
+app-derived (follow the accent): --accent-soft .13 · --accent-ring .27 (≈ accent+44) · --accent-glow .33 (≈ accent+55) · --accent-hover #ffd83a (primary Btn hover)
+tracks (--track-1…4, mirrors config/tracks.js): LÉA #F5C518 · MARC #5AA9F0 · SARAH #F06AA0 · NOAH #5EC27C
+fonts: UI 'IBM Plex Sans' (body 14px, antialiased) · mono 'JetBrains Mono' · band fonts only: Caveat / Atkinson / Inter / Shantell
 radii: chip 6 · control 9 · card 14 · lg 18
+shadow 0 8px 30px rgba(0,0,0,.40) · shadowL 0 18px 60px rgba(0,0,0,.55)
 type scale: 11 / 12 / 13 / 14 / 16 / 20 / 26 / 34
 ```
 
-Source of truth: `frontend/src/index.css` `:root` (values tuned in place; `redesign/foundation.jsx` → `T` is the original reference).
+Source of truth: `design_handoff_redesign_v2/reference/redesign/foundation.jsx` → `T`, mirrored exactly in `frontend/src/index.css` `:root` and read by `ui.jsx` (`T.x` = `var(--x)`).
 
 ---
 

@@ -5,7 +5,8 @@ import ClipsLibrary from './components/ClipsLibrary'
 import DubbingWorkspace from './components/DubbingWorkspace'
 import MemeGenerator from './components/MemeGenerator'
 import Preferences from './components/Preferences'
-import { Icon, ICONS, Kbd } from './ui'
+import { T, Icon, ICONS, Btn, Kbd, Avatar } from './ui'
+import { useSettings } from './SettingsContext'
 import { ProgressProvider } from './ProgressContext'
 import { ToastProvider, useToast } from './ToastContext'
 import ShortcutsOverlay from './components/ShortcutsOverlay'
@@ -42,8 +43,32 @@ function saveNav(nav) {
   }
 }
 
+// Top bar — port of redesign shell.jsx TopBar.
+function TopBar({ accent, onCmd, onHelp, onActivity }) {
+  return (
+    <div style={{ height: 52, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 14, padding: '0 18px', borderBottom: `1px solid ${T.border}`, background: T.bg }}>
+      <span style={{ fontSize: T.fs.sm, fontWeight: 700, letterSpacing: 0.5 }}>BANDE RYTHMO <span style={{ color: T.text4, fontWeight: 400 }}>· studio</span></span>
+      <div style={{ flex: 1 }} />
+      <button data-rd onClick={onCmd} title="Palette de commandes (⌘K)" style={{
+        display: 'flex', alignItems: 'center', gap: 9, height: 36, padding: '0 12px', minWidth: 280,
+        background: T.surface, border: `1px solid ${T.border}`, borderRadius: 99, cursor: 'pointer', color: T.text3,
+      }}>
+        <Icon d={ICONS.search} size={15} stroke={T.text3} />
+        <span style={{ fontSize: T.fs.sm }}>Rechercher ou commande…</span>
+        <div style={{ flex: 1 }} />
+        <span style={{ display: 'flex', gap: 3 }}><Kbd>⌘</Kbd><Kbd>K</Kbd></span>
+      </button>
+      <Btn size="sm" icon={ICONS.keyboard} title="Raccourcis (?)" onClick={onHelp} />
+      <Btn size="sm" icon={ICONS.activity} title="Activité" onClick={onActivity} />
+      <div style={{ width: 1, height: 22, background: T.border }} />
+      <Avatar name="Studio" color={accent} size={30} />
+    </div>
+  )
+}
+
 function AppInner() {
   const toast = useToast()
+  const { settings } = useSettings()
   const [initialNav] = useState(loadNav)
   const [section, setSection] = useState(initialNav.section || 'import')
   const [video, setVideo] = useState(null)
@@ -224,34 +249,9 @@ function AppInner() {
 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
 
-        {/* Top bar — only over content; hidden on the full-bleed editor. Search right-aligned. */}
+        {/* Top bar — only over content; hidden on the full-bleed editor. */}
         {section !== 'dub' && (
-        <div style={{ height: 52, flexShrink: 0, background: 'var(--bg)', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', padding: '0 18px', gap: 12 }}>
-          <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: 0.5, color: 'var(--text)' }}>
-            BANDE RYTHMO <span style={{ color: 'var(--text4)', fontWeight: 400 }}>· studio</span>
-          </span>
-          <div style={{ flex: 1 }} />
-          <button onClick={() => setCmdOpen(true)} title="Palette de commandes (⌘K)"
-            style={{ display: 'flex', alignItems: 'center', gap: 9, height: 36, padding: '0 12px', minWidth: 300, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 99, cursor: 'pointer', color: 'var(--text3)' }}>
-            <Icon d={ICONS.search} size={15} />
-            <span style={{ fontSize: 13 }}>Rechercher ou commande…</span>
-            <div style={{ flex: 1 }} />
-            <span style={{ display: 'flex', gap: 3 }}>
-              <Kbd>⌘</Kbd>
-              <Kbd>K</Kbd>
-            </span>
-          </button>
-          <button onClick={() => setShortcutsOpen(true)} title="Raccourcis clavier (?)"
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 36, background: 'transparent', border: '1px solid transparent', color: 'var(--text2)', borderRadius: 9, cursor: 'pointer' }}>
-            <Icon d={ICONS.kbd} size={16} />
-          </button>
-          <button onClick={() => setSection('activity')} title="Activité — jobs & exports"
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 36, background: section === 'activity' ? 'var(--accent-soft)' : 'transparent', border: '1px solid transparent', color: section === 'activity' ? 'var(--accent)' : 'var(--text2)', borderRadius: 9, cursor: 'pointer' }}>
-            <Icon d={ICONS.activity} size={16} />
-          </button>
-          <div style={{ width: 1, height: 22, background: 'var(--border)' }} />
-          <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#0b0b0d', fontWeight: 700, fontSize: 12, fontFamily: 'var(--font-mono)' }}>S</div>
-        </div>
+          <TopBar accent={settings.accent} onCmd={() => setCmdOpen(true)} onHelp={() => setShortcutsOpen(true)} onActivity={() => navigate('activity')} />
         )}
 
         <main style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minWidth: 0 }}>
