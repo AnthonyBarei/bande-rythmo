@@ -206,6 +206,16 @@ def detect_scene_cuts(path: str, threshold: float = 0.4) -> list:
     return cuts
 
 
+def _rate(value) -> Optional[float]:
+    """ffprobe "num/den" frame rate → float (None when unknown or 0/0)."""
+    try:
+        num, _, den = str(value or "").partition("/")
+        fps = float(num) / float(den or 1)
+    except (ValueError, ZeroDivisionError):
+        return None
+    return round(fps, 3) if fps > 0 else None
+
+
 def probe_streams(path: str) -> dict:
     result = subprocess.run(
         ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", path],
@@ -226,7 +236,7 @@ def probe_streams(path: str) -> dict:
             parts.append(tags["title"])
         label = " · ".join(parts)
         if codec_type == "video":
-            video_streams.append({"relative_index": len(video_streams), "label": label})
+            video_streams.append({"relative_index": len(video_streams), "label": label, "fps": _rate(s.get("avg_frame_rate") or s.get("r_frame_rate"))})
         elif codec_type == "audio":
             audio_streams.append({"relative_index": len(audio_streams), "label": label})
     return {"video_streams": video_streams, "audio_streams": audio_streams}
