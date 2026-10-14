@@ -214,7 +214,8 @@ def main():
     profile = tempfile.mkdtemp(prefix="br-shot-")
     proc = subprocess.Popen([
         CHROME, "--headless=new", f"--remote-debugging-port={PORT}", f"--user-data-dir={profile}",
-        "--no-first-run", "--no-default-browser-check", "--hide-scrollbars", f"--window-size={W},{H}",
+        "--no-first-run", "--no-default-browser-check",
+        "--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream", "--hide-scrollbars", f"--window-size={W},{H}",
         "about:blank",
     ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
