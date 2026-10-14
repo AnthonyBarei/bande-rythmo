@@ -289,7 +289,7 @@ function AppInner() {
             onSetProject={handleSetProject}
           />
         )}
-        {section === 'activity' && <ActivityCenter />}
+        {section === 'activity' && <ActivityCenter onOpenClip={handleDub} />}
         {section === 'dub' && activeClip && (
           <ExportScreenContext.Provider value={exportScreen ? { slot: exportSlot, onClose: closeExport, clip: activeClip } : null}>
             <div style={exportScreen

@@ -25,6 +25,8 @@ import { filenameFromDisposition, saveBlob } from './download'
 */
 
 const ProgressCtx = createContext(null)
+const HISTORY_CAP = 50
+
 export const useProgress = () => useContext(ProgressCtx)
 
 const POLL_MS = 800
@@ -44,6 +46,8 @@ function fmtEta(s) {
 
 export function ProgressProvider({ children }) {
   const [jobs, setJobs] = useState([])
+  // Session log of finished jobs — Activité lists them after the toast is gone.
+  const [history, setHistory] = useState([])
   const handlers = useRef(new Map()) // key → { jobId, settled, callbacks… } (sync source of truth)
   const sockets = useRef(new Map())  // key → WebSocket
   const timers = useRef(new Map())   // key → poll timeout id
@@ -87,6 +91,14 @@ export function ProgressProvider({ children }) {
     return !!h && h.jobId === jobId && !h.settled
   }, [])
 
+  const record = useCallback((key, h, status) => {
+    setHistory(prev => [{ key, kind: h.kind, title: h.title, clipId: h.clipId, status, finishedAt: Date.now() }, ...prev].slice(0, HISTORY_CAP))
+  }, [])
+
+  const forget = useCallback((key) => {
+    setHistory(prev => prev.filter(j => j.key !== key))
+  }, [])
+
   const finalize = useCallback(async (key, jobId, status, error) => {
     if (!isCurrent(key, jobId)) return
     const h = handlers.current.get(key)
@@ -110,6 +122,7 @@ export function ProgressProvider({ children }) {
         } else {
           h.onDone?.(await rr.blob())
         }
+        record(key, h, 'done')
         setTimeout(() => dismiss(key), 2500)
       } catch (e) {
         setJobs(prev => prev.map(j => j.key === key ? { ...j, status: 'error', error: e.message || 'Résultat indisponible' } : j))
@@ -117,12 +130,13 @@ export function ProgressProvider({ children }) {
       }
     } else if (status === 'cancelled') {
       h.onCancel?.()
+      record(key, h, 'cancelled')
       setTimeout(() => dismiss(key), 1200)
     } else if (status === 'error') {
       h.onError?.(new Error(error || 'Job failed'))
       // Keep visible so user can hit "Réessayer".
     }
-  }, [dismiss, stopAll, isCurrent])
+  }, [dismiss, stopAll, isCurrent, record])
 
   /* Polling fallback. Recursive setTimeout instead of setInterval so a slow
      network turn doesn't stack overlapping requests. */
@@ -196,6 +210,7 @@ export function ProgressProvider({ children }) {
       key, jobId: opts.jobId,
       kind: opts.kind || 'job',
       title: opts.title || 'Tâche',
+      clipId: opts.clipId || null,
       stage: opts.stage || 'Démarrage…',
       pct: 0, eta: null,
       status: 'running', error: null,
@@ -211,6 +226,7 @@ export function ProgressProvider({ children }) {
       retry: opts.retry || null,
       kind: opts.kind,
       title: opts.title,
+      clipId: opts.clipId || null,
     })
     setJobs(prev => [...prev, entry])
     openSocket(key, opts.jobId)
@@ -273,7 +289,7 @@ export function ProgressProvider({ children }) {
     }
   }, [])
 
-  const value = { start, jobs, cancelByKey, dismiss, retry }
+  const value = { start, jobs, history, forget, cancelByKey, dismiss, retry }
 
   return (
     <ProgressCtx.Provider value={value}>

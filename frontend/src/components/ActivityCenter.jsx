@@ -49,7 +49,7 @@ const DONE_CAP = 10
 const exportTime = e => Date.parse(e.created_at) || 0
 
 export default function ActivityCenter({ onOpenClip }) {
-  const { jobs, cancelByKey, dismiss, retry } = useProgress()
+  const { jobs, history, forget, cancelByKey, dismiss, retry } = useProgress()
   const [exports, setExports] = useState([])
   const [clips, setClips] = useState({})
   const [showAll, setShowAll] = useState(false)
@@ -76,14 +76,14 @@ export default function ActivityCenter({ onOpenClip }) {
 
   const running = useMemo(() => jobs.filter(j => j.status === 'running'), [jobs])
   const failed = useMemo(() => jobs.filter(j => j.status === 'error'), [jobs])
-  const finished = useMemo(() => jobs.filter(j => j.status === 'done' || j.status === 'cancelled'), [jobs])
+  const finished = history
 
-  // Newest first: session jobs (latest started last), then the persisted history.
+  // Newest first: this session's finished jobs, then the persisted export history.
   const doneRows = useMemo(() => {
     const sorted = [...exports].sort((a, b) => exportTime(b) - exportTime(a))
     const seen = new Set()
     return [
-      ...[...finished].reverse().map(j => ({ type: 'job', key: j.key, j })),
+      ...finished.map(j => ({ type: 'job', key: j.key, j })),
       ...sorted.map(e => {
         const fileKey = `${e.clip_id}|${e.filename}`
         const latest = !seen.has(fileKey)
@@ -133,7 +133,7 @@ export default function ActivityCenter({ onOpenClip }) {
           <GroupLabel color={T.success}>TERMINÉ · {doneCount}</GroupLabel>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {visibleDone.map(r => r.type === 'job'
-              ? <JobDoneRow key={r.key} j={r.j} clip={clips[r.j.clipId]} onOpenClip={onOpenClip} onDismiss={() => dismiss(r.j.key)} />
+              ? <JobDoneRow key={r.key} j={r.j} clip={clips[r.j.clipId]} onOpenClip={onOpenClip} onDismiss={() => forget(r.j.key)} />
               : <ExportRow key={r.key} e={r.e} clip={clips[r.e.clip_id]?.name} latest={r.latest} />)}
           </div>
           {hiddenCount > 0 && (
