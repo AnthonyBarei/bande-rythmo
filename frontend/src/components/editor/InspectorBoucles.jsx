@@ -1,20 +1,26 @@
 import React from 'react'
-import { Btn, ICONS } from '../../ui'
+import { T, alpha, Btn, ICONS } from '../../ui'
 import { fmtSMPTE as fmtTC } from '../../utils/timecode'
 
-export default function InspectorBoucles({ boucles, onAdd, onRemove, onSeek, clipFps }) {
+// Boucles tab — reference Inspector › LoopPanel.
+export default function InspectorBoucles({ boucles, subtitles, onAdd, onRemove, onSeek, clipFps }) {
   return (
-    <div style={{ padding: 16, overflow: 'auto' }}>
-      <Btn variant="primary" full icon={ICONS.plus} onClick={onAdd} style={{ marginBottom: 12 }}>
-        Boucle au curseur
-      </Btn>
-      {boucles.length === 0 ? (
-        <p style={{ fontSize: 12, color: 'var(--text3)' }}>Aucune boucle. Placez le curseur et ajoutez.</p>
-      ) : boucles.map(b => (
-        <div key={b.number} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 4px 2px 10px', marginBottom: 4, background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 8 }}>
-          <button onClick={() => onSeek(b.start)} style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontWeight: 700, fontFamily: 'var(--font-mono)', fontSize: 12, minHeight: 32, padding: 0 }}>B{b.number}</button>
-          <span style={{ flex: 1, fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>{fmtTC(b.start, clipFps)} — {fmtTC(b.end, clipFps)} · {(b.end - b.start).toFixed(1)}s</span>
-          <Btn size="sm" danger icon={ICONS.close} onClick={() => onRemove(b.number)} title="Supprimer" />
+    <div style={{ padding: 14 }}>
+      <Btn variant="primary" full icon={ICONS.plus} onClick={onAdd} style={{ marginBottom: 14 }}>Boucle au curseur</Btn>
+      <div style={{ fontSize: T.fs.micro, color: T.text3, letterSpacing: 1.2, fontWeight: 700, marginBottom: 9 }}>BOUCLES · {boucles.length}</div>
+      {boucles.length === 0 && (
+        <div style={{ fontSize: T.fs.xs, color: T.text3 }}>Aucune boucle. Placez le curseur et ajoutez — au milieu d'une boucle, elle est scindée.</div>
+      )}
+      {boucles.map(l => (
+        <div key={l.number} onClick={() => onSeek(l.start)} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '10px 12px', marginBottom: 6, background: alpha(T.accent, '0e'), border: `1px solid ${alpha(T.accent, '33')}`, borderRadius: T.r.ctl, cursor: 'pointer' }}>
+          <div style={{ width: 28, height: 28, borderRadius: 7, background: alpha(T.accent, '22'), color: T.accent, fontWeight: 800, fontFamily: T.fontMono, fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>B{l.number}</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: T.fs.sm, color: T.text, fontFamily: T.fontMono }}>{fmtTC(l.start, clipFps)} → {fmtTC(l.end, clipFps)}</div>
+            <div style={{ fontSize: 10.5, color: T.text3 }}>{(l.end - l.start).toFixed(1)}s · {subtitles.filter(x => x.start >= l.start && x.end <= l.end).length} répliques</div>
+          </div>
+          <span onClick={e => e.stopPropagation()} style={{ display: 'inline-flex' }}>
+            <Btn size="sm" icon={ICONS.trash} onClick={() => onRemove(l.number)} title="Supprimer la boucle" />
+          </span>
         </div>
       ))}
     </div>

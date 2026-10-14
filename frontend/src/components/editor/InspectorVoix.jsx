@@ -1,7 +1,11 @@
 import React from 'react'
-import { Icon, ICONS, SectionLabel } from '../../ui'
+import { T, alpha, Avatar, Btn, Icon, ICONS, Kbd } from '../../ui'
 import { TRACK_COLORS } from '../../config/tracks'
 
+const hexOf = (charMap, char) => TRACK_COLORS[(charMap[char || ''] ?? 0) % TRACK_COLORS.length].hex
+const sectionLabel = { fontSize: T.fs.micro, color: T.text3, letterSpacing: 1.2, fontWeight: 700, marginBottom: 9 }
+
+// App-only: the focused character's comédien, stats and upcoming queue.
 function FocusCharacter({
   chars, charMap, subtitles, activeSubtitle, selectedIdx, setSelectedIdx,
   takes, bandNow, comediens, onSetComedien, onRecord, onSeek,
@@ -9,8 +13,7 @@ function FocusCharacter({
   const focusChar = activeSubtitle?.character
     || (selectedIdx != null && subtitles[selectedIdx]?.character)
     || chars[0]
-  const trackIdx = charMap[focusChar] ?? 0
-  const color = TRACK_COLORS[trackIdx % TRACK_COLORS.length]
+  const hex = hexOf(charMap, focusChar)
   const charIndices = subtitles.map((s, i) => ({ s, i })).filter(({ s }) => (s.character || '') === focusChar)
   const charSubs = charIndices.map(({ s }) => s)
   const totalDur = charSubs.reduce((sum, s) => sum + s.end - s.start, 0)
@@ -26,103 +29,76 @@ function FocusCharacter({
     ['Prises', `${recordedCount} / ${charSubs.length}`],
   ]
   return (
-    <div style={{ padding: 16, overflow: 'auto', flex: 1 }}>
-      <div style={{ padding: 14, background: color.hex + '14', border: `1px solid ${color.hex}40`, borderRadius: 10 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-          <div style={{ width: 44, height: 44, borderRadius: '50%', flexShrink: 0, background: color.hex + '22', border: `2px solid ${color.hex}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 700, color: color.hex }}>
-            {focusChar[0].toUpperCase()}
-          </div>
+    <div style={{ marginTop: 18 }}>
+      <div style={sectionLabel}>FOCUS</div>
+      <div style={{ padding: 12, background: alpha(hex, '0e'), border: `1px solid ${alpha(hex, '33')}`, borderRadius: T.r.ctl }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+          <Avatar name={focusChar} color={hex} size={34} ring />
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 16, fontWeight: 700, color: color.hex }}>{focusChar}</div>
+            <div style={{ fontSize: T.fs.sm, fontWeight: 600, color: hex }}>{focusChar}</div>
             <input
               value={comediens[focusChar] || ''}
               onChange={e => onSetComedien(focusChar, e.target.value)}
               placeholder="Comédien·ne — nommer…"
-              style={{ background: 'none', border: 'none', borderBottom: '1px dashed var(--border2)', color: 'var(--text2)', fontSize: 11, padding: '2px 0', width: '100%', outline: 'none' }}
+              style={{ background: 'none', border: 'none', borderBottom: `1px dashed ${T.border2}`, color: T.text2, fontSize: T.fs.micro, fontFamily: T.fontUI, padding: '2px 0', width: '100%', outline: 'none' }}
             />
           </div>
+          <Btn size="sm" icon={ICONS.rec} danger onClick={onRecord} title="Enregistrer la prise (R)" style={{ background: T.danger, color: '#fff' }} />
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
           {stats.map(([k, v]) => (
-            <div key={k} style={{ padding: '7px 9px', background: 'var(--surface2)', borderRadius: 5 }}>
-              <SectionLabel style={{ textTransform: 'uppercase', marginBottom: 3 }}>{k}</SectionLabel>
-              <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--text)', fontFamily: 'var(--font-mono)' }}>{v}</div>
+            <div key={k} style={{ padding: '7px 9px', background: T.surface2, borderRadius: 7 }}>
+              <div style={{ fontSize: 10, color: T.text3, letterSpacing: 1, fontWeight: 700, textTransform: 'uppercase', marginBottom: 2 }}>{k}</div>
+              <div style={{ fontSize: T.fs.base, fontWeight: 700, color: T.text, fontFamily: T.fontMono }}>{v}</div>
             </div>
           ))}
         </div>
-        <button
-          onClick={onRecord}
-          style={{ marginTop: 10, width: '100%', minHeight: 36, display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', background: 'var(--danger)', color: '#fff', border: 'none', borderRadius: 6, fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
-          <Icon d={ICONS.rec} size={12} fill="#fff" /> Enregistrer la prise
-          <span style={{ marginLeft: 'auto', fontSize: 11, fontFamily: 'var(--font-mono)', background: 'rgba(0,0,0,0.25)', padding: '1px 5px', borderRadius: 3 }}>R</span>
-        </button>
       </div>
-
-      <SectionLabel style={{ textTransform: 'uppercase', marginTop: 16, marginBottom: 8 }}>File d'attente</SectionLabel>
+      <div style={{ ...sectionLabel, marginTop: 14 }}>FILE D'ATTENTE</div>
       {queue.length === 0 ? (
-        <div style={{ fontSize: 12, color: 'var(--text3)' }}>Aucune réplique à venir.</div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {queue.map(({ s, i }, qi) => (
-            <button key={i} onClick={() => { onSeek(s.start); setSelectedIdx(i) }}
-              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 9px', minHeight: 32, background: 'var(--surface)', border: `1px solid ${recorded.has(i) ? color.hex + '40' : 'var(--border)'}`, borderRadius: 6, cursor: 'pointer', textAlign: 'left' }}>
-              <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--text3)', flexShrink: 0 }}>{String(i + 1).padStart(2, '0')}</span>
-              {qi === 0 && <span style={{ fontSize: 11, fontWeight: 700, color: color.hex, background: color.hex + '22', padding: '1px 5px', borderRadius: 3, flexShrink: 0 }}>SUIVANT</span>}
-              <span style={{ flex: 1, minWidth: 0, fontSize: 12, color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.text || '∅'}</span>
-              {recorded.has(i) && <Icon d={ICONS.check} size={12} stroke={color.hex} />}
-            </button>
-          ))}
+        <div style={{ fontSize: T.fs.xs, color: T.text3 }}>Aucune réplique à venir.</div>
+      ) : queue.map(({ s, i }, qi) => (
+        <div key={i} onClick={() => { onSeek(s.start); setSelectedIdx(i) }}
+          style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', marginBottom: 4, background: T.surface2, border: `1px solid ${recorded.has(i) ? alpha(hex, '44') : T.border}`, borderRadius: T.r.ctl, cursor: 'pointer' }}>
+          <span style={{ fontSize: 10, fontFamily: T.fontMono, color: T.text3, flexShrink: 0 }}>{String(i + 1).padStart(2, '0')}</span>
+          {qi === 0 && <span style={{ fontSize: 9.5, fontWeight: 700, color: hex, letterSpacing: 1 }}>SUIVANT</span>}
+          <span style={{ flex: 1, minWidth: 0, fontSize: T.fs.xs, color: T.text2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.text || '∅'}</span>
+          {recorded.has(i) && <Icon d={ICONS.check} size={12} stroke={hex} />}
         </div>
-      )}
+      ))}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, fontSize: 10, color: T.text4 }}><Kbd>R</Kbd> enregistrer la réplique</div>
     </div>
   )
 }
 
-function Distribution({ charList, charMap, subtitles, clipDuration }) {
-  return (
-    <div style={{ padding: '0 16px 16px', overflow: 'auto' }}>
-      <SectionLabel style={{ textTransform: 'uppercase', margin: '4px 0 10px' }}>Distribution</SectionLabel>
-      {charList.length === 0 ? (
-        <p style={{ color: 'var(--text3)', fontSize: 13 }}>Aucune réplique.</p>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          {charList.map(char => {
-            const trackIdx = charMap[char] ?? 0
-            const color = TRACK_COLORS[trackIdx % TRACK_COLORS.length]
-            const charSubs = subtitles.filter(s => (s.character || '') === char)
-            const totalDur = charSubs.reduce((sum, s) => sum + s.end - s.start, 0)
-            const pct = Math.min(100, clipDuration > 0 ? (totalDur / clipDuration) * 100 : 0)
-            return (
-              <div key={char || '_default'} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div style={{ width: 28, height: 28, borderRadius: '50%', flexShrink: 0, background: color.hex + '22', border: `2px solid ${color.hex}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: color.hex }}>
-                  {(char || '?')[0].toUpperCase()}
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
-                    <span style={{ color: color.hex, fontWeight: 600 }}>{char || '(défaut)'}</span>
-                    <span style={{ color: 'var(--text3)', fontFamily: 'var(--font-mono)', fontSize: 11 }}>{charSubs.length} répl. · {totalDur.toFixed(1)}s</span>
-                  </div>
-                  <div style={{ height: 6, background: 'var(--surface2)', borderRadius: 3, overflow: 'hidden' }}>
-                    <div style={{ height: '100%', width: `${pct}%`, background: color.hex, opacity: 0.85, borderRadius: 3, transition: 'width 0.3s' }} />
-                  </div>
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      )}
-    </div>
-  )
-}
-
+// Voix tab — reference Inspector › VoixPanel.
 export default function InspectorVoix(props) {
-  const chars = props.charList.filter(c => c)
+  const { charList, charMap, subtitles, clipDuration, onAddCharacter } = props
+  const chars = charList.filter(c => c)
   return (
-    <>
-      {chars.length === 0
-        ? <div style={{ padding: 16 }}><p style={{ color: 'var(--text3)', fontSize: 13 }}>Aucun personnage défini.</p></div>
-        : <FocusCharacter {...props} chars={chars} />}
-      <Distribution charList={props.charList} charMap={props.charMap} subtitles={props.subtitles} clipDuration={props.clipDuration} />
-    </>
+    <div style={{ padding: 14 }}>
+      {charList.length === 0 && <div style={{ fontSize: T.fs.xs, color: T.text3, marginBottom: 14 }}>Aucune réplique.</div>}
+      {charList.map(char => {
+        const hex = hexOf(charMap, char)
+        const subs = subtitles.filter(s => (s.character || '') === char)
+        const dur = subs.reduce((a, s) => a + (s.end - s.start), 0)
+        const pct = Math.min(100, clipDuration > 0 ? (dur / clipDuration) * 100 : 0)
+        return (
+          <div key={char || '_default'} style={{ marginBottom: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 6 }}>
+              <Avatar name={char || '?'} color={hex} size={26} />
+              <span style={{ fontSize: T.fs.sm, fontWeight: 600 }}>{char || '(défaut)'}</span>
+              <div style={{ flex: 1 }} />
+              <span style={{ fontSize: T.fs.xs, color: T.text3, fontFamily: T.fontMono }}>{subs.length} répl · {dur.toFixed(1)}s</span>
+            </div>
+            <div style={{ height: 6, background: T.surface2, borderRadius: 3 }}>
+              <div style={{ width: `${pct}%`, height: '100%', background: hex, borderRadius: 3, opacity: 0.8 }} />
+            </div>
+          </div>
+        )
+      })}
+      <Btn variant="outline" full icon={ICONS.plus} onClick={onAddCharacter} style={{ marginTop: 6 }}>Nouveau personnage</Btn>
+      {chars.length > 0 && <FocusCharacter {...props} chars={chars} />}
+    </div>
   )
 }

@@ -1,15 +1,16 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Btn, ICONS } from '../ui'
+import { T, Btn, Icon, ICONS } from '../ui'
 
 // Dubbing lexicon — per-project term glossary (translation + pronunciation).
 // Scoped to the clip's project; project='' entries are global (shown everywhere).
-export default function LexiconPanel({ project = '' }) {
+export default function LexiconPanel({ project = '', translateAvailable = false, translateTarget = 'fr' }) {
   const [entries, setEntries] = useState([])
   const [search, setSearch] = useState('')
   const [term, setTerm] = useState('')
   const [translation, setTranslation] = useState('')
   const [phonetic, setPhonetic] = useState('')
   const [busy, setBusy] = useState(false)
+  const [translating, setTranslating] = useState(false)
   const [error, setError] = useState(null)
 
   const refresh = useCallback(async () => {
@@ -52,69 +53,68 @@ export default function LexiconPanel({ project = '' }) {
     }
   }
 
+  async function autoTranslate() {
+    const t = term.trim()
+    if (!t || translating) return
+    setTranslating(true)
+    setError(null)
+    try {
+      const r = await fetch('/api/translate', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ texts: [t], target: translateTarget, source: 'auto' }),
+      })
+      const data = await r.json()
+      if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`)
+      setTranslation(data.translations?.[0] || '')
+    } catch (e) {
+      setError('Traduction impossible : ' + e.message)
+    } finally { setTranslating(false) }
+  }
+
   const filtered = search.trim()
     ? entries.filter(e => (e.term + ' ' + e.translation).toLowerCase().includes(search.trim().toLowerCase()))
     : entries
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      {/* Quick-add */}
-      <div style={{ padding: 10, borderBottom: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}>
-        <div style={{ display: 'flex', gap: 6 }}>
-          <input value={term} onChange={e => setTerm(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') add() }}
-            placeholder="Terme" style={inp} />
-          <input value={translation} onChange={e => setTranslation(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') add() }}
-            placeholder="Traduction" style={inp} />
-        </div>
-        <div style={{ display: 'flex', gap: 6 }}>
-          <input value={phonetic} onChange={e => setPhonetic(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') add() }}
-            placeholder="Prononciation" style={inp} />
-          <button onClick={add} disabled={busy || !term.trim()}
-            style={{ padding: '6px 14px', minHeight: 32, background: term.trim() ? 'var(--accent)' : 'var(--surface3)', color: term.trim() ? '#0b0b0d' : 'var(--text4)', fontWeight: 600, fontSize: 12, border: 'none', borderRadius: 6, cursor: term.trim() ? 'pointer' : 'default', flexShrink: 0 }}>
-            + Ajouter
-          </button>
-        </div>
-        <span style={{ fontSize: 11, color: 'var(--text4)' }}>
-          {project ? `Projet « ${project} » + termes globaux` : 'Termes globaux (aucun projet)'}
-        </span>
-        {error && <span style={{ fontSize: 11, color: 'var(--danger)' }}>{error}</span>}
+    <div style={{ padding: 12 }}>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+        <input value={term} onChange={e => setTerm(e.target.value)} onKeyDown={e => e.key === 'Enter' && add()} placeholder="Terme" style={inp} />
+        <input value={translation} onChange={e => setTranslation(e.target.value)} onKeyDown={e => e.key === 'Enter' && add()} placeholder="Traduction" style={inp} />
+        <Btn size="sm" variant="primary" icon={ICONS.plus} onClick={add} disabled={busy || !term.trim()} title="Ajouter" />
       </div>
-
-      {/* Search */}
-      <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-        <input value={search} onChange={e => setSearch(e.target.value)}
-          placeholder="Rechercher un terme…" style={{ ...inp, width: '100%' }} />
+      <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+        <input value={phonetic} onChange={e => setPhonetic(e.target.value)} onKeyDown={e => e.key === 'Enter' && add()} placeholder="Prononciation" style={inp} />
       </div>
-
-      {/* List */}
-      <div style={{ flex: 1, overflow: 'auto', padding: 8 }}>
-        {filtered.length === 0 ? (
-          <p style={{ color: 'var(--text3)', fontSize: 12, padding: 16, textAlign: 'center' }}>
-            {entries.length === 0 ? 'Aucun terme — ajoutez votre premier ci-dessus.' : 'Aucun résultat.'}
-          </p>
-        ) : filtered.map(e => (
-          <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 8px', borderRadius: 6, marginBottom: 3, background: 'var(--surface2)', border: '1px solid var(--border)' }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-                <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text)' }}>{e.term}</span>
-                {e.translation && <span style={{ fontSize: 11.5, color: 'var(--accent)' }}>→ {e.translation}</span>}
-                {!e.project && <span style={{ fontSize: 11, color: 'var(--text4)', border: '1px solid var(--border2)', borderRadius: 3, padding: '0 4px' }}>global</span>}
-              </div>
-              {e.phonetic && <div style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)', marginTop: 1 }}>/{e.phonetic}/</div>}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+        {translateAvailable && (
+          <Btn size="sm" variant="outline" icon={ICONS.globe} onClick={autoTranslate} disabled={!term.trim() || translating}>
+            {translating ? 'Traduction…' : 'Traduire auto'}
+          </Btn>
+        )}
+        <span style={{ fontSize: 10, color: T.text4 }}>{project ? `Projet « ${project} » + termes globaux` : 'Termes globaux (aucun projet)'}</span>
+      </div>
+      {error && <div style={{ fontSize: 11, color: T.danger, marginBottom: 8 }}>{error}</div>}
+      <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Rechercher un terme…" style={{ ...inp, width: '100%', marginBottom: 8 }} />
+      {filtered.length === 0 ? (
+        <p style={{ color: T.text3, fontSize: T.fs.xs, padding: 16, textAlign: 'center' }}>
+          {entries.length === 0 ? 'Aucun terme — ajoutez votre premier ci-dessus.' : 'Aucun résultat.'}
+        </p>
+      ) : filtered.map(e => (
+        <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 10px', marginBottom: 5, background: T.surface2, border: `1px solid ${T.border}`, borderRadius: T.r.ctl }}>
+          <Icon d={ICONS.book} size={15} stroke={T.text3} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 7 }}>
+              <span style={{ fontSize: T.fs.sm, fontWeight: 600 }}>{e.term}</span>
+              {e.translation && <span style={{ fontSize: T.fs.xs, color: T.accent }}>→ {e.translation}</span>}
+              {!e.project && <span style={{ fontSize: 8.5, color: T.text4, border: `1px solid ${T.border2}`, borderRadius: 3, padding: '0 4px' }}>global</span>}
             </div>
-            <Btn size="sm" icon={ICONS.close} title="Supprimer" onClick={() => remove(e.id)} />
+            {e.phonetic && <div style={{ fontSize: 10.5, color: T.text3, fontFamily: T.fontMono, marginTop: 1 }}>/{e.phonetic}/</div>}
           </div>
-        ))}
-      </div>
+          <Btn size="sm" icon={ICONS.trash} title="Supprimer" onClick={() => remove(e.id)} />
+        </div>
+      ))}
     </div>
   )
 }
 
-const inp = {
-  flex: 1, minWidth: 0, fontSize: 12, padding: '6px 8px',
-  background: 'var(--surface3)', color: 'var(--text)',
-  border: '1px solid var(--border2)', borderRadius: 6, outline: 'none',
-}
+const inp = { flex: 1, minWidth: 0, fontSize: 12, padding: '7px 9px', background: T.bg2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 7, outline: 'none', fontFamily: T.fontUI }

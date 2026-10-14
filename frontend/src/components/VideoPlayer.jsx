@@ -25,6 +25,7 @@ export default function VideoPlayer({
   outPoint = 0,
   onInChange,
   onOutChange,
+  controls = true,  // false → video only (no transport bar); click/Space/seek API still work
 }) {
   const internalRef = useRef(null)
   const ref = externalRef || internalRef
@@ -193,7 +194,7 @@ export default function VideoPlayer({
       )}
 
       {/* Transport bar */}
-      <div style={{
+      {controls && <div style={{
         background: 'var(--bg2)', borderTop: '1px solid var(--border)',
         padding: '5px 12px', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0,
       }}>
@@ -241,7 +242,7 @@ export default function VideoPlayer({
             <Icon d={muted ? ICONS.mute : ICONS.volume} size={13} />
           </button>
         )}
-      </div>
+      </div>}
     </div>
   )
 }

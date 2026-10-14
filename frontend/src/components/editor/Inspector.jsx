@@ -1,5 +1,5 @@
 import React from 'react'
-import { Icon, ICONS, Kbd } from '../../ui'
+import { T, alpha, Avatar, Btn, Dot, Icon, ICONS, Kbd, MenuItem, MenuLabel, MenuSep, Popover } from '../../ui'
 import { TRACK_COLORS } from '../../config/tracks'
 import { fmtSMPTE as fmtTC } from '../../utils/timecode'
 import InspectorRepliques from './InspectorRepliques'
@@ -8,75 +8,99 @@ import InspectorDetection from './InspectorDetection'
 import InspectorBoucles from './InspectorBoucles'
 import InspectorLexique from './InspectorLexique'
 
-const TABS = [['repliques', 'Répliques'], ['voix', 'Voix'], ['detection', 'Détection'], ['boucles', 'Boucles'], ['lexique', 'Lexique']]
+const TABS = [
+  { id: 'repliques', label: 'Répliques' },
+  { id: 'voix', label: 'Voix' },
+  { id: 'detection', label: 'Détection' },
+  { id: 'boucles', label: 'Boucles' },
+  { id: 'lexique', label: 'Lexique' },
+]
 
-// Active character card — always visible (selected-or-active réplique).
-function TargetCard({ target, subIdx, charMap, clipFps, showRecorder, onToggleRecorder }) {
-  const trackIdx = target ? (charMap[target.character || ''] ?? 0) : 0
-  const color = TRACK_COLORS[trackIdx % TRACK_COLORS.length]
+const hexOf = (charMap, char) => TRACK_COLORS[(charMap[char || ''] ?? 0) % TRACK_COLORS.length].hex
+
+// Active réplique header — reference Inspector › "active réplique header".
+function TargetHeader({ target, subIdx, charMap, charList, clipFps, showRecorder, onToggleRecorder, onSetCharacter, onNewCharacter }) {
+  const hex = target ? hexOf(charMap, target.character) : T.text4
   return (
-    <div style={{ flexShrink: 0, padding: '13px 16px', background: target ? color.hex + '0c' : 'var(--surface)', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 11 }}>
-      <div style={{ width: 38, height: 38, borderRadius: '50%', flexShrink: 0, border: `2px solid ${target ? color.hex : 'var(--border2)'}`, background: target ? color.hex + '22' : 'var(--surface2)', boxShadow: target ? `0 0 0 2px ${color.hex}33` : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 700, color: target ? color.hex : 'var(--text4)', fontFamily: 'var(--font-mono)' }}>
-        {target ? (target.character || '?')[0].toUpperCase() : '—'}
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 7 }}>
-          <span style={{ fontSize: 16, fontWeight: 700, color: target ? color.hex : 'var(--text4)' }}>{target ? (target.character || '(défaut)') : 'Aucune réplique'}</span>
-          {target && <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', letterSpacing: 1 }}>· RÉPLIQUE {subIdx + 1}</span>}
-        </div>
-        <div style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>
-          {target
-            ? `${fmtTC(target.start, clipFps)} → ${fmtTC(target.end, clipFps)} · ${(target.end - target.start).toFixed(1)}s`
-            : 'Sélectionnez ou lancez la lecture'}
-        </div>
-      </div>
-      <button
-        onClick={onToggleRecorder}
-        disabled={!target}
-        title={target ? 'Enregistrer (R)' : 'Aucune réplique'}
-        style={{ width: 36, height: 36, borderRadius: 9, flexShrink: 0, background: target ? 'var(--danger)' : 'var(--surface2)', boxShadow: target && showRecorder ? '0 0 0 3px var(--danger-soft)' : 'none', border: 'none', cursor: target ? 'pointer' : 'not-allowed', opacity: target ? 1 : 0.4, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-      >
-        <Icon d={ICONS.rec} size={13} fill="#fff" />
-      </button>
+    <div style={{ padding: '13px 16px', borderBottom: `1px solid ${T.border}`, background: target ? alpha(hex, '0c') : 'transparent', display: 'flex', alignItems: 'center', gap: 11, flexShrink: 0 }}>
+      <Popover width={200} trigger={(o, tog) => (
+        <button onClick={() => { if (target) tog() }} title={target ? 'Réassigner le personnage' : 'Aucune réplique'}
+          style={{ display: 'flex', alignItems: 'center', gap: 11, background: 'transparent', border: 'none', cursor: target ? 'pointer' : 'default', padding: 0, flex: 1, minWidth: 0 }}>
+          <Avatar name={target ? (target.character || '?') : '—'} color={hex} size={38} ring={!!target} />
+          <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 7 }}>
+              <span style={{ fontSize: T.fs.md, fontWeight: 700, color: hex }}>{target ? (target.character || '(défaut)') : 'Aucune réplique'}</span>
+              {target && <Icon d={ICONS.chevron} size={12} stroke={T.text3} />}
+              {target && <span style={{ fontSize: 9.5, color: T.text3, letterSpacing: 1, fontWeight: 600 }}>· RÉPLIQUE {subIdx + 1}</span>}
+            </div>
+            <div style={{ fontSize: 10.5, color: T.text3, fontFamily: T.fontMono }}>
+              {target
+                ? `${fmtTC(target.start, clipFps)} → ${fmtTC(target.end, clipFps)} · ${(target.end - target.start).toFixed(1)}s`
+                : 'Sélectionnez ou lancez la lecture'}
+            </div>
+          </div>
+        </button>
+      )}>
+        {(close) => (<>
+          <MenuLabel>Personnage de la réplique</MenuLabel>
+          {charList.map(c => {
+            const ch = hexOf(charMap, c)
+            return (
+              <MenuItem key={c || '_def'} active={c === (target?.character || '')} color={ch} onClick={() => { onSetCharacter(c); close() }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Dot color={ch} size={8} />{c || '(défaut)'}</span>
+              </MenuItem>
+            )
+          })}
+          <MenuSep />
+          <MenuItem icon={ICONS.plus} onClick={() => { close(); onNewCharacter() }}>Nouveau personnage…</MenuItem>
+        </>)}
+      </Popover>
+      <Btn size="sm" icon={ICONS.rec} danger disabled={!target} title={showRecorder ? 'Masquer l\'enregistreur' : 'Enregistrer (R)'} onClick={onToggleRecorder}
+        style={{ background: T.danger, color: '#fff', boxShadow: showRecorder ? `0 0 0 3px ${alpha(T.danger, '33')}` : 'none' }} />
     </div>
   )
 }
 
+// Inspector — reference screen-editor.jsx › Inspector (fixed 392px).
 export default function Inspector({
-  width, rightTab, setRightTab,
-  target, subIdx, charMap, clipFps, showRecorder, onToggleRecorder,
-  repliquesProps, voixProps, detectionProps, bouclesProps, project,
+  rightTab, setRightTab,
+  target, subIdx, charMap, charList, clipFps, showRecorder, onToggleRecorder,
+  onSetTargetCharacter, onNewTargetCharacter,
+  repliquesProps, voixProps, detectionProps, bouclesProps, lexiqueProps,
 }) {
   return (
-    <div style={{ width, flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', borderLeft: '1px solid var(--border)', background: 'var(--bg)' }}>
-      <TargetCard target={target} subIdx={subIdx} charMap={charMap} clipFps={clipFps} showRecorder={showRecorder} onToggleRecorder={onToggleRecorder} />
+    <div style={{ width: 392, flexShrink: 0, display: 'flex', flexDirection: 'column', background: T.surface, borderLeft: `1px solid ${T.border}`, overflow: 'hidden' }}>
+      <TargetHeader target={target} subIdx={subIdx} charMap={charMap} charList={charList} clipFps={clipFps}
+        showRecorder={showRecorder} onToggleRecorder={onToggleRecorder}
+        onSetCharacter={onSetTargetCharacter} onNewCharacter={onNewTargetCharacter} />
 
-      {/* Tabs — Répliques · Voix · Détection · Boucles · Lexique */}
-      <div style={{ flexShrink: 0, height: 40, borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'stretch', padding: '0 6px' }}>
-        {TABS.map(([id, label]) => (
-          <button key={id} onClick={() => setRightTab(id)} style={{ flex: 1, background: 'none', border: 'none', borderBottom: rightTab === id ? '2px solid var(--accent)' : '2px solid transparent', color: rightTab === id ? 'var(--accent)' : 'var(--text2)', fontSize: 12, fontWeight: rightTab === id ? 600 : 500, cursor: 'pointer', padding: '0 4px', marginBottom: -1, transition: 'color 0.15s' }}>
-            {label}
-          </button>
-        ))}
+      <div style={{ display: 'flex', padding: '0 8px', borderBottom: `1px solid ${T.border}`, height: 40, gap: 2, flexShrink: 0 }}>
+        {TABS.map(tb => {
+          const on = rightTab === tb.id
+          return (
+            <button key={tb.id} onClick={() => setRightTab(tb.id)} style={{
+              flex: 1, padding: '0 4px', background: 'transparent', border: 'none', cursor: 'pointer',
+              color: on ? T.accent : T.text2, fontSize: T.fs.xs, fontWeight: on ? 600 : 500, fontFamily: T.fontUI,
+              borderBottom: `2px solid ${on ? T.accent : 'transparent'}`, marginBottom: -1,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              {tb.label}
+            </button>
+          )
+        })}
       </div>
 
-      {/* Tab content */}
-      <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+      <div style={{ flex: 1, overflow: 'auto', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         {rightTab === 'repliques' && <InspectorRepliques {...repliquesProps} />}
         {rightTab === 'voix' && <InspectorVoix {...voixProps} />}
         {rightTab === 'detection' && <InspectorDetection {...detectionProps} />}
         {rightTab === 'boucles' && <InspectorBoucles {...bouclesProps} />}
-        {rightTab === 'lexique' && <InspectorLexique project={project} />}
+        {rightTab === 'lexique' && <InspectorLexique {...lexiqueProps} />}
       </div>
 
-      {/* Footer hints */}
-      <div style={{ flexShrink: 0, padding: '6px 12px', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span style={{ fontSize: 11, color: 'var(--text3)', display: 'flex', alignItems: 'center', gap: 5 }}>
-          <Kbd>⇧↵</Kbd> nouvelle réplique
-        </span>
-        <span style={{ fontSize: 11, color: 'var(--text3)', display: 'flex', alignItems: 'center', gap: 5 }}>
-          <Kbd>K</Kbd> pause · <Kbd>I/O</Kbd> in/out
-        </span>
+      <div style={{ padding: '9px 16px', borderTop: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', gap: 8, fontSize: 10, color: T.text3, flexShrink: 0 }}>
+        <Kbd>⇧</Kbd><Kbd>↵</Kbd><span style={{ color: T.text4 }}>nouvelle réplique</span>
+        <div style={{ flex: 1 }} /><Kbd>?</Kbd><span style={{ color: T.text4 }}>aide</span>
       </div>
     </div>
   )

@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import ExportPanel from './ExportPanel'
-import BRTimeline from './BRTimeline'
+import { useExportScreen } from './exportScreen'
 import EditorHeader from './editor/EditorHeader'
 import VideoStage from './editor/VideoStage'
 import Inspector from './editor/Inspector'
 import BandToolbar from './editor/BandToolbar'
-import { Btn, Dot, Icon, ICONS, MenuItem, SectionLabel } from '../ui'
+import Transport from './editor/Transport'
+import TimelineNav from './editor/TimelineNav'
+import { T, Btn, Chip, Dot, Icon, ICONS, MenuItem, MenuLabel, MenuSep } from '../ui'
 import { useSettings } from '../SettingsContext'
 import { classifyChar, SIGN_KINDS, DEFAULT_SIGN_TOGGLES } from '../detection'
 import { useProgress } from '../ProgressContext'
@@ -132,7 +134,7 @@ function CanvasCoachmark() {
   )
 }
 
-export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus, exportOpen, onToggleExport, initialPanel }) {
+export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus, exportOpen, onToggleExport, initialPanel, onHelp }) {
   // Subtitle state machine (array, selection, undo/redo, debounced autosave)
   // lives in useSubtitleManager — Phase 2 extraction. Aliases keep the
   // historical call-site names.
@@ -151,6 +153,8 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   const [speed, setSpeed] = useState(1)
   const [transcribing, setTranscribing] = useState(false)
   const showExport = !!exportOpen
+  // App's Export screen hosts the panel (portaled slot) — no modal chrome then.
+  const exportHost = useExportScreen()
   const exportOpenRef = useRef(showExport)
   useEffect(() => { exportOpenRef.current = showExport }, [showExport])
   const [brOffset, setBrOffset] = useState(0)
@@ -196,8 +200,8 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   const [waveformData, setWaveformData] = useState(null)
   const [sceneCuts, setSceneCuts] = useState(clip.scene_cuts || [])
   useEffect(() => { setSceneCuts(clip.scene_cuts || []) }, [clip.clip_id])
-  const [sidebarWidth, setSidebarWidth] = useState(400)
-  const [brPanelHeight, setBrPanelHeight] = useState(280)
+  const [brPanelHeight, setBrPanelHeight] = useState(190)
+  const [importing, setImporting] = useState(false)
   const [fontScale, setFontScale] = useState(1.0)
   const [editingIdx, setEditingIdx] = useState(null)
   const [editText, setEditText] = useState('')
@@ -2000,6 +2004,69 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
     handleSubtitlesChange([...subtitles, { start: t, end: t + 1.5, character: name.trim(), text: '', reactions: [] }].sort((a, b) => a.start - b.start))
   }
 
+  // Header "Sous-titres ▾" › Importer — replaces the réplique list (undoable).
+  async function importSubtitlesFile(file) {
+    setImporting(true)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      fd.append('mode', 'replace')
+      const res = await fetch(`/api/clips/${clip.clip_id}/import-subtitles`, { method: 'POST', body: fd })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`)
+      handleSubtitlesChange(data.clip?.subtitles || [])
+      undoToast.show({ msg: 'Sous-titres importés · annulable (Ctrl+Z)', kind: 'success', duration: 3000 })
+    } catch (e) {
+      undoToast.error('Import des sous-titres échoué : ' + e.message)
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  // Same réplique as ⇧↵ (band toolbar "add").
+  function addSubAtCursor() {
+    const t = getBandTime()
+    handleSubtitlesChange([...subtitlesRef.current, { start: t, end: t + 1.5, character: '', text: '', reactions: [] }].sort((a, b) => a.start - b.start))
+  }
+
+  // Band toolbar "loop" — same loop as ⇧clic on the selected/active réplique.
+  function toggleLoopSelection() {
+    if (loopRegionRef.current) { setLoopRegion(null); return }
+    const subs = subtitlesRef.current
+    const sel = selectedIdxRef.current
+    const idx = sel != null && subs[sel] ? sel : activeIndexAt(subs, getBandTime())
+    const sub = subs[idx]
+    if (!sub) return
+    setLoopRegion({ start: sub.start, end: sub.end })
+    const v = videoRef.current
+    if (v) { seekBand(sub.start); if (v.paused) v.play() }
+  }
+
+  // Transport IN / OUT — bound of the selected (else active) réplique at the band time.
+  function setTargetBound(edge) {
+    const subs = subtitlesRef.current
+    const sel = selectedIdxRef.current
+    const idx = sel != null && subs[sel] ? sel : activeIndexAt(subs, getBandTime())
+    const sub = subs[idx]
+    if (!sub) return
+    const t = getBandTime()
+    const patch = edge === 'in' ? { start: Math.min(t, sub.end - 0.1) } : { end: Math.max(t, sub.start + 0.1) }
+    handleSubtitlesChange(subs.map((s, i) => i === idx ? { ...s, ...patch } : s))
+  }
+
+  // Same step as ⇧← / ⇧→.
+  function stepFrame(dir) {
+    const v = videoRef.current; if (!v) return
+    const step = 1 / (clipFpsRef.current || 25)
+    v.currentTime = dir < 0 ? Math.max(0, v.currentTime - step) : Math.min(v.duration || v.currentTime + step, v.currentTime + step)
+  }
+
+  // Shortcuts overlay lives in App: use its handler when given, else its "?" key.
+  function openHelp() {
+    if (onHelp) { onHelp(); return }
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: '?' }))
+  }
+
   function onVideoTimeUpdate(e) {
     const ct = e.target.currentTime
     setCurrentTime(ct)
@@ -2019,23 +2086,54 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   function toggleProxy() { const v = videoRef.current; resumeTimeRef.current = v ? v.currentTime : 0; setUseProxy(p => !p) }
 
   const inspectorTarget = activeSubtitle || (selectedIdx != null ? subtitles[selectedIdx] : null)
+  const inspectorIdx = inspectorTarget ? subtitles.indexOf(inspectorTarget) : -1
+  function setTargetCharacter(char) {
+    if (inspectorIdx < 0) return
+    handleSubtitlesChange(subtitles.map((s, i) => i === inspectorIdx ? { ...s, character: char } : s))
+  }
+  function newTargetCharacter() {
+    if (inspectorIdx < 0) return
+    const name = window.prompt('Nom du nouveau personnage :')
+    if (name && name.trim()) setTargetCharacter(name.trim())
+  }
+  const viewSpan = ((canvasRef.current?.offsetWidth || 800) / (pxPerSec || 1))
+  const viewStart = bandNow - CURSOR_X_RATIO * viewSpan
+
+  const exportPanel = (
+    <ExportPanel
+      segmentId={clip.clip_id}
+      subtitles={subtitles}
+      boucles={boucles}
+      pxPerSec={pxPerSec}
+      brOffset={brOffset}
+      canvasH={canvasH}
+      getCanvasWidth={() => canvasRef.current?.offsetWidth || 1200}
+      brFont={brFont}
+      brStyle={rythmoStyle}
+      duration={duration}
+      getCurrentTime={() => videoRef.current?.currentTime || 0}
+      loopRegion={loopRegion}
+    />
+  )
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: T.bg }}>
 
       <EditorHeader
         clip={clip}
         subtitleCount={subtitles.length}
+        clipFps={clipFps}
         charList={charList}
         charMap={charMap}
         charFilter={charFilter}
         onToggleCharFilter={toggleCharFilter}
         onClearCharFilter={clearCharFilter}
-        onAddCharacter={addCharacter}
         lang={lang}
         setLang={setLang}
         transcribing={transcribing}
         onTranscribe={transcribe}
+        importing={importing}
+        onImportFile={importSubtitlesFile}
         translateProvider={translateProvider}
         translateTarget={translateTarget}
         setTranslateTarget={setTranslateTarget}
@@ -2045,272 +2143,258 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
         separatingVocals={separatingVocals}
         onSeparateVocals={separateVocals}
         saveStatus={saveStatus}
+        onUndo={undo}
+        onRedo={redo}
+        canUndo={canUndo}
+        canRedo={canRedo}
         onBack={onBack}
         onToggleExport={onToggleExport}
+        onHelp={openHelp}
       />
 
-      {/* ── Body (video stage + right pane) ── */}
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
+      {/* ── Main: left column (video · transport · nav · toolbar · band) + inspector ── */}
+      <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
 
-        <VideoStage
-          videoRef={videoRef}
-          segmentUrl={segmentUrl}
-          onVideoTimeUpdate={onVideoTimeUpdate}
-          onVideoLoadedMetadata={onVideoLoadedMetadata}
-          onVideoPlay={onVideoPlay}
-          onVideoPause={onVideoPause}
-          currentTime={currentTime}
-          duration={duration}
-          speed={speed}
-          playing={playing}
-          muted={muted}
-          brInPlayer={brInPlayer}
-          activeSubtitle={activeSubtitle}
-          charMap={charMap}
-          hasSubtitles={subtitles.length > 0}
-          onTogglePlay={togglePlay}
-          onSeek={seekVideo}
-          onSeekEnd={seekToEnd}
-          onPrevSub={gotoPrevSub}
-          onNextSub={gotoNextSub}
-          loopActive={loopActive}
-          onToggleLoopActive={toggleLoopActive}
-          onChangeSpeed={changeSpeed}
-          onToggleMute={toggleMute}
-          hasProxy={hasProxy}
-          useProxy={useProxy}
-          onToggleProxy={toggleProxy}
-          onGenerateProxy={generateProxy}
-          proxyJob={proxyJob}
-        />
+          <VideoStage
+            videoRef={videoRef}
+            segmentUrl={segmentUrl}
+            onVideoTimeUpdate={onVideoTimeUpdate}
+            onVideoLoadedMetadata={onVideoLoadedMetadata}
+            onVideoPlay={onVideoPlay}
+            onVideoPause={onVideoPause}
+            currentTime={currentTime}
+            duration={duration}
+            clipFps={clipFps}
+            playing={playing}
+            brInPlayer={brInPlayer}
+            activeSubtitle={activeSubtitle}
+            charMap={charMap}
+            onTogglePlay={togglePlay}
+            hasProxy={hasProxy}
+            useProxy={useProxy}
+            onToggleProxy={toggleProxy}
+            onGenerateProxy={generateProxy}
+            proxyJob={proxyJob}
+          />
 
-        {/* Right pane resize handle */}
-        <div
-          onMouseDown={e => {
-            e.preventDefault()
-            const startX = e.clientX
-            const startW = sidebarWidth
-            const onMove = ev => setSidebarWidth(Math.max(300, Math.min(680, startW - (ev.clientX - startX))))
-            const onUp = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
-            window.addEventListener('mousemove', onMove)
-            window.addEventListener('mouseup', onUp)
-          }}
-          style={{ width: 5, flexShrink: 0, cursor: 'col-resize', background: 'transparent', transition: 'background 0.15s' }}
-          onMouseEnter={e => { e.currentTarget.style.background = 'var(--accent-ring)' }}
-          onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
-        />
+          <Transport
+            currentTime={currentTime}
+            duration={duration}
+            playing={playing}
+            speed={speed}
+            muted={muted}
+            onTogglePlay={togglePlay}
+            onSeek={seekVideo}
+            onSeekEnd={seekToEnd}
+            onStepFrame={stepFrame}
+            onPrevSub={gotoPrevSub}
+            onNextSub={gotoNextSub}
+            loopActive={loopActive}
+            onToggleLoopActive={toggleLoopActive}
+            onChangeSpeed={changeSpeed}
+            onToggleMute={toggleMute}
+            hasTarget={selectedIdx != null || !!activeSubtitle}
+            onSetIn={() => setTargetBound('in')}
+            onSetOut={() => setTargetBound('out')}
+          />
+
+          <TimelineNav
+            bandNow={bandNow}
+            clipFps={clipFps}
+            boucles={boucles}
+            loopRegion={loopRegion}
+            duration={duration}
+            waveform={waveformData}
+            sceneCuts={sceneCuts}
+            subtitles={subtitles}
+            charMap={charMap}
+            viewStart={viewStart}
+            viewEnd={viewStart + viewSpan}
+            onSeek={seekBand}
+          />
+
+          <BandToolbar
+            subtitles={subtitles}
+            onSubtitlesChange={handleSubtitlesChange}
+            selectedIdx={selectedIdx}
+            setSelectedIdx={setSelectedIdx}
+            getBandTime={getBandTime}
+            onAddSub={addSubAtCursor}
+            loopRegion={loopRegion}
+            onToggleLoopSelection={toggleLoopSelection}
+            pxPerSec={pxPerSec}
+            setPxPerSec={setPxPerSec}
+            charMap={charMap}
+            locked={locked}
+            setLocked={setLocked}
+            detection={detection}
+            setDetection={setDetection}
+            sceneCuts={sceneCuts}
+            onDetectScenes={detectScenes}
+            onClearScenes={clearScenes}
+            detectingScenes={detectingScenes}
+            clipFps={clipFps}
+            brFont={brFont}
+            setBrFont={setBrFont}
+            uploadedFonts={uploadedFonts}
+            styleProps={{
+              rythmoStyle, setRythmoStyle, onUploadFont: uploadFont, onDeleteFont: deleteFont,
+              brOffset, setBrOffset, fontScale, setFontScale,
+              wordByWord, setWordByWord, brInPlayer, setBrInPlayer,
+            }}
+          />
+
+          {/* ── Band canvas ── */}
+          <div style={{ height: brPanelHeight, flexShrink: 0, borderTop: `2px solid ${T.border2}`, position: 'relative', overflow: 'hidden', background: '#0a0a0c' }}>
+            <canvas
+              ref={canvasRef}
+              width={800}
+              height={canvasH}
+              style={{ display: 'block', width: '100%', height: '100%', cursor: 'crosshair', userSelect: 'none' }}
+              onMouseDown={onCanvasMouseDown}
+              onMouseMove={onCanvasMouseMove}
+              onMouseUp={onCanvasMouseUp}
+              onMouseLeave={onCanvasMouseLeave}
+              onDoubleClick={onCanvasDoubleClick}
+              onContextMenu={onCanvasContextMenu}
+            />
+            {/* Height drag handle — overlays the top edge, takes no layout space */}
+            <div
+              title="Glisser pour redimensionner la bande"
+              onMouseDown={e => {
+                e.preventDefault()
+                const startY = e.clientY
+                const startH = brPanelHeight
+                const onMove = ev => setBrPanelHeight(Math.max(100, Math.min(500, startH - (ev.clientY - startY))))
+                const onUp = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
+                window.addEventListener('mousemove', onMove)
+                window.addEventListener('mouseup', onUp)
+              }}
+              style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 5, cursor: 'row-resize', background: 'transparent', transition: 'background 0.15s', zIndex: 4 }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'var(--accent-ring)' }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+            />
+            <CanvasCoachmark />
+
+            {loopRegion && (
+              <div style={{ position: 'absolute', top: 6, right: 8, zIndex: 5 }}>
+                <Chip color={T.accent} soft style={{ fontFamily: T.fontMono, fontSize: 11, padding: '0 0 0 9px', gap: 4 }}>
+                  <Icon d={ICONS.loop} size={12} stroke={T.accent} /> {fmt(loopRegion.start)}–{fmt(loopRegion.end)}
+                  <Btn size="sm" icon={ICONS.close} onClick={() => setLoopRegion(null)} title="Effacer la boucle (Échap)" style={{ height: 24, minWidth: 24 }} />
+                </Chip>
+              </div>
+            )}
+            {editingIdx != null && (() => {
+              const sub = subtitles[editingIdx]
+              const canvas = canvasRef.current
+              if (!sub || !canvas) return null
+              const rect = canvas.getBoundingClientRect()
+              const cur_x = rect.width * CURSOR_X_RATIO
+              const t = getBandTime()
+              const left = cur_x + (sub.start - t) * pxPerSec
+              const right = cur_x + (sub.end - t) * pxPerSec
+              const trackIdx = charMap[sub.character || ''] ?? 0
+              const trackH = (rect.height || canvasH) / numTracks
+              const top = trackIdx * trackH + trackH / 2 - 16
+              const width = Math.max(120, right - left)
+              const clampLeft = Math.max(4, Math.min(rect.width - width - 4, left))
+              return (
+                <input
+                  autoFocus
+                  value={editText}
+                  onChange={e => setEditText(e.target.value)}
+                  onBlur={commitEdit}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') { e.preventDefault(); commitEdit() }
+                    if (e.key === 'Escape') { e.preventDefault(); setEditingIdx(null) }
+                  }}
+                  style={{
+                    position: 'absolute', left: clampLeft, top, width,
+                    background: 'rgba(0,0,0,0.95)', color: '#fff',
+                    border: '2px solid var(--accent)', borderRadius: 4,
+                    padding: '4px 8px', fontFamily: 'var(--font-mono)',
+                    fontSize: 14, zIndex: 10, outline: 'none',
+                  }}
+                />
+              )
+            })()}
+            {editingIdx == null && (
+              <div style={{ position: 'absolute', right: 10, bottom: 8, fontSize: 9, color: T.text4, fontFamily: T.fontMono, pointerEvents: 'none' }}>
+                {hoverHint || 'glisser pour créer · double-clic éditer · clic-droit menu'}
+              </div>
+            )}
+            {ctxMenu && (() => {
+              const sub = subtitles[ctxMenu.subIdx]
+              if (!sub) return null
+              const canSplit = ctxMenu.time > sub.start && ctxMenu.time < sub.end
+              return (
+                <>
+                  <div onClick={() => setCtxMenu(null)} onContextMenu={e => { e.preventDefault(); setCtxMenu(null) }} style={{ position: 'fixed', inset: 0, zIndex: 'var(--z-dropdown)' }} />
+                  <div style={{
+                    position: 'fixed', left: Math.max(4, Math.min(ctxMenu.x, window.innerWidth - 240)),
+                    ...(ctxMenu.y > window.innerHeight / 2 ? { bottom: window.innerHeight - ctxMenu.y } : { top: ctxMenu.y }),
+                    maxHeight: '80vh', overflowY: 'auto', zIndex: 'var(--z-dropdown)', minWidth: 210,
+                    background: T.surface, border: `1px solid ${T.border2}`, borderRadius: T.r.card, boxShadow: T.shadowL, padding: 6 }}>
+                    <div style={menuHeader}>{sub.character || '(défaut)'} · {sub.text.slice(0, 30) || '∅'}</div>
+                    <MenuItem icon={ICONS.edit} onClick={() => ctxAction('edit')}>Éditer le texte</MenuItem>
+                    {canSplit && <MenuItem icon={ICONS.scissors} onClick={() => ctxAction('split')}>Couper ici ({fmt(ctxMenu.time)})</MenuItem>}
+                    <MenuItem icon={ICONS.plus} onClick={() => ctxAction('duplicate')}>Dupliquer après</MenuItem>
+                    <MenuItem icon={ICONS.start} onClick={() => ctxAction('seekStart')}>Aller au début ({fmt(sub.start)})</MenuItem>
+                    <MenuItem icon={ICONS.end} onClick={() => ctxAction('seekEnd')}>Aller à la fin ({fmt(sub.end)})</MenuItem>
+                    <MenuSep />
+                    <MenuLabel>Personnage</MenuLabel>
+                    {charList.map(c => {
+                      const cc = TRACK_COLORS[(charMap[c] ?? 0) % TRACK_COLORS.length].hex
+                      return (
+                        <MenuItem key={c || '_default'} onClick={() => ctxAction('character', c)} active={c === (sub.character || '')} color={cc}>
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Dot color={cc} size={8} />{c || '(défaut)'}</span>
+                        </MenuItem>
+                      )
+                    })}
+                    <MenuItem icon={ICONS.user} onClick={() => ctxAction('newCharacter')}>Nouveau / renommer…</MenuItem>
+                    <MenuSep />
+                    <MenuItem icon={ICONS.trash} onClick={() => ctxAction('delete')} danger>Supprimer</MenuItem>
+                  </div>
+                </>
+              )
+            })()}
+          </div>
+        </div>
 
         <Inspector
-          width={sidebarWidth}
           rightTab={rightTab}
           setRightTab={setRightTab}
           target={inspectorTarget}
-          subIdx={inspectorTarget ? subtitles.indexOf(inspectorTarget) : -1}
+          subIdx={inspectorIdx}
           charMap={charMap}
+          charList={charList}
           clipFps={clipFps}
           showRecorder={showRecorder}
           onToggleRecorder={() => setShowRecorder(s => !s)}
+          onSetTargetCharacter={setTargetCharacter}
+          onNewTargetCharacter={newTargetCharacter}
           repliquesProps={{
             subtitles, transcribing, onTranscribe: transcribe,
             onSubtitlesChange: handleSubtitlesChange, onDelete: deleteReplicaWithUndo,
-            bandNow, onSeek: seekBand, selectedIdx, setSelectedIdx, charFilter, clipId: clip.clip_id,
+            bandNow, onSeek: seekBand, selectedIdx, setSelectedIdx, charFilter, charMap, clipId: clip.clip_id,
             showRecorder, recorderRef, activeSubtitle, videoRef,
           }}
           voixProps={{
             charList, charMap, subtitles, activeSubtitle, selectedIdx, setSelectedIdx,
             takes, bandNow, comediens, onSetComedien: setComedien,
             onRecord: () => { setShowRecorder(true); setRightTab('repliques') },
-            onSeek: seekBand, clipDuration: clip.end - clip.start,
+            onSeek: seekBand, clipDuration: clip.end - clip.start, onAddCharacter: addCharacter,
           }}
-          detectionProps={{ detection, setDetection, detectionAuto, setDetectionAuto, wordByWord, setWordByWord }}
-          bouclesProps={{ boucles, onAdd: addBoucleAtCursor, onRemove: removeBoucle, onSeek: seekBand, clipFps }}
-          project={clip.project}
+          detectionProps={{ detection, setDetection, detectionAuto, setDetectionAuto, wordByWord, setWordByWord, brFont, setBrFont }}
+          bouclesProps={{ boucles, subtitles, onAdd: addBoucleAtCursor, onRemove: removeBoucle, onSeek: seekBand, clipFps }}
+          lexiqueProps={{ project: clip.project, translateAvailable: !!translateProvider?.available, translateTarget }}
         />
       </div>
 
-      {/* ── Bande Rythmo — full width ── */}
-      <div style={{ flexShrink: 0, borderTop: '2px solid var(--border2)', background: '#050505', height: brPanelHeight, display: 'flex', flexDirection: 'column', overflow: 'visible', position: 'relative' }}>
-        {/* Vertical resize handle */}
-        <div
-          onMouseDown={e => {
-            e.preventDefault()
-            const startY = e.clientY
-            const startH = brPanelHeight
-            const onMove = ev => setBrPanelHeight(Math.max(100, Math.min(500, startH - (ev.clientY - startY))))
-            const onUp = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
-            window.addEventListener('mousemove', onMove)
-            window.addEventListener('mouseup', onUp)
-          }}
-          style={{ height: 5, flexShrink: 0, cursor: 'row-resize', background: 'transparent', transition: 'background 0.15s' }}
-          onMouseEnter={e => { e.currentTarget.style.background = 'var(--accent-ring)' }}
-          onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
-        />
-        <BandToolbar
-          subtitles={subtitles}
-          onSubtitlesChange={handleSubtitlesChange}
-          selectedIdx={selectedIdx}
-          setSelectedIdx={setSelectedIdx}
-          getBandTime={getBandTime}
-          seekBand={seekBand}
-          brOffset={brOffset}
-          setBrOffset={setBrOffset}
-          pxPerSec={pxPerSec}
-          setPxPerSec={setPxPerSec}
-          charMap={charMap}
-          brInPlayer={brInPlayer}
-          setBrInPlayer={setBrInPlayer}
-          rythmoStyle={rythmoStyle}
-          setRythmoStyle={setRythmoStyle}
-          fontScale={fontScale}
-          setFontScale={setFontScale}
-          locked={locked}
-          setLocked={setLocked}
-          detection={detection}
-          setDetection={setDetection}
-          detectionAuto={detectionAuto}
-          setDetectionAuto={setDetectionAuto}
-          boucles={boucles}
-          onAddBoucle={addBoucleAtCursor}
-          onRemoveBoucle={removeBoucle}
-          sceneCuts={sceneCuts}
-          onDetectScenes={detectScenes}
-          onClearScenes={clearScenes}
-          detectingScenes={detectingScenes}
-          onUndo={undo}
-          onRedo={redo}
-          canUndo={canUndo}
-          canRedo={canRedo}
-          clipFps={clipFps}
-          brFont={brFont}
-          setBrFont={setBrFont}
-          uploadedFonts={uploadedFonts}
-          onUploadFont={uploadFont}
-          onDeleteFont={deleteFont}
-          wordByWord={wordByWord}
-          setWordByWord={setWordByWord}
-        />
-        {/* Canvas */}
-        <div style={{ position: 'relative', flex: 1, minHeight: 0, overflow: 'hidden' }}>
-          <canvas
-            ref={canvasRef}
-            width={800}
-            height={canvasH}
-            style={{ display: 'block', width: '100%', height: '100%', cursor: 'crosshair', userSelect: 'none' }}
-            onMouseDown={onCanvasMouseDown}
-            onMouseMove={onCanvasMouseMove}
-            onMouseUp={onCanvasMouseUp}
-            onMouseLeave={onCanvasMouseLeave}
-            onDoubleClick={onCanvasDoubleClick}
-            onContextMenu={onCanvasContextMenu}
-          />
-          <CanvasCoachmark />
-
-          {loopRegion && (
-            <div style={{ position: 'absolute', top: 6, right: 8, display: 'flex', alignItems: 'center', gap: 4, padding: '0 0 0 8px', background: 'var(--accent-soft)', border: '1px solid var(--accent-ring)', borderRadius: 4, zIndex: 5 }}>
-              <span style={{ fontSize: 11, color: 'var(--accent)', fontFamily: 'var(--font-mono)', display: 'flex', alignItems: 'center', gap: 5 }}>
-                <Icon d={ICONS.loop} size={12} /> {fmt(loopRegion.start)}–{fmt(loopRegion.end)}
-              </span>
-              <button onClick={() => setLoopRegion(null)} title="Effacer la boucle" aria-label="Effacer la boucle"
-                style={{ width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-                <Icon d={ICONS.close} size={12} />
-              </button>
-            </div>
-          )}
-          {editingIdx != null && (() => {
-            const sub = subtitles[editingIdx]
-            const canvas = canvasRef.current
-            if (!sub || !canvas) return null
-            const rect = canvas.getBoundingClientRect()
-            const cur_x = rect.width * CURSOR_X_RATIO
-            const t = getBandTime()
-            const left = cur_x + (sub.start - t) * pxPerSec
-            const right = cur_x + (sub.end - t) * pxPerSec
-            const trackIdx = charMap[sub.character || ''] ?? 0
-            const trackH = (rect.height || canvasH) / numTracks
-            const top = trackIdx * trackH + trackH / 2 - 16
-            const width = Math.max(120, right - left)
-            const clampLeft = Math.max(4, Math.min(rect.width - width - 4, left))
-            return (
-              <input
-                autoFocus
-                value={editText}
-                onChange={e => setEditText(e.target.value)}
-                onBlur={commitEdit}
-                onKeyDown={e => {
-                  if (e.key === 'Enter') { e.preventDefault(); commitEdit() }
-                  if (e.key === 'Escape') { e.preventDefault(); setEditingIdx(null) }
-                }}
-                style={{
-                  position: 'absolute', left: clampLeft, top, width,
-                  background: 'rgba(0,0,0,0.95)', color: '#fff',
-                  border: '2px solid var(--accent)', borderRadius: 4,
-                  padding: '4px 8px', fontFamily: 'var(--font-mono)',
-                  fontSize: 14, zIndex: 10, outline: 'none',
-                }}
-              />
-            )
-          })()}
-          {hoverHint && editingIdx == null && (
-            <div style={{ position: 'absolute', bottom: 4, right: 8, fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)', background: 'rgba(0,0,0,0.6)', padding: '2px 6px', borderRadius: 2, pointerEvents: 'none' }}>{hoverHint}</div>
-          )}
-          {ctxMenu && (() => {
-            const sub = subtitles[ctxMenu.subIdx]
-            if (!sub) return null
-            const canSplit = ctxMenu.time > sub.start && ctxMenu.time < sub.end
-            return (
-              <>
-                <div onClick={() => setCtxMenu(null)} onContextMenu={e => { e.preventDefault(); setCtxMenu(null) }} style={{ position: 'fixed', inset: 0, zIndex: 'var(--z-dropdown)' }} />
-                <div style={{
-                  position: 'fixed', left: Math.max(4, Math.min(ctxMenu.x, window.innerWidth - 220)),
-                  ...(ctxMenu.y > window.innerHeight / 2 ? { bottom: window.innerHeight - ctxMenu.y } : { top: ctxMenu.y }),
-                  maxHeight: '80vh', overflowY: 'auto', background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: 12, padding: 6, zIndex: 'var(--z-dropdown)', minWidth: 200, boxShadow: '0 18px 60px rgba(0,0,0,0.55)' }}>
-                  <div style={menuHeader}>{sub.character || '(défaut)'} · {sub.text.slice(0, 30) || '∅'}</div>
-                  <MenuItem icon={ICONS.edit} onClick={() => ctxAction('edit')}>Éditer texte</MenuItem>
-                  {canSplit && <MenuItem icon={ICONS.scissors} onClick={() => ctxAction('split')}>Couper ici ({fmt(ctxMenu.time)})</MenuItem>}
-                  <MenuItem icon={ICONS.plus} onClick={() => ctxAction('duplicate')}>Dupliquer après</MenuItem>
-                  <MenuItem icon={ICONS.start} onClick={() => ctxAction('seekStart')}>Aller au début ({fmt(sub.start)})</MenuItem>
-                  <MenuItem icon={ICONS.end} onClick={() => ctxAction('seekEnd')}>Aller à la fin ({fmt(sub.end)})</MenuItem>
-                  <div style={menuSep} />
-                  <SectionLabel style={{ padding: '6px 10px 3px', textTransform: 'uppercase', letterSpacing: 1.2 }}>Personnage</SectionLabel>
-                  {charList.map(c => {
-                    const cc = TRACK_COLORS[(charMap[c] ?? 0) % TRACK_COLORS.length].label
-                    return (
-                      <MenuItem key={c || '_default'} onClick={() => ctxAction('character', c)} active={c === (sub.character || '')}>
-                        <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Dot color={cc} size={8} />{c || '(défaut)'}</span>
-                      </MenuItem>
-                    )
-                  })}
-                  <MenuItem icon={ICONS.user} onClick={() => ctxAction('newCharacter')}>Nouveau / renommer…</MenuItem>
-                  <div style={menuSep} />
-                  <MenuItem icon={ICONS.trash} onClick={() => ctxAction('delete')} danger>Supprimer</MenuItem>
-                </div>
-              </>
-            )
-          })()}
-        </div>
-        {/* Full-clip nav timeline — whole clip at a glance, click/drag to seek */}
-        {(() => {
-          const span = ((canvasRef.current?.offsetWidth || 800) / (pxPerSec || 1))
-          const vStart = bandNow - CURSOR_X_RATIO * span
-          return (
-            <BRTimeline
-              duration={duration}
-              currentTime={bandNow}
-              boucles={boucles}
-              waveform={waveformData}
-              sceneCuts={sceneCuts}
-              subtitles={subtitles}
-              charMap={charMap}
-              viewStart={vStart}
-              viewEnd={vStart + span}
-              onSeek={seekBand}
-            />
-          )
-        })()}
-      </div>
-
-      {/* ── Export modal ── */}
-      {showExport && (
+      {/* ── Export modal (inline fallback when App provides no Export screen) ── */}
+      {showExport && exportHost && exportPanel}
+      {showExport && !exportHost && (
         <div
           onClick={() => onToggleExport?.()}
           style={{ position: 'fixed', inset: 0, zIndex: 'var(--z-modal)', background: 'rgba(0,0,0,0.66)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
@@ -2328,20 +2412,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
               <Btn size="sm" variant="solid" icon={ICONS.close} onClick={() => onToggleExport?.()} title="Fermer (Échap)" />
             </div>
             <div style={{ flex: 1, overflow: 'auto', padding: 18 }}>
-              <ExportPanel
-                segmentId={clip.clip_id}
-                subtitles={subtitles}
-                boucles={boucles}
-                pxPerSec={pxPerSec}
-                brOffset={brOffset}
-                canvasH={canvasH}
-                getCanvasWidth={() => canvasRef.current?.offsetWidth || 1200}
-                brFont={brFont}
-                brStyle={rythmoStyle}
-                duration={duration}
-                getCurrentTime={() => videoRef.current?.currentTime || 0}
-                loopRegion={loopRegion}
-              />
+              {exportPanel}
             </div>
           </div>
         </div>
@@ -2355,4 +2426,3 @@ const menuHeader = {
   borderBottom: '1px solid var(--border)', marginBottom: 4,
   whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
 }
-const menuSep = { height: 1, background: 'var(--border)', margin: '5px 4px' }

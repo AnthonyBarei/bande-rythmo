@@ -1,132 +1,115 @@
-import React from 'react'
-import { Btn, Icon, ICONS, SaveStatus } from '../../ui'
+import React, { useRef } from 'react'
+import { T, alpha, Btn, Chip, Dot, Avatar, ICONS, Popover, MenuItem, MenuLabel, MenuSep } from '../../ui'
 import { TRACK_COLORS } from '../../config/tracks'
 
-const LANGS = [
-  { code: 'fr', label: 'FR — Français' },
-  { code: 'en', label: 'EN — English' },
-  { code: 'es', label: 'ES — Español' },
-  { code: 'de', label: 'DE — Deutsch' },
-  { code: 'it', label: 'IT — Italiano' },
-  { code: 'pt', label: 'PT — Português' },
-  { code: 'ja', label: 'JA — 日本語' },
-  { code: 'zh', label: 'ZH — 中文' },
-  { code: 'ko', label: 'KO — 한국어' },
-  { code: 'ru', label: 'RU — Русский' },
-  { code: 'ar', label: 'AR — العربية' },
-  { code: 'auto', label: '🔍 Auto-détect' },
-]
+const LANGS = ['fr', 'en', 'es', 'de', 'it', 'pt', 'ja', 'zh', 'ko', 'ru', 'ar']
 
-const divider = <div style={{ width: 1, height: 20, background: 'var(--border2)', flexShrink: 0 }} />
-const selectStyle = { background: 'var(--surface2)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 6, height: 32, fontSize: 11, flexShrink: 0, cursor: 'pointer' }
+const SAVE_CHIP = {
+  saved:   { color: T.success, label: 'Sauvegardé' },
+  saving:  { color: T.text2,   label: 'Sauvegarde…', pulse: true },
+  unsaved: { color: T.accent,  label: 'Non sauvegardé' },
+  error:   { color: T.danger,  label: 'Erreur' },
+}
 
+function LangChips({ value, options, onChange }) {
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, padding: '2px 10px 6px' }}>
+      {options.map(code => (
+        <Chip key={code} active={code === value} onClick={() => onChange(code)}
+          style={{ fontFamily: T.fontMono, fontSize: 11, padding: '2px 7px' }}>
+          {code.toUpperCase()}
+        </Chip>
+      ))}
+    </div>
+  )
+}
+
+// Editor top bar — reference screen-editor.jsx Editor › "Top bar".
 export default function EditorHeader({
-  clip, subtitleCount, charList, charMap,
-  charFilter, onToggleCharFilter, onClearCharFilter, onAddCharacter,
+  clip, subtitleCount, clipFps, charList, charMap,
+  charFilter, onToggleCharFilter, onClearCharFilter,
   lang, setLang, transcribing, onTranscribe,
+  importing, onImportFile,
   translateProvider, translateTarget, setTranslateTarget, translating, onTranslate,
   vocalAvailable, separatingVocals, onSeparateVocals,
-  saveStatus, onBack, onToggleExport,
+  saveStatus, onUndo, onRedo, canUndo, canRedo,
+  onBack, onToggleExport, onHelp,
 }) {
+  const importRef = useRef(null)
   const namedChars = charList.filter(c => c)
   const hasSubs = subtitleCount > 0
+  const save = SAVE_CHIP[saveStatus] || SAVE_CHIP.saved
   return (
-    <div style={{ padding: '0 14px', height: 56, flexShrink: 0, borderBottom: '1px solid var(--border)', background: 'var(--bg)', display: 'flex', alignItems: 'center', gap: 10, overflow: 'hidden' }}>
-      <Btn size="sm" icon={ICONS.back} onClick={onBack} style={{ fontSize: 13 }}>Mes clips</Btn>
-      {divider}
-      <div style={{ flexShrink: 0 }}>
-        <div style={{ fontSize: 14, fontWeight: 600, letterSpacing: -0.1 }}>{clip.name}</div>
-        <div style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>
-          {(clip.end - clip.start).toFixed(1)}s · {subtitleCount} réplique{subtitleCount !== 1 ? 's' : ''}{namedChars.length > 0 ? ` · ${namedChars.length} personnage${namedChars.length !== 1 ? 's' : ''}` : ''}
-        </div>
+    <div style={{ height: 52, flexShrink: 0, padding: '0 18px', display: 'flex', alignItems: 'center', gap: 12, borderBottom: `1px solid ${T.border}`, background: T.surface }}>
+      <Btn size="sm" variant="outline" icon={ICONS.chevron} onClick={onBack} title="Retour à mes clips" style={{ transform: 'rotate(90deg)' }} />
+      <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+        <span style={{ fontSize: T.fs.base, fontWeight: 600, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{clip.name}</span>
+        <span style={{ fontSize: 10.5, color: T.text3, fontFamily: T.fontMono, whiteSpace: 'nowrap' }}>
+          {(clip.end - clip.start).toFixed(1)}s · {subtitleCount} réplique{subtitleCount !== 1 ? 's' : ''} · {Math.round(clipFps * 100) / 100} fps
+        </span>
+      </div>
+      <Chip color={save.color} soft style={{ flexShrink: 0, whiteSpace: 'nowrap' }}><Dot color={save.color} size={6} pulse={save.pulse} /> {save.label}</Chip>
+      <div style={{ display: 'inline-flex', gap: 2, marginLeft: 2 }}>
+        <Btn size="sm" icon={ICONS.undo} title="Annuler (Ctrl+Z)" onClick={onUndo} disabled={!canUndo} />
+        <Btn size="sm" icon={ICONS.redo} title="Rétablir (Ctrl+Y)" onClick={onRedo} disabled={!canRedo} />
       </div>
       <div style={{ flex: 1 }} />
-      {/* Character chips — click to filter band + list (multi-select). */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4, overflow: 'hidden', minWidth: 0, maxWidth: 480 }}>
-        {namedChars.map(char => {
-          const color = TRACK_COLORS[(charMap[char] ?? 0) % TRACK_COLORS.length]
-          const active = charFilter.has(char)
-          const dimOthers = charFilter.size > 0 && !active
-          return (
-            <button
-              key={char}
-              onClick={() => onToggleCharFilter(char)}
-              title={active ? `Cliquer pour retirer ${char} du filtre` : `Filtrer sur ${char}`}
-              style={{
-                padding: '3px 9px 3px 5px', borderRadius: 99,
-                background: active ? color.hex + '44' : color.hex + '22',
-                border: `1px solid ${active ? color.hex : color.hex + '33'}`,
-                color: color.hex,
-                fontSize: 11, fontWeight: 600,
-                display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0,
-                opacity: dimOthers ? 0.55 : 1,
-                cursor: 'pointer', minHeight: 32,
-              }}>
-              <span style={{ width: 20, height: 20, borderRadius: '50%', background: color.hex + '22', border: `1px solid ${color.hex}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700 }}>
-                {char[0].toUpperCase()}
-              </span>
-              {char}
-            </button>
-          )
-        })}
-        {charFilter.size > 0 && (
-          <button
-            onClick={onClearCharFilter}
-            title="Effacer le filtre"
+      {namedChars.length > 0 && (
+        <span style={{ fontSize: T.fs.micro, color: T.text3, letterSpacing: 1, fontWeight: 600 }}>VOIX</span>
+      )}
+      {namedChars.map(ch => {
+        const hex = TRACK_COLORS[(charMap[ch] ?? 0) % TRACK_COLORS.length].hex
+        const on = charFilter.size === 0 || charFilter.has(ch)
+        return (
+          <button key={ch} onClick={() => onToggleCharFilter(ch)}
+            title={charFilter.has(ch) ? `Retirer ${ch} du filtre` : `Filtrer sur ${ch}`}
             style={{
-              padding: '3px 9px', borderRadius: 99,
-              background: 'var(--surface2)', border: '1px solid var(--border2)',
-              color: 'var(--text2)', fontSize: 11, cursor: 'pointer', minHeight: 32,
-              display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0,
+              display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px 4px 5px', borderRadius: 99, cursor: 'pointer',
+              background: on ? alpha(hex, '1c') : T.surface2, border: `1px solid ${on ? alpha(hex, '66') : T.border}`, opacity: on ? 1 : 0.5,
+              flexShrink: 0,
             }}>
-            <Icon d={ICONS.close} size={12} /> filtré ({charFilter.size})
+            <Avatar name={ch} color={hex} size={18} />
+            <span style={{ fontSize: T.fs.xs, fontWeight: 600, color: on ? hex : T.text3 }}>{ch}</span>
           </button>
-        )}
-      </div>
-      <Btn size="sm" variant="outline" icon={ICONS.plus} onClick={onAddCharacter} title="Ajouter un personnage"
-        style={{ borderStyle: 'dashed', fontWeight: 600 }}>
-        Ajouter
-      </Btn>
-      {divider}
-      <select value={lang} onChange={e => setLang(e.target.value)} disabled={transcribing}
-        style={{ ...selectStyle, padding: '0 7px' }}>
-        {LANGS.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
-      </select>
-      <Btn size="sm" variant={hasSubs ? 'solid' : 'ghost'} active={!hasSubs} icon={ICONS.mic}
-        onClick={onTranscribe} disabled={transcribing}
-        style={{ fontWeight: 600, ...(hasSubs ? {} : { border: '1px solid var(--accent-ring)' }) }}>
-        {transcribing ? '…' : 'Whisper'}
-      </Btn>
-      {translateProvider?.available && hasSubs && (
-        <>
-          {divider}
-          <select value={translateTarget} onChange={e => setTranslateTarget(e.target.value)} disabled={translating}
-            title="Langue cible de traduction"
-            style={{ ...selectStyle, padding: '0 6px' }}>
-            {LANGS.filter(l => l.code !== 'auto').map(l => <option key={l.code} value={l.code}>{l.code.toUpperCase()}</option>)}
-          </select>
-          <Btn size="sm" variant="solid" icon={ICONS.globe} onClick={onTranslate} disabled={translating}
-            title={`Traduire toutes les répliques en ${translateTarget.toUpperCase()} (${translateProvider.provider}) — annulable`}
-            style={{ fontWeight: 600 }}>
-            {translating ? '…' : 'Traduire'}
-          </Btn>
-        </>
+        )
+      })}
+      {charFilter.size > 0 && (
+        <Btn size="sm" icon={ICONS.close} onClick={onClearCharFilter} title={`Effacer le filtre (${charFilter.size})`} />
       )}
-      {vocalAvailable && (
-        <>
-          {divider}
-          <Btn size="sm" variant="solid" icon={ICONS.sliders} onClick={onSeparateVocals} disabled={separatingVocals}
-            title="Isoler la voix (VO) de la musique/FX — Demucs"
-            style={{ fontWeight: 600 }}>
-            {separatingVocals ? '…' : 'Séparer voix'}
-          </Btn>
-        </>
-      )}
-      {divider}
-      <SaveStatus status={saveStatus} />
-      <Btn variant="primary" icon={ICONS.download} onClick={() => onToggleExport?.()} title="Exporter (E)">
-        Exporter
-      </Btn>
+      <div style={{ width: 1, height: 22, background: T.border, margin: '0 4px' }} />
+      <input ref={importRef} type="file" accept=".srt,.ass,.ssa,.vtt,.detx" style={{ display: 'none' }}
+        onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) onImportFile(f) }} />
+      <Popover align="right" width={210} trigger={(o, tog) => <Btn size="sm" variant="solid" active={o} onClick={tog} icon={ICONS.sub} iconR={ICONS.chevron}>Sous-titres</Btn>}>
+        {(close) => (<>
+          <MenuLabel>Transcription & import</MenuLabel>
+          <MenuItem icon={ICONS.sparkle} onClick={() => { if (transcribing) return; close(); onTranscribe() }}>
+            {transcribing ? 'Transcription…' : 'Transcrire (Whisper)'}
+          </MenuItem>
+          <LangChips value={lang} options={[...LANGS, 'auto']} onChange={v => { if (!transcribing) setLang(v) }} />
+          <MenuItem icon={ICONS.upload} onClick={() => { if (importing) return; close(); importRef.current?.click() }}>
+            {importing ? 'Import…' : 'Importer SRT / ASS / VTT…'}
+          </MenuItem>
+          {translateProvider?.available && hasSubs && (<>
+            <MenuSep />
+            <MenuLabel>Traduction · {translateProvider.provider}</MenuLabel>
+            <MenuItem icon={ICONS.globe} onClick={() => { if (translating) return; close(); onTranslate() }}>
+              {translating ? 'Traduction…' : `Traduire en ${translateTarget.toUpperCase()}`}
+            </MenuItem>
+            <LangChips value={translateTarget} options={LANGS} onChange={v => { if (!translating) setTranslateTarget(v) }} />
+          </>)}
+          {vocalAvailable && (<>
+            <MenuSep />
+            <MenuLabel>Audio</MenuLabel>
+            <MenuItem icon={ICONS.sliders} onClick={() => { if (separatingVocals) return; close(); onSeparateVocals() }}>
+              {separatingVocals ? 'Séparation…' : 'Séparer la voix (Demucs)'}
+            </MenuItem>
+          </>)}
+          <MenuSep />
+          <MenuItem icon={ICONS.download} onClick={() => { close(); onToggleExport?.() }}>Exporter les sous-titres</MenuItem>
+        </>)}
+      </Popover>
+      <Btn size="sm" icon={ICONS.keyboard} title="Raccourcis (?)" onClick={onHelp} />
+      <Btn size="sm" variant="primary" icon={ICONS.download} onClick={() => onToggleExport?.()} title="Exporter (E)">Exporter</Btn>
     </div>
   )
 }
