@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from typing import Any, Dict, List, Optional
 
 from database import get_db
-from services.clip_service import get_clip
+from services.clip_service import get_clip, SafeId, SAFE_ID_PATTERN
 from services.subtitle_service import (
     export_srt, export_ass, export_ass_karaoke, export_detx, export_croisille,
 )
@@ -61,7 +61,7 @@ class Boucle(BaseModel):
 class ExportRequest(BaseModel):
     subtitles: List[Subtitle] = []
     boucles: List[Boucle] = []
-    segment_id: str
+    segment_id: SafeId
     format: str  # "srt" | "ass" | "ass-karaoke" | "detx" | "mp4" | "gif" | "mp3" | "wav" | "croisille"
     in_point: float = None
     out_point: float = None
@@ -121,7 +121,7 @@ class DubEntry(BaseModel):
 
 
 class DubMixRequest(BaseModel):
-    segment_id: str
+    segment_id: SafeId
     entries: List[DubEntry]
     duck_db: Optional[float] = -12.0  # bed attenuation; ignored if mute_bed
     mute_bed: bool = False
@@ -192,8 +192,14 @@ async def export(req: ExportRequest, db: Session = Depends(get_db)):
             raise HTTPException(404, "Segment not found")
         output = f"exports/{export_id}.gif"
         ss = req.in_point if req.in_point is not None else None
-        dur = (req.out_point - req.in_point) if (req.in_point is not None and req.out_point is not None) else None
-        await asyncio.to_thread(export_gif, segment, output, 12, 480, ss, dur)
+        ranged = req.in_point is not None and req.out_point is not None and req.out_point > req.in_point
+        dur = (req.out_point - req.in_point) if ranged else None
+        try:
+            await asyncio.to_thread(export_gif, segment, output, 12, 480, ss, dur)
+        except subprocess.CalledProcessError as exc:
+            log.error("gif export failed for clip %s: %s", req.segment_id,
+                      (exc.stderr or b"").decode(errors="replace")[-400:])
+            raise HTTPException(500, "Export GIF échoué")
         try:
             record_export(db, clip_id=req.segment_id, format="gif",
                           path=output, filename="clip.gif", media_type="image/gif")
@@ -357,6 +363,10 @@ async def export(req: ExportRequest, db: Session = Depends(get_db)):
             output,
         ]
         result = await asyncio.to_thread(subprocess.run, cmd, capture_output=True)
+        try:
+            os.remove(strip_path)
+        except OSError:
+            log.warning("could not remove %s", strip_path, exc_info=True)
         if result.returncode != 0:
             raise HTTPException(500, f"ffmpeg overlay error: {result.stderr.decode(errors='replace')}")
 
@@ -371,14 +381,19 @@ async def export(req: ExportRequest, db: Session = Depends(get_db)):
         if req.in_point is not None:
             cmd += ["-ss", str(req.in_point)]
         cmd += ["-i", segment, "-vn"]
-        if req.in_point is not None and req.out_point is not None:
+        if req.in_point is not None and req.out_point is not None and req.out_point > req.in_point:
             cmd += ["-t", str(req.out_point - req.in_point)]
         if ext == "mp3":
             cmd += ["-c:a", "libmp3lame", "-q:a", "2"]
         else:
             cmd += ["-c:a", "pcm_s16le"]
         cmd.append(output)
-        await asyncio.to_thread(subprocess.run, cmd, check=True, capture_output=True)
+        try:
+            await asyncio.to_thread(subprocess.run, cmd, check=True, capture_output=True)
+        except subprocess.CalledProcessError as exc:
+            log.error("%s export failed for clip %s: %s", ext, req.segment_id,
+                      (exc.stderr or b"").decode(errors="replace")[-400:])
+            raise HTTPException(422, "Extraction audio impossible — le clip a-t-il une piste audio ?")
         media = "audio/mpeg" if ext == "mp3" else "audio/wav"
         _persist(ext, output, f"clip.{ext}", media)
         return FileResponse(output, filename=f"clip.{ext}", media_type=media)
@@ -404,13 +419,15 @@ async def export_gif_job(req: ExportRequest, db: Session = Depends(get_db)):
     out_point = req.out_point
 
     def worker():
+        output = f"exports/{export_id}.gif"
+        palette = output.replace(".gif", "_palette.png")
+        succeeded = False
         try:
             ss = in_point if in_point is not None else None
-            dur = (out_point - in_point) if (in_point is not None and out_point is not None) else None
+            ranged = in_point is not None and out_point is not None and out_point > in_point
+            dur = (out_point - in_point) if ranged else None
             duration_s = dur if dur and dur > 0 else 10.0
 
-            output = f"exports/{export_id}.gif"
-            palette = output.replace(".gif", "_palette.png")
             seek = ["-ss", str(ss)] if ss is not None else []
             trim = ["-t", str(dur)] if dur is not None else []
 
@@ -449,9 +466,6 @@ async def export_gif_job(req: ExportRequest, db: Session = Depends(get_db)):
             if rc == -1 or job.cancelled: return
             if rc != 0: job.fail(f"encode pass returned {rc}"); return
 
-            try: os.remove(palette)
-            except OSError: pass
-
             db = SessionLocal()
             try:
                 record_export(
@@ -460,9 +474,12 @@ async def export_gif_job(req: ExportRequest, db: Session = Depends(get_db)):
                     media_type="image/gif",
                     params={"in_point": req.in_point, "out_point": req.out_point},
                 )
+            except Exception:
+                log.exception("export history write failed (gif, clip %s)", req.segment_id)
             finally:
                 db.close()
 
+            succeeded = True
             job.done({
                 "kind": "file",
                 "path": output,
@@ -472,6 +489,100 @@ async def export_gif_job(req: ExportRequest, db: Session = Depends(get_db)):
         except CancelledJobError:
             pass
         except Exception as e:
+            log.exception("gif export failed (clip %s)", req.segment_id)
+            job.fail(str(e))
+        finally:
+            stale = [palette] if succeeded else [palette, output]
+            for p in stale:
+                if os.path.exists(p):
+                    try:
+                        os.remove(p)
+                    except OSError:
+                        log.warning("could not remove %s", p, exc_info=True)
+
+    asyncio.get_running_loop().run_in_executor(None, worker)
+    return {"job_id": job.id}
+
+
+@router.post("/dubpack-job", response_model=JobStartResponse)
+async def export_dubpack_job(req: ExportRequest, db: Session = Depends(get_db)):
+    """Choicer Voicer dub pack (OGV + one clip per réplique) as a ZIP job."""
+    from services.dubpack_service import build_dubpack, prepare_lines
+
+    segment = f"segments/{req.segment_id}.mp4"
+    if not os.path.exists(segment):
+        raise HTTPException(404, "Segment not found")
+
+    clip_row = get_clip(db, req.segment_id) or {}
+    subs = [
+        {"start": s.start, "end": s.end, "character": s.character, "text": s.text}
+        for s in req.subtitles
+    ]
+    if not subs and clip_row.get("subtitles"):
+        subs = [
+            {"start": s["start"], "end": s["end"], "character": s.get("character") or "", "text": s.get("text") or ""}
+            for s in clip_row["subtitles"]
+        ]
+    check = subs
+    if req.in_point is not None and req.out_point is not None and req.out_point > req.in_point:
+        check = _trim_subs_to_range(subs, req.in_point, req.out_point)
+    try:
+        prepare_lines(check)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+    job = create_job("export-dubpack", title="Export Dubpack")
+    export_id = str(uuid.uuid4())
+    title = clip_row.get("name") or "Dub Pack"
+    in_point, out_point = req.in_point, req.out_point
+    bed = f"segments/{req.segment_id}_bed.wav"
+    output = f"exports/{export_id}.zip"
+
+    def worker():
+        try:
+            info = build_dubpack(
+                segment=segment,
+                subs=subs,
+                title=title,
+                out_zip=output,
+                bed_path=bed if os.path.isfile(bed) else None,
+                in_point=in_point,
+                out_point=out_point,
+                on_progress=lambda pct, label: job.update(stage=label, pct=pct),
+                is_cancelled=lambda: job.cancelled,
+                register_process=lambda p: setattr(job, "process", p),
+            )
+            dbw = SessionLocal()
+            try:
+                record_export(
+                    dbw, clip_id=req.segment_id, format="dubpack",
+                    path=output, filename=info["filename"],
+                    media_type="application/zip",
+                    params={"clips": info["clips"]},
+                )
+            except Exception:
+                log.exception("export history write failed (dubpack, clip %s)", req.segment_id)
+            finally:
+                dbw.close()
+            job.done({
+                "kind": "file",
+                "path": output,
+                "filename": info["filename"],
+                "media_type": "application/zip",
+            })
+        except CancelledJobError:
+            if os.path.exists(output):
+                try:
+                    os.remove(output)
+                except OSError:
+                    log.warning("could not remove partial %s", output, exc_info=True)
+        except Exception as e:
+            log.exception("dubpack export failed (clip %s)", req.segment_id)
+            if os.path.exists(output):
+                try:
+                    os.remove(output)
+                except OSError:
+                    log.warning("could not remove partial %s", output, exc_info=True)
             job.fail(str(e))
 
     asyncio.get_running_loop().run_in_executor(None, worker)
@@ -524,6 +635,9 @@ async def export_mp4_job(req: ExportRequest, db: Session = Depends(get_db)):
     qp = QUALITY_PRESETS.get((req.quality or "standard").lower(), QUALITY_PRESETS["standard"])
 
     def worker():
+        strip_path = f"exports/{export_id}_strip.mkv"
+        output = f"exports/{export_id}_rythmo.mp4"
+        succeeded = False
         try:
             job.update(stage="Probe vidéo", pct=0.02)
             raise_if_cancelled(job)
@@ -570,9 +684,6 @@ async def export_mp4_job(req: ExportRequest, db: Session = Depends(get_db)):
             if br_h_video % 2 != 0:
                 br_h_video += 1
 
-            strip_path = f"exports/{export_id}_strip.mkv"
-            output = f"exports/{export_id}_rythmo.mp4"
-
             # Stage 1: render BR strip (no internal progress hook — estimated 0 → 0.45).
             job.update(stage="Rendu bande rythmo", pct=0.05)
             raise_if_cancelled(job)
@@ -583,6 +694,7 @@ async def export_mp4_job(req: ExportRequest, db: Session = Depends(get_db)):
                 br_font=br_font, style=br_style,
                 supersample=qp["supersample"],
                 detection_burn=req.detection_burn,
+                is_cancelled=lambda: job.cancelled,
             )
             raise_if_cancelled(job)
             job.update(stage="Encodage final", pct=0.45)
@@ -645,9 +757,12 @@ async def export_mp4_job(req: ExportRequest, db: Session = Depends(get_db)):
                             "br_font": br_font, "br_style": br_style,
                             "detection_burn": req.detection_burn},
                 )
+            except Exception:
+                log.exception("export history write failed (mp4, clip %s)", req.segment_id)
             finally:
                 db.close()
 
+            succeeded = True
             job.done({
                 "kind": "file",
                 "path": output,
@@ -657,7 +772,16 @@ async def export_mp4_job(req: ExportRequest, db: Session = Depends(get_db)):
         except CancelledJobError:
             pass
         except Exception as e:
+            log.exception("mp4 export failed (clip %s)", req.segment_id)
             job.fail(str(e))
+        finally:
+            stale = [strip_path] if succeeded else [strip_path, output]
+            for p in stale:
+                if os.path.exists(p):
+                    try:
+                        os.remove(p)
+                    except OSError:
+                        log.warning("could not remove %s", p, exc_info=True)
 
     asyncio.get_running_loop().run_in_executor(None, worker)
     return {"job_id": job.id}
@@ -702,7 +826,7 @@ async def delete_export_route(export_id: int, db: Session = Depends(get_db)):
 
 @router.post("/mp4-canvas")
 async def export_mp4_canvas(
-    segment_id: str = Form(...),
+    segment_id: str = Form(..., pattern=SAFE_ID_PATTERN),
     overlay: UploadFile = File(...),
 ):
     export_id = str(uuid.uuid4())

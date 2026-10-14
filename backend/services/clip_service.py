@@ -1,8 +1,18 @@
 import json
+import logging
 import os
+import shutil
 from datetime import datetime
+from typing import Annotated
+from pydantic import StringConstraints
 from sqlalchemy.orm import Session
 from models import Clip, Subtitle, Boucle
+
+log = logging.getLogger("br.clips")
+
+# Clip ids become file names (segments/{id}.mp4) — never allow path parts.
+SAFE_ID_PATTERN = r"^[A-Za-z0-9_-]{1,64}$"
+SafeId = Annotated[str, StringConstraints(pattern=SAFE_ID_PATTERN)]
 
 
 def _parse_words(raw):
@@ -106,8 +116,8 @@ def update_subtitles(db: Session, clip_id, subtitles):
             order_index=i,
             start=float(s.get("start", 0)),
             end=float(s.get("end", 0)),
-            character=s.get("character", ""),
-            text=s.get("text", ""),
+            character=s.get("character") or "",
+            text=s.get("text") or "",
             words=words_json,
             off=bool(s.get("off", False)),
             dos=bool(s.get("dos", False)),
@@ -205,10 +215,15 @@ def delete_clip(db: Session, clip_id):
     thumbnail_path = clip.thumbnail_path
     db.delete(clip)
     db.commit()
-    for p in (segment_path, thumbnail_path):
+    # Derived per-clip files are unreachable once the row is gone.
+    derived = (f"segments/{clip_id}_proxy.mp4", f"segments/{clip_id}_bed.wav")
+    for p in (segment_path, thumbnail_path, *derived):
         if p and os.path.exists(p):
             try:
                 os.remove(p)
             except OSError:
-                pass
+                log.warning("could not remove %s", p, exc_info=True)
+    stems = os.path.join("segments", "stems", "htdemucs", clip_id)
+    if os.path.isdir(stems):
+        shutil.rmtree(stems, ignore_errors=True)
     return True

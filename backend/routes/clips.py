@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import os
 import shutil
 import struct
@@ -22,6 +23,8 @@ from services.ffmpeg_service import extract_segment, extract_thumbnail, probe_st
 from services.jobs import create_job, raise_if_cancelled, CancelledJobError, JobStartResponse
 from services.subtitle_import_service import parse_subtitle_file
 from services.vocal_service import separate as separate_vocals, separation_status, VocalSeparationUnavailable
+
+log = logging.getLogger("br.clips")
 
 router = APIRouter()
 
@@ -68,6 +71,15 @@ class BatchLocalRequest(BaseModel):
     clips: List[BatchLocalClip]
 
 
+def _discard_partial(path: str):
+    """has_proxy is derived from file existence — never expose a truncated one."""
+    if os.path.isfile(path):
+        try:
+            os.remove(path)
+        except OSError:
+            log.warning("could not remove partial %s", path, exc_info=True)
+
+
 def _copy_upload(src, dst_path: str):
     with open(dst_path, 'wb') as dst:
         shutil.copyfileobj(src, dst)
@@ -79,9 +91,14 @@ async def create_batch(
     clips_json: str = Form(...),
     db: Session = Depends(get_db),
 ):
-    clips_data = json.loads(clips_json)
+    try:
+        clips_data = json.loads(clips_json)
+    except ValueError:
+        raise HTTPException(400, "clips_json is not valid JSON")
     if not clips_data:
         raise HTTPException(400, "No clips provided")
+    if any(float(c["end"]) <= float(c["start"]) for c in clips_data):
+        raise HTTPException(400, "Clip end must be after start")
 
     ext = os.path.splitext(file.filename or "video.mp4")[1] or ".mp4"
     source_filename = file.filename or "video"
@@ -151,6 +168,8 @@ async def create_batch_local_job(req: BatchLocalRequest):
         raise HTTPException(400, f"File not found: {req.path}")
     if not req.clips:
         raise HTTPException(400, "No clips provided")
+    if any(c.end <= c.start for c in req.clips):
+        raise HTTPException(400, "Clip end must be after start")
 
     source_filename = req.source_filename or os.path.basename(req.path)
     total = len(req.clips)
@@ -218,6 +237,8 @@ async def create_batch_local(req: BatchLocalRequest, db: Session = Depends(get_d
         raise HTTPException(400, f"File not found: {req.path}")
     if not req.clips:
         raise HTTPException(400, "No clips provided")
+    if any(c.end <= c.start for c in req.clips):
+        raise HTTPException(400, "Clip end must be after start")
 
     source_filename = req.source_filename or os.path.basename(req.path)
     extracted = []
@@ -294,9 +315,9 @@ async def import_subtitles(
         raise HTTPException(404, "Clip not found")
 
     raw = await file.read()
-    # Try UTF-8, fall back to latin-1 (common in older SRT files)
+    # Try UTF-8 (BOM stripped), fall back to latin-1 (common in older SRT files)
     try:
-        content = raw.decode('utf-8')
+        content = raw.decode('utf-8-sig')
     except UnicodeDecodeError:
         content = raw.decode('latin-1', errors='replace')
 
@@ -353,6 +374,7 @@ async def make_clip_proxy(clip_id: str, height: int = 720):
     if not os.path.isfile(segment):
         raise HTTPException(404, "Segment file missing")
     output = f"segments/{clip_id}_proxy.mp4"
+    partial = f"segments/{clip_id}_proxy.part.mp4"
     job = create_job("proxy", title=f"Proxy {height}p")
 
     def worker():
@@ -361,21 +383,37 @@ async def make_clip_proxy(clip_id: str, height: int = 720):
             raise_if_cancelled(job)
             def on_prog(pct, eta):
                 job.update(stage=f"Encodage proxy {height}p", pct=0.02 + 0.96 * pct, eta=eta)
+            duration_s = 0.0
+            try:
+                probe = subprocess.run(
+                    ["ffprobe", "-v", "quiet", "-show_entries", "format=duration",
+                     "-of", "default=noprint_wrappers=1:nokey=1", segment],
+                    capture_output=True, timeout=10,
+                )
+                duration_s = float(probe.stdout.decode(errors="replace").strip() or 0)
+            except (subprocess.SubprocessError, ValueError):
+                log.warning("duration probe failed for %s", segment, exc_info=True)
             rc = make_proxy(
-                segment, output, height,
+                segment, partial, height,
                 on_progress=on_prog,
                 is_cancelled=lambda: job.cancelled,
                 register_process=lambda p: setattr(job, "process", p),
+                duration_s=duration_s,
             )
             if rc == -1 or job.cancelled:
+                _discard_partial(partial)
                 return
             if rc != 0:
+                _discard_partial(partial)
                 job.fail(f"ffmpeg returned {rc}")
                 return
+            os.replace(partial, output)
             job.done({"proxy_path": output, "clip_id": clip_id})
         except CancelledJobError:
-            pass
+            _discard_partial(partial)
         except Exception as e:
+            log.exception("proxy generation failed (clip %s)", clip_id)
+            _discard_partial(partial)
             job.fail(str(e))
 
     asyncio.get_running_loop().run_in_executor(None, worker)
@@ -567,6 +605,7 @@ async def get_waveform(clip_id: str, samples: int = 400):
     if not os.path.exists(path):
         raise HTTPException(404, "Segment not found")
 
+    samples = max(1, samples)
     sr = 8000
     cmd = ["ffmpeg", "-i", path, "-vn", "-ac", "1", "-ar", str(sr), "-f", "s16le", "pipe:1"]
     result = await asyncio.to_thread(subprocess.run, cmd, capture_output=True, timeout=30)

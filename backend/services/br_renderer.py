@@ -7,6 +7,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 from services.detection import classify_char
+from services.jobs import CancelledJobError, kill_process_tree
 
 CURSOR_X_RATIO = 0.30
 BG = (5, 5, 5)
@@ -446,6 +447,7 @@ def render_br_video(
     style: str = "classique",
     detection_burn: bool = False,
     detection_auto: bool = True,
+    is_cancelled=None,
 ):
     """Render BR strip frames to a lossless video file at exact video fps.
 
@@ -507,6 +509,8 @@ def render_br_video(
 
     try:
         for frame_idx in range(num_frames):
+            if is_cancelled and is_cancelled():
+                raise CancelledJobError()
             if ss == 1:
                 t = frame_idx / fps + br_offset
                 out = _frame_rgb(t).astype(np.uint8)
@@ -522,7 +526,7 @@ def render_br_video(
         proc.wait()
     except Exception:
         proc.stdin.close()
-        proc.kill()
+        kill_process_tree(proc)
         proc.wait()
         raise
 

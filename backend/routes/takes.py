@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from database import get_db
+from models import Clip
 from services.take_service import create_take, delete_take, list_takes
 
 router = APIRouter()
@@ -21,6 +22,8 @@ async def upload_take(
     audio: UploadFile = File(...),
     db: Session = Depends(get_db),
 ):
+    if not db.query(Clip).filter(Clip.clip_id == clip_id).first():
+        raise HTTPException(404, "Clip not found")
     take_id = str(uuid.uuid4())
     ext = os.path.splitext(audio.filename or "take.webm")[1] or ".webm"
     audio_path = f"takes/{take_id}{ext}"

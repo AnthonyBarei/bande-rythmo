@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import subprocess
 import threading
 import time
 import uuid
@@ -95,6 +97,8 @@ class Job:
         self._notify()
 
     def done(self, result: Any = None):
+        if self.status != "running":
+            return
         self.status = "done"
         self.pct = 1.0
         self.result = result
@@ -113,10 +117,10 @@ class Job:
         proc = self.process
         if proc is not None:
             try:
-                proc.kill()
+                kill_process_tree(proc)
             except Exception:
                 log.warning("job %s: subprocess kill failed (pid may already be gone)",
-                            self.job_id, exc_info=True)
+                            self.id, exc_info=True)
         if self.status == "running":
             self.status = "cancelled"
             self.updated_at = time.time()
@@ -134,9 +138,9 @@ class Job:
             return
         for q in list(self.subscribers):
             try:
-                loop.call_soon_threadsafe(q.put_nowait, payload)
-            except Exception:
-                pass
+                loop.call_soon_threadsafe(_offer, q, payload)
+            except RuntimeError:
+                log.warning("job %s: event loop closed, WS frame dropped", self.id)
 
     def subscribe(self) -> asyncio.Queue:
         q: asyncio.Queue = asyncio.Queue(maxsize=64)
@@ -175,6 +179,17 @@ class Job:
         }
 
 
+def _offer(q: asyncio.Queue, payload: dict):
+    """Runs on the event loop. A slow WS client must never lose the final
+    frame: when its queue is full, drop the oldest progress frame instead."""
+    if q.full():
+        try:
+            q.get_nowait()
+        except asyncio.QueueEmpty:
+            pass
+    q.put_nowait(payload)
+
+
 def create_job(kind: str, title: str = "") -> Job:
     job = Job(kind, title)
     with _lock:
@@ -197,6 +212,19 @@ def cleanup_old_jobs(max_age_s: float = 3600.0) -> int:
                 JOBS.pop(jid, None)
                 removed += 1
     return removed
+
+
+def kill_process_tree(proc: subprocess.Popen) -> None:
+    """Kill proc and its children. On Windows, package-manager shims (e.g.
+    Chocolatey's ffmpeg.exe) spawn the real binary as a child, so a plain
+    kill() leaves the encode running."""
+    if proc.poll() is not None:
+        return
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    else:
+        proc.kill()
 
 
 class CancelledJobError(Exception):

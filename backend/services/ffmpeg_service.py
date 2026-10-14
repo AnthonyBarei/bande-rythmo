@@ -5,6 +5,8 @@ import os
 import time
 from typing import Callable, List, Optional
 
+from services.jobs import kill_process_tree
+
 
 def run_ffmpeg_with_progress(
     cmd: List[str],
@@ -49,7 +51,7 @@ def run_ffmpeg_with_progress(
     try:
         for raw in proc.stdout:
             if is_cancelled and is_cancelled():
-                proc.kill()
+                kill_process_tree(proc)
                 proc.wait(timeout=5)
                 return -1
             line = raw.strip()
@@ -87,6 +89,10 @@ def run_ffmpeg_with_progress(
         proc.wait()
         return proc.returncode
     finally:
+        # A raising callback must not orphan a running ffmpeg.
+        if proc.poll() is None:
+            kill_process_tree(proc)
+            proc.wait()
         try:
             proc.stdout.close()
         except Exception:
@@ -261,7 +267,8 @@ def extract_segment(source: str, start: float, end: float, output: str,
     map_args = []
     if video_stream is not None or audio_stream is not None:
         map_args += ["-map", f"0:v:{video_stream if video_stream is not None else 0}"]
-        map_args += ["-map", f"0:a:{audio_stream if audio_stream is not None else 0}"]
+        # Trailing "?" = optional: a video-only source still yields a clip.
+        map_args += ["-map", f"0:a:{audio_stream if audio_stream is not None else 0}?"]
 
     cmd = [
         "ffmpeg", "-y",

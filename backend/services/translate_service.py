@@ -38,16 +38,22 @@ def _post(url: str, data: dict, headers: dict, timeout: int = 30) -> dict:
 def _translate_deepl(texts: List[str], target: str, source: str) -> List[str]:
     key = os.environ["DEEPL_API_KEY"]
     host = "https://api-free.deepl.com" if key.endswith(":fx") else "https://api.deepl.com"
-    data = [("auth_key", key), ("target_lang", target.upper())]
+    params = [("target_lang", target.upper())]
     if source and source != "auto":
-        data.append(("source_lang", source.upper()))
-    for t in texts:
-        data.append(("text", t))
-    body = urllib.parse.urlencode(data).encode()
-    req = urllib.request.Request(f"{host}/v2/translate", data=body, method="POST")
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        out = json.loads(resp.read().decode())
-    return [tr["text"] for tr in out.get("translations", [])]
+        params.append(("source_lang", source.upper()))
+    results = []
+    # DeepL caps a request at 50 texts; body auth_key is deprecated → header.
+    for i in range(0, len(texts), 50):
+        data = params + [("text", t) for t in texts[i:i + 50]]
+        body = urllib.parse.urlencode(data).encode()
+        req = urllib.request.Request(
+            f"{host}/v2/translate", data=body, method="POST",
+            headers={"Authorization": f"DeepL-Auth-Key {key}"},
+        )
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            out = json.loads(resp.read().decode())
+        results += [tr["text"] for tr in out.get("translations", [])]
+    return results
 
 
 def _translate_libre(texts: List[str], target: str, source: str) -> List[str]:

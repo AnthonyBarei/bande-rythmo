@@ -224,21 +224,31 @@ def parse_detx(content: str) -> List[Dict]:
 
         start = end = None
         signs_open, signs_close = {}, {}
+        out_opens = []
         for ls in line.findall("lipsync"):
             tc = ls.get("timecode")
             typ = ls.get("type") or ""
             if tc is None:
                 continue
-            t = _detx_time(tc, fps)
+            try:
+                t = _detx_time(tc, fps)
+            except ValueError:
+                continue
             if typ == "in_open" and start is None:
                 start = t
             elif typ == "out_open":
-                end = t
+                out_opens.append(t)
             elif typ.startswith("in_"):
                 signs_open.setdefault(typ[3:], []).append(t)
             elif typ.startswith("out_"):
                 signs_close.setdefault(typ[4:], []).append(t)
 
+        # The line's own out_open is the last one; earlier ones close
+        # open-family signs (fricative/ouverte export as in_open/out_open).
+        if out_opens:
+            end = out_opens[-1]
+            if out_opens[:-1]:
+                signs_close["open"] = out_opens[:-1]
         if start is None:
             continue
         if end is None or end <= start:
@@ -258,7 +268,10 @@ def parse_detx(content: str) -> List[Dict]:
             sub["ambiance"] = True
         plan = line.get("plan")
         if plan:
-            sub["plan_cut"] = round(_detx_time(plan, fps), 3)
+            try:
+                sub["plan_cut"] = round(_detx_time(plan, fps), 3)
+            except ValueError:
+                sub["plan_cut"] = None
 
         # Best-effort signs → single word spanning the line.
         sign_list = []

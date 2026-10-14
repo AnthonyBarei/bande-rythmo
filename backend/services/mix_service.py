@@ -10,6 +10,8 @@ Audio bed precedence:
 import os
 import subprocess
 
+from services.ffmpeg_service import probe_streams
+
 SEGMENTS_DIR = "segments"
 
 
@@ -45,6 +47,8 @@ def mix_dub(
 ):
     """Render segment video + mixed dub audio → MP4 (video stream copied)."""
     use_bed = clip_id is not None and has_bed(clip_id)
+    if not use_bed and not probe_streams(segment_path)["audio_streams"]:
+        duck_db = None   # silent segment: nothing to duck, takes only
 
     inputs = ["-i", segment_path]
     if use_bed:
@@ -79,15 +83,18 @@ def mix_dub(
         mix = f"{mix_ins[0]}anull[premix]"
     else:
         # normalize=0: keep absolute levels, we control gains explicitly.
-        mix = f"{''.join(mix_ins)}amix=inputs={len(mix_ins)}:duration=first:normalize=0[premix]"
+        # Bed present → it sets the length; takes only → keep every take.
+        span = "first" if duck_db is not None else "longest"
+        mix = f"{''.join(mix_ins)}amix=inputs={len(mix_ins)}:duration={span}:normalize=0[premix]"
     parts.append(mix)
 
+    # loudnorm outputs 192 kHz → back to 48 kHz. apad: audio never ends
+    # before the picture; -shortest then cuts at the video end.
     if loudnorm:
-        parts.append("[premix]loudnorm=I=-16:TP=-1.5:LRA=11[mix]")
+        parts.append("[premix]loudnorm=I=-16:TP=-1.5:LRA=11,aresample=48000,apad[mix]")
     else:
-        parts.append("[premix]anull[mix]")
+        parts.append("[premix]aresample=48000,apad[mix]")
 
-    # apad+shortest: takes may end after the video; pad bed then cut at video end.
     cmd = [
         "ffmpeg", "-y", *inputs,
         "-filter_complex", ";".join(parts),
