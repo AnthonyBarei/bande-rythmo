@@ -1,4 +1,10 @@
-"""Capture app screens at exact 1440x900 via Chrome DevTools Protocol."""
+"""Capture app screens at exact 1440x900 via Chrome DevTools Protocol.
+
+Usage: shoot.py <out_dir> [--extras]
+  --extras  also capture view-only states (Atelier GIF / Audio modes,
+            Activité with the TERMINÉ list expanded). Creates no data.
+"""
+import argparse
 import asyncio
 import base64
 import json
@@ -15,8 +21,14 @@ CHROME = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
 APP = "http://localhost:5173/"
 PORT = 9333
 CLIP = "299d22a2-cb49-4d29-9d4b-eb1355c88d88"
-OUT = sys.argv[1]
 W, H = 1440, 900
+INSPECTOR_W = 392
+
+_args = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+_args.add_argument("out_dir")
+_args.add_argument("--extras", action="store_true")
+ARGS = _args.parse_args()
+OUT = ARGS.out_dir
 
 
 class CDP:
@@ -79,6 +91,21 @@ CLICK = """(async () => {
   return true;
 })()"""
 
+# Inspector tabs: [role=tab] if present, else buttons inside the fixed-width
+# inspector column on the right edge (the band toolbar also has a "Détection"
+# button, which a page-wide text match would hit first).
+CLICK_INSPECTOR_TAB = """(async () => {
+  const t = %s, minX = window.innerWidth - %d;
+  const inInspector = b => b.getBoundingClientRect().left >= minX;
+  const tabs = [...document.querySelectorAll('[role=tab]')].filter(inInspector);
+  const pool = tabs.length ? tabs : [...document.querySelectorAll('button')].filter(inInspector);
+  const el = pool.find(b => b.innerText.trim() === t);
+  if (!el) return false;
+  el.click();
+  await new Promise(r => setTimeout(r, 500));
+  return true;
+})()"""
+
 RECT = """(() => {
   const t = %s;
   const el = [...document.querySelectorAll('*')].find(e => e.children.length < 8 && e.innerText && e.innerText.trim().startsWith(t) && e.getBoundingClientRect().width > 200);
@@ -92,6 +119,14 @@ async def click(cdp, text):
     ok = await cdp.js(CLICK % json.dumps(text))
     if not ok:
         print("  ! button not found:", text)
+    await asyncio.sleep(0.4)
+    return ok
+
+
+async def click_tab(cdp, text):
+    ok = await cdp.js(CLICK_INSPECTOR_TAB % (json.dumps(text), INSPECTOR_W))
+    if not ok:
+        print("  ! inspector tab not found:", text)
     await asyncio.sleep(0.4)
     return ok
 
@@ -127,9 +162,9 @@ async def run():
         await go(cdp, "dub", CLIP, wait=4)
         await cdp.shot("editor/01-editor.png")
         for i, tab in enumerate(["Voix", "Détection", "Boucles", "Lexique"], start=5):
-            if await click(cdp, tab):
+            if await click_tab(cdp, tab):
                 await cdp.shot(f"editor/0{i}-tab-{tab.lower().replace('é', 'e')}.png")
-        await click(cdp, "Répliques")
+        await click_tab(cdp, "Répliques")
         if await click(cdp, "Sous-titres"):
             await cdp.shot("editor/09-menu-sous-titres.png")
             await cdp.key("Escape", "Escape", 27)
@@ -147,9 +182,16 @@ async def run():
 
         await go(cdp, "memes")
         await cdp.shot("atelier/01-atelier.png")
+        if ARGS.extras:
+            for i, mode in enumerate(["GIF", "Audio"], start=2):
+                if await click(cdp, mode):
+                    await cdp.shot(f"atelier/0{i}-atelier-{mode.lower()}.png")
+            await click(cdp, "Image")
 
         await go(cdp, "activity")
         await cdp.shot("activity/01-activity.png")
+        if ARGS.extras and await click(cdp, "Voir les"):
+            await cdp.shot("activity/02-activity-expanded.png")
 
         await go(cdp, "settings")
         await cdp.shot("settings/01-settings.png")

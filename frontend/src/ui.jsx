@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, createContext, useContext } from 'react'
 import { Icon, ICONS } from './Icons'
 
 /* Design-system primitives — line-for-line port of
@@ -49,8 +49,12 @@ export function alpha(color, aa) {
 }
 
 // ── Primitives ────────────────────────────────────────────
+// Kbd chips inside a disabled Btn grey out with it.
+const BtnDisabledCtx = createContext(false)
+
 export function Btn({ children, variant = 'ghost', size = 'md', icon, iconR, active, danger, onClick, title, style, full, disabled }) {
-  const [h, setH] = useState(false)
+  const [hov, setH] = useState(false)
+  const h = hov && !disabled
   const H = { sm: 30, md: 36, lg: 42 }[size]
   const pad = { sm: '0 12px', md: '0 15px', lg: '0 20px' }[size]
   const fz = { sm: T.fs.xs, md: T.fs.sm, lg: T.fs.base }[size]
@@ -61,21 +65,27 @@ export function Btn({ children, variant = 'ghost', size = 'md', icon, iconR, act
   else { bg = h ? T.surface2 : 'transparent'; col = active ? T.accent : T.text2 }
   if (active && variant === 'ghost') bg = T.accentDim
   if (danger) { col = T.danger; if (h) bg = 'rgba(232,89,93,.13)' }
+  if (disabled) {
+    col = T.text4
+    if (variant === 'primary' || variant === 'solid') { bg = T.surface2; bord = `1px solid ${T.border}` }
+    else if (variant === 'outline') bord = `1px solid ${T.border}`
+  }
   return (
     <button data-rd onClick={onClick} title={title} disabled={disabled}
       onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
       style={{
         height: H, minWidth: H, padding: icon && !children ? 0 : pad, borderRadius: T.r.ctl,
-        background: bg, color: col, border: bord, cursor: disabled ? 'default' : 'pointer',
+        background: bg, color: col, border: bord, cursor: disabled ? 'not-allowed' : 'pointer',
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
         fontSize: fz, fontWeight: variant === 'primary' ? 600 : 500, fontFamily: T.fontUI,
         width: full ? '100%' : undefined, transition: 'background .14s, color .14s', flexShrink: 0,
-        opacity: disabled ? 0.5 : 1,
         ...style,
       }}>
-      {icon && <Icon d={icon} size={fz + 3} stroke={col} fill={icon === ICONS.rec ? col : undefined} />}
-      {children}
-      {iconR && <Icon d={iconR} size={fz + 2} stroke={col} />}
+      <BtnDisabledCtx.Provider value={!!disabled}>
+        {icon && <Icon d={icon} size={fz + 3} stroke={col} fill={icon === ICONS.rec ? col : undefined} />}
+        {children}
+        {iconR && <Icon d={iconR} size={fz + 2} stroke={col} />}
+      </BtnDisabledCtx.Provider>
     </button>
   )
 }
@@ -132,9 +142,10 @@ export function SectionLabel({ children, style }) {
 }
 
 export function Kbd({ children }) {
+  const off = useContext(BtnDisabledCtx)
   return <span style={{
-    padding: '1px 6px', borderRadius: 5, background: T.surface2, border: `1px solid ${T.border2}`,
-    fontFamily: T.fontMono, fontSize: 10.5, color: T.text2, lineHeight: 1.6,
+    padding: '1px 6px', borderRadius: 5, background: off ? 'transparent' : T.surface2, border: `1px solid ${off ? T.border : T.border2}`,
+    fontFamily: T.fontMono, fontSize: 10.5, color: off ? T.text4 : T.text2, lineHeight: 1.6,
   }}>{children}</span>
 }
 

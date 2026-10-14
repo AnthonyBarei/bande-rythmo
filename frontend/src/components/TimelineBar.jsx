@@ -5,6 +5,8 @@ const EDGE = 8
 const MIN_DUR = 0.2
 const MIN_ZOOM = 1
 const MAX_ZOOM = 20
+const LABEL_STEPS = [5, 10, 30, 60, 120, 300, 600, 1800, 3600]
+const MAX_LABELS = 10
 
 function fmtClock(t) {
   const m = Math.floor(t / 60)
@@ -192,10 +194,12 @@ export default function TimelineBar({
 
   if (!duration) return null
 
-  // Adaptive ruler ticks
-  const step = viewDur > 1800 ? 300 : viewDur > 600 ? 120 : viewDur > 300 ? 60 : viewDur > 60 ? 30 : viewDur > 20 ? 10 : 5
+  // Ruler: labelled ticks every 10 s on short views (coarser when zoomed out), minor tick halfway.
+  const labelStep = LABEL_STEPS.find(s => viewDur / s <= MAX_LABELS) || LABEL_STEPS[LABEL_STEPS.length - 1]
+  const step = labelStep / 2
   const ticks = []
   for (let t = Math.ceil(vs / step) * step; t <= vs + viewDur; t += step) ticks.push(t)
+  const empty = !pendingClips.length && !savedClips.length && !draft
 
   return (
     <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.r.card, overflow: 'hidden', flexShrink: 0 }}>
@@ -222,8 +226,8 @@ export default function TimelineBar({
         style={{ height: 84, position: 'relative', background: 'repeating-linear-gradient(90deg,transparent 0 7px,rgba(255,255,255,.012) 7px 8px)', cursor: 'crosshair', userSelect: 'none', overflow: 'hidden' }}
       >
         <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 18, background: T.bg2, borderBottom: `1px solid ${T.border}` }}>
-          {ticks.map((t, i) => {
-            const major = i % 2 === 0
+          {ticks.map(t => {
+            const major = Math.abs(t / labelStep - Math.round(t / labelStep)) < 1e-6
             return (
               <div key={t} style={{ position: 'absolute', left: `${((t - vs) / viewDur) * 100}%`, top: 0, height: '100%', pointerEvents: 'none' }}>
                 <div style={{ position: 'absolute', bottom: 0, width: 1, height: major ? 6 : 4, background: T.border3 }} />
@@ -233,6 +237,11 @@ export default function TimelineBar({
           })}
         </div>
         <div style={{ position: 'absolute', top: 18, left: 0, right: 0, bottom: 0 }}>
+          {empty && (
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: T.fs.sm, color: T.text3, pointerEvents: 'none' }}>
+              Glissez sur la timeline pour délimiter un clip
+            </div>
+          )}
           {savedClips.map(c => (
             <div key={c.clip_id} title={c.name} style={{
               position: 'absolute', left: `${((c.start - vs) / viewDur) * 100}%`, width: `${((c.end - c.start) / viewDur) * 100}%`,

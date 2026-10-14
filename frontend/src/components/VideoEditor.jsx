@@ -201,9 +201,7 @@ export default function VideoEditor({ video, onClipsCreated, videoStream, audioS
           <span style={{ fontSize: T.fs.micro, letterSpacing: 1.4, color: T.text3, fontWeight: 700 }}>CLIPS EN ATTENTE</span>
           <span style={{ fontSize: T.fs.micro, color: T.text3, fontFamily: T.fontMono }}>{pendingClips.length}</span>
           <div style={{ flex: 1 }} />
-          <span style={{ fontSize: 10.5, color: T.text4 }}>
-            {pendingClips.length ? 'cliquer le nom pour éditer · ⏎ valider' : 'glisser sur la timeline pour délimiter un clip'}
-          </span>
+          {pendingClips.length > 0 && <span style={{ fontSize: 10.5, color: T.text4 }}>cliquer le nom pour éditer · ⏎ valider</span>}
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, overflow: 'auto', minHeight: 0 }}>
           {pendingClips.map((c, i) => (

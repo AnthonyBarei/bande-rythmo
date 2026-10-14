@@ -44,10 +44,15 @@ function fmtWhen(iso) {
   } catch { return '' }
 }
 
-export default function ActivityCenter() {
+const DONE_CAP = 10
+
+const exportTime = e => Date.parse(e.created_at) || 0
+
+export default function ActivityCenter({ onOpenClip }) {
   const { jobs, cancelByKey, dismiss, retry } = useProgress()
   const [exports, setExports] = useState([])
-  const [clipNames, setClipNames] = useState({})
+  const [clips, setClips] = useState({})
+  const [showAll, setShowAll] = useState(false)
 
   useEffect(() => {
     let live = true
@@ -64,7 +69,7 @@ export default function ActivityCenter() {
     let live = true
     fetch('/api/clips/')
       .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() })
-      .then(d => { if (live) setClipNames(Object.fromEntries((d || []).map(c => [c.clip_id, c.name]))) })
+      .then(d => { if (live) setClips(Object.fromEntries((d || []).map(c => [c.clip_id, c]))) })
       .catch(e => console.warn('Noms des clips indisponibles', e))
     return () => { live = false }
   }, [])
@@ -73,7 +78,24 @@ export default function ActivityCenter() {
   const failed = useMemo(() => jobs.filter(j => j.status === 'error'), [jobs])
   const finished = useMemo(() => jobs.filter(j => j.status === 'done' || j.status === 'cancelled'), [jobs])
 
-  const doneCount = finished.length + exports.length
+  // Newest first: session jobs (latest started last), then the persisted history.
+  const doneRows = useMemo(() => {
+    const sorted = [...exports].sort((a, b) => exportTime(b) - exportTime(a))
+    const seen = new Set()
+    return [
+      ...[...finished].reverse().map(j => ({ type: 'job', key: j.key, j })),
+      ...sorted.map(e => {
+        const fileKey = `${e.clip_id}|${e.filename}`
+        const latest = !seen.has(fileKey)
+        seen.add(fileKey)
+        return { type: 'export', key: `export-${e.id}`, e, latest }
+      }),
+    ]
+  }, [finished, exports])
+
+  const doneCount = doneRows.length
+  const hiddenCount = Math.max(0, doneCount - DONE_CAP)
+  const visibleDone = showAll ? doneRows : doneRows.slice(0, DONE_CAP)
   const empty = !running.length && !failed.length && !doneCount
 
   return (
@@ -110,13 +132,17 @@ export default function ActivityCenter() {
         {doneCount > 0 && <>
           <GroupLabel color={T.success}>TERMINÉ · {doneCount}</GroupLabel>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {finished.map(j => (
-              <DoneRow key={j.key} title={j.title} cancelled={j.status === 'cancelled'}
-                file={j.status === 'cancelled' ? 'Annulé' : (j.stage || 'Terminé')}
-                action={<Btn size="sm" variant="outline" icon={ICONS.close} onClick={() => dismiss(j.key)}>Retirer</Btn>} />
-            ))}
-            {exports.map(e => <ExportRow key={e.id} e={e} clip={clipNames[e.clip_id]} />)}
+            {visibleDone.map(r => r.type === 'job'
+              ? <JobDoneRow key={r.key} j={r.j} clip={clips[r.j.clipId]} onOpenClip={onOpenClip} onDismiss={() => dismiss(r.j.key)} />
+              : <ExportRow key={r.key} e={r.e} clip={clips[r.e.clip_id]?.name} latest={r.latest} />)}
           </div>
+          {hiddenCount > 0 && (
+            <div style={{ marginTop: 10 }}>
+              <Btn size="sm" variant="ghost" onClick={() => setShowAll(v => !v)}>
+                {showAll ? 'Afficher moins' : `Voir les ${hiddenCount} plus anciens`}
+              </Btn>
+            </div>
+          )}
         </>}
       </div>
     </div>
@@ -172,7 +198,20 @@ function DoneRow({ title, clip, file, when, cancelled, action }) {
   )
 }
 
-function ExportRow({ e, clip }) {
+// Session job without a file: open its clip when known (DoneRow action 'open'), else dismiss.
+function JobDoneRow({ j, clip, onOpenClip, onDismiss }) {
+  const cancelled = j.status === 'cancelled'
+  const canOpen = !cancelled && clip && onOpenClip
+  return (
+    <DoneRow title={j.title} clip={clip?.name} cancelled={cancelled}
+      file={cancelled ? 'Annulé' : (j.stage || 'Terminé')}
+      action={canOpen
+        ? <Btn size="sm" variant="outline" icon={ICONS.edit} onClick={() => onOpenClip(clip)}>Ouvrir le clip</Btn>
+        : <Btn size="sm" variant="outline" icon={ICONS.close} onClick={onDismiss}>Retirer</Btn>} />
+  )
+}
+
+function ExportRow({ e, clip, latest }) {
   const toast = useToast()
   async function dl() {
     try {
@@ -186,6 +225,6 @@ function ExportRow({ e, clip }) {
     <DoneRow title={formatLabel(e.format)} clip={clip}
       file={[e.filename, size, e.quality].filter(Boolean).join(' · ')}
       when={fmtWhen(e.created_at)}
-      action={<Btn size="sm" variant="primary" icon={ICONS.download} onClick={dl}>Télécharger</Btn>} />
+      action={<Btn size="sm" variant={latest ? 'primary' : 'outline'} icon={ICONS.download} onClick={dl}>Télécharger</Btn>} />
   )
 }

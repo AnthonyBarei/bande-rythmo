@@ -7,6 +7,28 @@ import { fmtClockHours } from '../utils/timecode'
 
 const TAB = { LOCAL: 'local', PLEX: 'plex', URL: 'url' }
 
+// Last path segment of a URL, percent-decoded ('' when the path ends with '/').
+function urlFilename(u) {
+  let seg
+  try {
+    seg = new URL(u).pathname.split('/').filter(Boolean).pop() || ''
+  } catch (e) {
+    console.warn('URL illisible, nom brut utilisé', e)
+    seg = u.split(/[?#]/)[0].split('/').filter(Boolean).pop() || ''
+  }
+  try {
+    return decodeURIComponent(seg)
+  } catch (e) {
+    console.warn('Segment d’URL mal encodé, nom brut utilisé', e)
+    return seg
+  }
+}
+
+// Original filename → Plex title → URL segment (already in filename) → fallback.
+function sourceTitle(video) {
+  return (video.filename || '').trim() || (video.plexTitle || '').trim() || 'Vidéo sans titre'
+}
+
 function Spinner({ size = 11, color = T.accent }) {
   return <span style={{ width: size, height: size, borderRadius: '50%', border: `2px solid ${color}`, borderTopColor: 'transparent', animation: 'brspin 0.7s linear infinite', display: 'inline-block', flexShrink: 0 }} />
 }
@@ -191,8 +213,7 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
     resetStreams()
     stopPoll()
     sourceIdRef.current = null
-    const filename = u.split('/').pop()?.split('?')[0] || 'video'
-    onVideoSet({ filename, sourcePath: u, sourceId: null, url: u })
+    onVideoSet({ filename: urlFilename(u), sourcePath: u, sourceId: null, url: u })
   }
 
   function clearSource() {
@@ -241,7 +262,7 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: T.fs.micro, color: T.text3, letterSpacing: 1.4, fontWeight: 600, marginBottom: 4 }}>IMPORTER</div>
             <div style={{ fontSize: T.fs.xxl, fontWeight: 600, letterSpacing: -0.6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {video ? video.filename : tab === TAB.PLEX ? 'Choisir un fichier dans Plex' : 'Importer une vidéo'}
+              {video ? sourceTitle(video) : tab === TAB.PLEX ? 'Choisir un fichier dans Plex' : 'Importer une vidéo'}
             </div>
             <div style={{ fontSize: T.fs.xs, color: T.text3, fontFamily: T.fontMono, marginTop: 6, display: 'flex', gap: 8, alignItems: 'center', minWidth: 0, whiteSpace: 'nowrap' }}>
               {meta}

@@ -83,6 +83,7 @@ export default function Preferences() {
   }, [])
 
   const accent = (settings.accent || '').toLowerCase()
+  const isCustom = !!accent && !ACCENTS.some(a => a.hex.toLowerCase() === accent)
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -96,12 +97,9 @@ export default function Preferences() {
                 return <div key={a.hex} role="button" tabIndex={0} title={a.name} aria-pressed={on}
                   onClick={() => update({ accent: a.hex })}
                   onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); update({ accent: a.hex }) } }}
-                  style={{ width: 32, height: 32, borderRadius: 8, background: a.hex, cursor: 'pointer', border: on ? `2px solid ${T.text}` : '1px solid transparent', boxShadow: on ? `0 0 0 2px ${a.hex}55` : 'none' }} />
+                  style={{ width: 30, height: 30, borderRadius: 8, background: a.hex, cursor: 'pointer', border: on ? `2px solid ${T.text}` : '1px solid transparent', boxShadow: on ? `0 0 0 2px ${a.hex}55` : 'none' }} />
               })}
-              <label title="Couleur personnalisée" style={{ width: 32, height: 32, borderRadius: 8, overflow: 'hidden', cursor: 'pointer', border: `1px dashed ${T.border2}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <input type="color" value={settings.accent} onChange={e => update({ accent: e.target.value })}
-                  style={{ width: 40, height: 40, padding: 0, border: 'none', background: 'none', cursor: 'pointer' }} />
-              </label>
+              <CustomAccent value={settings.accent} custom={isCustom} onChange={hex => update({ accent: hex })} />
             </div>
           </Field>
           <Field label="Style de bande rythmo">
@@ -158,6 +156,24 @@ export default function Preferences() {
         </div>
       </div>
     </div>
+  )
+}
+
+// 7th swatch: native colour picker. Dashed "+" until a custom colour is chosen, then filled with it.
+function CustomAccent({ value, custom, onChange }) {
+  return (
+    <label title="Couleur personnalisée" style={{
+      position: 'relative', width: 30, height: 30, borderRadius: 8, cursor: 'pointer', flexShrink: 0,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: custom ? value : 'transparent',
+      border: custom ? `2px solid ${T.text}` : `1px dashed ${T.border2}`,
+      boxShadow: custom ? `0 0 0 2px ${value}55` : 'none',
+    }}>
+      {!custom && <Icon d={ICONS.plus} size={14} stroke={T.text3} />}
+      <input type="color" value={/^#[0-9a-f]{6}$/i.test(value || '') ? value : '#f5c518'} aria-label="Couleur personnalisée"
+        onChange={e => onChange(e.target.value)}
+        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0, padding: 0, border: 'none', cursor: 'pointer' }} />
+    </label>
   )
 }
 

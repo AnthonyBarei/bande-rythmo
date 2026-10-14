@@ -48,7 +48,7 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
   //   Drop zone (no clip) → 'image'
   // Persist last-used tab per session (sessionStorage), but explicit prop wins.
   const [sourceTab, setSourceTab] = useState(() => {
-    if (!clip) return 'image'   // no clip → only the image drop zone exists
+    if (!clip) return 'image'   // Sidebar entry (no clip) → Image mode
     if (initialTab) return initialTab
     try {
       const last = sessionStorage.getItem('meme-last-tab')
@@ -564,13 +564,15 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
     </div>
   )
 
+  const noClip = !segmentUrl
+
   const transport = (
     <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-      <Btn size="sm" icon={ICONS.skipBack} onClick={() => seekRelative(-1)} title="−1 s (Maj+←)" />
-      <Btn size="sm" icon={ICONS.prevFrame} onClick={() => seekRelative(-0.1)} title="−0,1 s (←)" />
-      <Btn size="sm" variant="solid" icon={playing ? ICONS.pause : ICONS.play} onClick={togglePlay} title="Lecture / pause (Espace)" />
-      <Btn size="sm" icon={ICONS.nextFrame} onClick={() => seekRelative(0.1)} title="+0,1 s (→)" />
-      <Btn size="sm" icon={ICONS.skipFwd} onClick={() => seekRelative(1)} title="+1 s (Maj+→)" />
+      <Btn size="sm" icon={ICONS.skipBack} onClick={() => seekRelative(-1)} title="−1 s (Maj+←)" disabled={noClip} />
+      <Btn size="sm" icon={ICONS.prevFrame} onClick={() => seekRelative(-0.1)} title="−0,1 s (←)" disabled={noClip} />
+      <Btn size="sm" variant="solid" icon={playing ? ICONS.pause : ICONS.play} onClick={togglePlay} title="Lecture / pause (Espace)" disabled={noClip} />
+      <Btn size="sm" icon={ICONS.nextFrame} onClick={() => seekRelative(0.1)} title="+0,1 s (→)" disabled={noClip} />
+      <Btn size="sm" icon={ICONS.skipFwd} onClick={() => seekRelative(1)} title="+1 s (Maj+→)" disabled={noClip} />
     </div>
   )
 
@@ -595,7 +597,7 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
           <span style={{ color: T.text4, fontSize: 11, letterSpacing: 4, fontFamily: T.fontMono }}>APERÇU</span>
         )}
       </div>
-      {segmentUrl && footer}
+      <div style={noClip ? { pointerEvents: 'none' } : undefined}>{footer}</div>
     </div>
   )
 
@@ -659,31 +661,32 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
   )
 
   let sourcePanel
-  if (sourceTab === 'video' && segmentUrl) {
+  const openClipHint = 'Ouvrez un clip depuis la bibliothèque pour '
+  if (sourceTab === 'video') {
     sourcePanel = (<>
-      {errorBox}
-      <Btn variant="primary" size="lg" full icon={ICONS.layers} onClick={createGif} disabled={gifLoading || !videoReady || outPoint <= inPoint}>
+      <Btn variant="primary" size="lg" full icon={ICONS.layers} onClick={createGif} disabled={noClip || gifLoading || !videoReady || outPoint <= inPoint}>
         {gifLoading ? 'Génération GIF…' : 'Créer le GIF'}
       </Btn>
-      {hint("Réglez IN / OUT puis créez le GIF. Il s'ouvre dans l'éditeur de texte.")}
-    </>)
-  } else if (sourceTab === 'audio' && segmentUrl) {
-    const audioDisabled = audioLoading || !videoReady || outPoint <= inPoint
-    sourcePanel = (<>
       {errorBox}
+      {hint(noClip ? openClipHint + 'en extraire un GIF.' : "Réglez IN / OUT puis créez le GIF. Il s'ouvre dans l'éditeur de texte.")}
+    </>)
+  } else if (sourceTab === 'audio') {
+    const audioDisabled = noClip || audioLoading || !videoReady || outPoint <= inPoint
+    sourcePanel = (<>
       <Btn variant="primary" size="lg" full icon={ICONS.download} onClick={() => createAudio('mp3')} disabled={audioDisabled}>
         {audioLoading ? 'Export…' : 'Télécharger MP3'}
       </Btn>
       <Btn variant="solid" full icon={ICONS.download} onClick={() => createAudio('wav')} disabled={audioDisabled}>Télécharger WAV</Btn>
-      {hint("Exporte l'audio de la sélection. MP3 compact, WAV lossless.")}
+      {errorBox}
+      {hint(noClip ? openClipHint + 'en exporter l’audio.' : "Exporte l'audio de la sélection. MP3 compact, WAV lossless.")}
     </>)
   } else {
     sourcePanel = (<>
+      <Btn variant="primary" size="lg" full icon={ICONS.film} onClick={captureFrame} disabled={noClip || !videoReady}>Capturer ce frame</Btn>
       {errorBox}
-      {segmentUrl && <Btn variant="primary" size="lg" full icon={ICONS.film} onClick={captureFrame} disabled={!videoReady}>Capturer ce frame</Btn>}
-      {hint(segmentUrl
-        ? 'Naviguez puis capturez le frame souhaité — ou glissez votre propre image.'
-        : 'Glissez votre propre image — ou ouvrez un clip depuis la bibliothèque pour en capturer un frame.')}
+      {hint(noClip
+        ? 'Glissez votre propre image — ou ouvrez un clip depuis la bibliothèque pour en capturer un frame.'
+        : 'Naviguez puis capturez le frame souhaité — ou glissez votre propre image.')}
       {dropZone}
     </>)
   }
@@ -708,7 +711,7 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
       <ScreenHeader
         kicker="ATELIER"
         title="Meme · GIF · Audio"
-        sub={clip ? `clip · ${clip.name}` : undefined}
+        sub={clip ? `clip · ${clip.name}` : 'aucun clip ouvert'}
         right={(onBack || editing) ? (
           <div style={{ display: 'flex', gap: 8 }}>
             {onBack && <Btn variant="outline" icon={ICONS.back} onClick={onBack}>Mes clips</Btn>}
@@ -716,7 +719,7 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
           </div>
         ) : null}
       />
-      {!editing && clip && (
+      {!editing && (
         <div style={{ padding: '0 32px 14px', flexShrink: 0 }}>
           <Segmented value={sourceTab} onChange={setSourceTab} options={[
             { v: 'image', l: 'Image', icon: ICONS.film }, { v: 'video', l: 'GIF', icon: ICONS.layers }, { v: 'audio', l: 'Audio', icon: ICONS.volume },
