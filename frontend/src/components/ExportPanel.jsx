@@ -53,6 +53,9 @@ const FONT_LABELS = { cursive: 'Manuscrite', atkinson: 'Atkinson', lisible: 'Lis
 // Module-level so the queue survives closing/reopening the screen.
 const JOB_META = new Map()
 
+// Finished files listed in the queue before "Voir tout (n)".
+const QUEUE_CAP = 8
+
 function fmtBytes(n) {
   if (!n) return '—'
   if (n < 1024) return `${n} B`
@@ -86,11 +89,11 @@ async function postJson(url, body) {
 export default function ExportPanel(props) {
   const host = useExportScreen()
   if (host && !host.slot) return null // slot mounts on the next commit
-  const screen = <ExportScreen {...props} onBack={host?.onClose} clipName={host?.clip?.name} fill={!!host?.slot} />
+  const screen = <ExportScreen {...props} onBack={host?.onClose} onActivity={host?.onActivity} clipName={host?.clip?.name} fill={!!host?.slot} />
   return host?.slot ? createPortal(screen, host.slot) : screen
 }
 
-function ExportScreen({ segmentId, subtitles, boucles = [], pxPerSec = 180, brOffset = 0, canvasH = 64, getCanvasWidth, brFont = 'atkinson', brStyle = 'classique', duration = 0, getCurrentTime, loopRegion = null, onBack, clipName, fill }) {
+function ExportScreen({ segmentId, subtitles, boucles = [], pxPerSec = 180, brOffset = 0, canvasH = 64, getCanvasWidth, brFont = 'atkinson', brStyle = 'classique', duration = 0, getCurrentTime, loopRegion = null, onBack, onActivity, clipName, fill }) {
   const [sel, setSel] = useState('mp4')
   const [loading, setLoading] = useState(null)
   const [error, setError] = useState(null)
@@ -106,6 +109,7 @@ function ExportScreen({ segmentId, subtitles, boucles = [], pxPerSec = 180, brOf
   const [gpu, setGpu] = useState('off')                 // off | auto | nvenc | qsv | amf
   const [hwEncoders, setHwEncoders] = useState(null)    // { nvenc, qsv, amf, any } | null
   const [history, setHistory] = useState([])
+  const [showAll, setShowAll] = useState(false)
   const [autoDownload, setAutoDownload] = useState(() => {
     try { return localStorage.getItem('export-auto-dl') !== '0' } catch { return true }
   })
@@ -162,6 +166,29 @@ function ExportScreen({ segmentId, subtitles, boucles = [], pxPerSec = 180, brOf
       setError('Suppression de l\'export échouée : ' + e.message)
     }
     refreshHistory()
+  }
+
+  async function clearHistory() {
+    const n = history.length
+    if (!n || !confirm(`Supprimer les ${n} export${n > 1 ? 's' : ''} de ce clip ? Les fichiers seront effacés.`)) return
+    const failed = []
+    for (const h of history) {
+      try {
+        const res = await fetch(`/api/export/${h.id}`, { method: 'DELETE' })
+        if (!res.ok && res.status !== 404) throw new Error(`HTTP ${res.status}`)
+      } catch (e) {
+        console.error('export delete failed', h.id, e)
+        failed.push(h.filename)
+      }
+    }
+    if (failed.length) setError(`Suppression échouée pour ${failed.length} export${failed.length > 1 ? 's' : ''} : ${failed.join(', ')}`)
+    setShowAll(false)
+    refreshHistory()
+  }
+
+  function seeAll() {
+    if (onActivity) onActivity()
+    else setShowAll(true)
   }
 
   function buildBody(format, f) {
@@ -268,7 +295,7 @@ function ExportScreen({ segmentId, subtitles, boucles = [], pxPerSec = 180, brOf
   return (
     <div style={{ height: fill ? '100%' : 'min(82vh, 780px)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <ScreenHeader kicker="EXPORTER" title="Sortie & téléchargements" sub={sub}
-        right={onBack && <Btn variant="outline" icon={ICONS.chevron} onClick={onBack} title="Retour à l'éditeur (Échap)" style={{ transform: 'none' }}>Retour</Btn>} />
+        right={onBack && <Btn variant="outline" icon={ICONS.chevronL} onClick={onBack} title="Retour à l'éditeur (Échap)">Retour</Btn>} />
       <div style={{ flex: 1, minHeight: 0, padding: '8px 32px 28px', display: 'flex', gap: 0, overflow: 'hidden' }}>
         <div style={{ flex: 1, display: 'flex', background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.r.card, overflow: 'hidden', minHeight: 0 }}>
           {/* format picker */}
@@ -358,7 +385,7 @@ function ExportScreen({ segmentId, subtitles, boucles = [], pxPerSec = 180, brOf
               {mix.busy && (
                 <QueueRow q={{ ext: 'MP4 doublé', c: fmtOf('mp4-dubbed').c, file: 'clip_double.mp4', status: 'render', stage: 'Mixage…' }} />
               )}
-              {history.map(h => {
+              {(showAll ? history : history.slice(0, QUEUE_CAP)).map(h => {
                 const f = fmtOf(h.format)
                 return (
                   <QueueRow key={h.id}
@@ -367,6 +394,17 @@ function ExportScreen({ segmentId, subtitles, boucles = [], pxPerSec = 180, brOf
                     onDelete={() => removeExport(h.id)} />
                 )
               })}
+              {history.length > 0 && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 2 }}>
+                  {history.length > QUEUE_CAP && !showAll && (
+                    <Btn size="sm" onClick={seeAll} title={onActivity ? 'Tous les exports dans Activité' : 'Afficher tous les exports'}>
+                      Voir tout ({history.length})
+                    </Btn>
+                  )}
+                  <div style={{ flex: 1 }} />
+                  <Btn size="sm" danger icon={ICONS.trash} onClick={clearHistory} title="Supprimer tous les exports de ce clip">Vider</Btn>
+                </div>
+              )}
               {!jobs.length && !history.length && !loading && !mix.busy && (
                 <div style={{ fontSize: T.fs.xs, color: T.text3, textAlign: 'center', padding: '28px 0' }}>
                   Aucun export pour ce clip — choisissez un format puis lancez l'export.
@@ -580,7 +618,16 @@ function useMix(segmentId) {
         fetch(`/api/takes/${segmentId}`),
         fetch(`/api/clips/${segmentId}`),
       ])
-      if (tr.ok) setTakes(await tr.json())
+      if (tr.ok) {
+        const list = await tr.json()
+        setTakes(list)
+        // Validated (best) takes start selected; explicit choices are kept.
+        setSel(s => {
+          const next = { ...s }
+          for (const t of list) if (t.best && !(t.id in next)) next[t.id] = { on: true, gain: 0 }
+          return next
+        })
+      } else console.error('mix takes fetch failed', tr.status)
       if (cr.ok) setHasBed(!!(await cr.json()).has_bed)
     } catch (e) { console.error('mix data fetch failed', e) }
   }, [segmentId])

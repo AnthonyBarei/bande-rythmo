@@ -6,6 +6,7 @@ import RecorderPanel from './RecorderPanel'
 // (ScreenHeader + RecorderPanel 'studio' body) for the active clip.
 export default function StudioScreen({ clip, onBack }) {
   const recorderRef = useRef(null)
+  const cueRef = useRef(null)
   const subtitles = clip.subtitles || []
   const [index, setIndex] = useState(subtitles.length ? 0 : null)
   const activeIndex = index != null && subtitles[index] ? index : (subtitles.length ? 0 : null)
@@ -31,9 +32,13 @@ export default function StudioScreen({ clip, onBack }) {
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <ScreenHeader kicker="STUDIO" title="Enregistrement" sub={sub}
-        right={<Btn variant="outline" icon={ICONS.chevron} onClick={onBack} style={{ transform: 'none' }}>Retour à l'éditeur</Btn>} />
+        right={<Btn variant="outline" icon={ICONS.chevronL} onClick={onBack}>Retour à l'éditeur</Btn>} />
+      {/* Pre-roll cue: the clip's VO plays the 3 s before the réplique. */}
+      <audio ref={cueRef} src={`/${clip.segment_path}`} preload="auto" style={{ display: 'none' }}
+        onError={() => console.warn('Studio: piste VO du pré-roll indisponible', clip.segment_path)} />
       <RecorderPanel
         ref={recorderRef}
+        cueRef={cueRef}
         variant="studio"
         clipId={clip.clip_id}
         subtitles={subtitles}

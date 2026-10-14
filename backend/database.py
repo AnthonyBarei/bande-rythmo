@@ -74,6 +74,9 @@ def init_db():
             conn.execute(text("ALTER TABLE subtitles ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0"))
         if "take" not in sub_cols:
             conn.execute(text("ALTER TABLE subtitles ADD COLUMN take INTEGER NOT NULL DEFAULT 0"))
+        take_cols = [r[1] for r in conn.execute(text("PRAGMA table_info(takes)")).fetchall()]
+        if "best" not in take_cols:
+            conn.execute(text("ALTER TABLE takes ADD COLUMN best INTEGER NOT NULL DEFAULT 0"))
         # FK indexes — list/lookup endpoints filter on clip_id constantly.
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_subtitles_clip_id ON subtitles (clip_id)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_takes_clip_id ON takes (clip_id)"))

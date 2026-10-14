@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from models import Clip
-from services.take_service import create_take, delete_take, list_takes
+from services.take_service import create_take, delete_take, list_takes, set_best_take
 
 router = APIRouter()
 
@@ -35,6 +35,14 @@ async def upload_take(
 @router.get("/{clip_id}")
 async def get_takes(clip_id: str, db: Session = Depends(get_db)):
     return list_takes(db, clip_id)
+
+
+@router.put("/{take_id}/best")
+async def mark_best_take(take_id: int, db: Session = Depends(get_db)):
+    take = set_best_take(db, take_id)
+    if not take:
+        raise HTTPException(404, "Take not found")
+    return take
 
 
 @router.delete("/{take_id}")

@@ -107,6 +107,8 @@ class Take(Base):
     duration = Column(Float, nullable=False, default=0.0)
     label = Column(String, default="")
     created_at = Column(DateTime, default=datetime.now)
+    # Validated take of its réplique — at most one per (clip_id, subtitle_index).
+    best = Column(Boolean, nullable=False, default=False)
 
 
 class LexiconEntry(Base):

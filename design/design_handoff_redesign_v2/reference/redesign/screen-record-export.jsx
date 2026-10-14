@@ -3,6 +3,7 @@
   const { T, Icon, ICONS, Btn, Chip, Dot, Avatar, Segmented, Toggle, ProgressBar, fmt, fmtTC } = window.RD;
   const { SUBS, TAKES } = window.RDATA;
   const trackOf = (n) => T.tracks.find(t => t.name === n) || T.tracks[0];
+  const chevronL = 'M15 6l-6 6 6 6'; // back arrow (ICONS.chevron points down)
 
   // ════════════ RECORD ════════════
   function Record({ go, accent }) {
@@ -18,7 +19,7 @@
     return (
       <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <ScreenHeader kicker="STUDIO" title="Enregistrement" sub="S02E04 — confrontation cuisine"
-          right={<Btn variant="outline" icon={ICONS.chevron} onClick={() => go('editor')} style={{ transform: 'none' }}>Retour à l'éditeur</Btn>} />
+          right={<Btn variant="outline" icon={chevronL} onClick={() => go('editor')}>Retour à l'éditeur</Btn>} />
 
         <div style={{ flex: 1, minHeight: 0, padding: '8px 32px 28px', display: 'flex', gap: 20, overflow: 'hidden' }}>
           {/* Left: recording stage */}
@@ -147,7 +148,7 @@
     return (
       <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <ScreenHeader kicker="EXPORTER" title="Sortie & téléchargements" sub="S02E04 — confrontation · 14 répliques"
-          right={<Btn variant="outline" icon={ICONS.chevron} onClick={() => go('editor')} style={{ transform: 'none' }}>Retour</Btn>} />
+          right={<Btn variant="outline" icon={chevronL} onClick={() => go('editor')}>Retour</Btn>} />
         <div style={{ flex: 1, minHeight: 0, padding: '8px 32px 28px', display: 'flex', gap: 0, overflow: 'hidden' }}>
           <div style={{ flex: 1, display: 'flex', background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.r.card, overflow: 'hidden', minHeight: 0 }}>
             {/* format picker */}

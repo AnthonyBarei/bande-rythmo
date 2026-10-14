@@ -13,6 +13,7 @@ def _to_dict(take: Take) -> dict:
         "audio_url": f"/{take.audio_path}",
         "duration": take.duration,
         "label": take.label,
+        "best": bool(take.best),
         "created_at": take.created_at.isoformat() if take.created_at else None,
     }
 
@@ -41,6 +42,24 @@ def list_takes(db: Session, clip_id):
         .all()
     )
     return [_to_dict(t) for t in takes]
+
+
+def set_best_take(db: Session, take_id):
+    """Mark a take as its réplique's best; clear the flag on the other takes
+    of the same clip + réplique (free takes: subtitle_index NULL form a group)."""
+    take = db.query(Take).filter(Take.id == take_id).first()
+    if not take:
+        return None
+    siblings = db.query(Take).filter(Take.clip_id == take.clip_id, Take.id != take.id)
+    if take.subtitle_index is None:
+        siblings = siblings.filter(Take.subtitle_index.is_(None))
+    else:
+        siblings = siblings.filter(Take.subtitle_index == take.subtitle_index)
+    siblings.update({Take.best: False}, synchronize_session=False)
+    take.best = True
+    db.commit()
+    db.refresh(take)
+    return _to_dict(take)
 
 
 def delete_take(db: Session, take_id):
