@@ -1,14 +1,20 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import TimelineBar from './TimelineBar'
 import VideoPlayer from './VideoPlayer'
-import { Icon, ICONS, Kbd, SectionLabel } from '../ui'
+import { Icon, ICONS, Dot, T, alpha } from '../ui'
 import { useProgress } from '../ProgressContext'
 import { fmtClockHours as fmt } from '../utils/timecode'
 
 let _pendingId = 0
 const newId = () => ++_pendingId
+const MIN_DUR = 0.2
+// VideoPlayer's own transport bar (5 + 32 + 5 padding/button + 1 border).
+const PLAYER_BAR_H = 43
 
-export default function VideoEditor({ video, onClipsCreated, videoStream, audioStream, audioSrc }) {
+// Importer left column — reference screen-import.jsx Preview · ZoomTimeline · PendingList.
+// The header actions (Marquer un clip / Créer N clips) live in ImportSection and
+// drive this component through `actionsRef`; state flows back via `onStateChange`.
+export default function VideoEditor({ video, onClipsCreated, videoStream, audioStream, audioSrc, actionsRef, onStateChange }) {
   const videoRef = useRef(null)
   const progress = useProgress()
   const [currentTime, setCurrentTime] = useState(0)
@@ -19,6 +25,7 @@ export default function VideoEditor({ video, onClipsCreated, videoStream, audioS
   const [error, setError] = useState(null)
   const [editingId, setEditingId] = useState(null)
   const [editValue, setEditValue] = useState('')
+  const [markIn, setMarkIn] = useState(null)
   const pendingRef = useRef(pendingClips)
   const savingRef = useRef(false)
   useEffect(() => { pendingRef.current = pendingClips }, [pendingClips])
@@ -29,6 +36,7 @@ export default function VideoEditor({ video, onClipsCreated, videoStream, audioS
     setPendingClips([])
     setSavedClips([])
     setEditingId(null)
+    setMarkIn(null)
   }, [video?.url])
 
   const saveAll = useCallback(async () => {
@@ -113,6 +121,24 @@ export default function VideoEditor({ video, onClipsCreated, videoStream, audioS
     }
   }, [video?.url, video?.file, video?.filename, video?.sourcePath, onClipsCreated, videoStream, audioStream, progress])
 
+  // "Marquer un clip": 1st press = IN at the playhead, 2nd press = OUT → pending clip.
+  const markClip = useCallback(() => {
+    const t = videoRef.current?.currentTime ?? 0
+    if (markIn == null) { setMarkIn(t); return }
+    const start = Math.min(markIn, t), end = Math.max(markIn, t)
+    if (end - start >= MIN_DUR) setPendingClips(prev => [...prev, { _id: newId(), name: '', start, end }])
+    setMarkIn(null)
+  }, [markIn])
+
+  useEffect(() => {
+    if (!actionsRef) return
+    actionsRef.current = { save: saveAll, mark: markClip }
+  }, [actionsRef, saveAll, markClip])
+
+  useEffect(() => {
+    onStateChange?.({ count: pendingClips.length, saving, duration, marking: markIn != null })
+  }, [onStateChange, pendingClips.length, saving, duration, markIn])
+
   useEffect(() => {
     function onKey(e) {
       if (['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return
@@ -139,9 +165,9 @@ export default function VideoEditor({ video, onClipsCreated, videoStream, audioS
     setPendingClips(prev => prev.map(c => c._id === id ? { ...c, start, end } : c))
   }
 
-  function handleRemove(id) {
+  const handleRemove = useCallback(id => {
     setPendingClips(prev => prev.filter(c => c._id !== id))
-  }
+  }, [])
 
   function startEdit(c) {
     setEditingId(c._id)
@@ -156,18 +182,10 @@ export default function VideoEditor({ video, onClipsCreated, videoStream, audioS
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column' }}>
-      {/* Video */}
-      <VideoPlayer
-        src={video.url}
-        audioSrc={audioSrc}
-        videoRef={videoRef}
-        maxHeight={420}
-        onTimeUpdate={t => setCurrentTime(t)}
-        onLoadedMetadata={d => setDuration(d)}
-      />
+    <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <Preview video={video} audioSrc={audioSrc} videoRef={videoRef} currentTime={currentTime} duration={duration} markIn={markIn}
+        onTimeUpdate={setCurrentTime} onLoadedMetadata={setDuration} />
 
-      {/* Drag-to-create timeline */}
       <TimelineBar
         duration={duration}
         currentTime={currentTime}
@@ -179,158 +197,96 @@ export default function VideoEditor({ video, onClipsCreated, videoStream, audioS
         onRemove={handleRemove}
       />
 
-      {/* Instruction row + timecode */}
-      <div style={{
-        padding: '6px 16px', background: 'var(--surface)', borderBottom: '1px solid var(--border)',
-        display: 'flex', gap: 8, alignItems: 'center', fontSize: 12, color: 'var(--text2)',
-      }}>
-        <span style={{ color: 'var(--accent)' }}>◎</span>
-        <span><strong style={{ color: 'var(--text)' }}>Glissez sur la timeline</strong> pour délimiter un clip — déplacez ou redimensionnez les blocs orange ensuite.</span>
-        <div style={{ flex: 1 }} />
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text3)' }}>
-          {fmt(currentTime)} / {fmt(duration)}
-        </span>
-      </div>
-
-      {/* Shortcut hints */}
-      <div style={{
-        padding: '5px 16px', background: 'var(--bg2)', borderBottom: '1px solid var(--border)',
-        display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center',
-      }}>
-        {[
-          { keys: ['Espace'], label: 'Lecture/Pause' },
-          { keys: ['←', '→'], label: '±5s' },
-          { keys: ['⇧←', '⇧→'], label: '±1s' },
-          { keys: ['M'], label: 'Mute' },
-          { keys: ['Suppr'], label: 'Supprimer bloc' },
-        ].map(({ keys, label }) => (
-          <span key={label} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--text3)' }}>
-            {keys.map(k => <Kbd key={k}>{k}</Kbd>)}
-            <span>{label}</span>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: '0 1 auto', minHeight: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexShrink: 0 }}>
+          <span style={{ fontSize: T.fs.micro, letterSpacing: 1.4, color: T.text3, fontWeight: 700 }}>CLIPS EN ATTENTE</span>
+          <span style={{ fontSize: T.fs.micro, color: T.text3, fontFamily: T.fontMono }}>{pendingClips.length}</span>
+          <div style={{ flex: 1 }} />
+          <span style={{ fontSize: 10.5, color: T.text4 }}>
+            {pendingClips.length ? 'cliquer le nom pour éditer · ⏎ valider' : 'glisser sur la timeline pour délimiter un clip'}
           </span>
-        ))}
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, overflow: 'auto', minHeight: 0 }}>
+          {pendingClips.map((c, i) => (
+            <div key={c._id} style={{
+              display: 'grid', gridTemplateColumns: '20px 1fr auto auto 30px', alignItems: 'center', gap: 12, flexShrink: 0,
+              padding: '8px 12px', background: T.surface, border: `1px solid ${c.name ? alpha(T.accent, '33') : T.border2}`, borderRadius: T.r.ctl,
+            }}>
+              <div style={{ width: 18, height: 18, borderRadius: 4, background: alpha(T.accent, '22'), color: T.accent, fontSize: 9.5, fontWeight: 800, fontFamily: T.fontMono, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{i + 1}</div>
+              {editingId === c._id ? (
+                <input autoFocus value={editValue} placeholder={`Clip ${i + 1}`}
+                  onChange={e => setEditValue(e.target.value)}
+                  onBlur={commitEdit}
+                  onKeyDown={e => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') setEditingId(null) }}
+                  style={{ background: T.bg2, border: `1px solid ${T.accent}`, borderRadius: 6, padding: '5px 8px', fontSize: T.fs.sm, color: T.text, fontFamily: T.fontUI, outline: 'none' }} />
+              ) : (
+                <div onClick={() => startEdit(c)} style={{ fontSize: T.fs.sm, fontWeight: 500, color: c.name ? T.text : T.text3, fontStyle: c.name ? 'normal' : 'italic', cursor: 'text', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {c.name || 'Sans nom — cliquer pour nommer'}
+                  <Icon d={ICONS.edit} size={11} stroke={T.text4} style={{ opacity: 0.5 }} />
+                </div>
+              )}
+              <span style={{ fontFamily: T.fontMono, fontSize: T.fs.xs, color: T.text2 }}>{fmt(c.start)} → {fmt(c.end)}</span>
+              <span style={{ fontFamily: T.fontMono, fontSize: T.fs.xs, color: T.accent }}>{(c.end - c.start).toFixed(1)}s</span>
+              <button onClick={() => handleRemove(c._id)} title="Retirer" style={{ background: 'transparent', border: 'none', color: T.text3, cursor: 'pointer', display: 'flex', justifyContent: 'center' }}><Icon d={ICONS.trash} size={14} /></button>
+            </div>
+          ))}
+
+          {savedClips.map(clip => (
+            <div key={clip.clip_id} style={{
+              display: 'grid', gridTemplateColumns: '20px 1fr auto auto 30px', alignItems: 'center', gap: 12, flexShrink: 0,
+              padding: '8px 12px', background: T.surface, border: `1px solid ${alpha(T.success, '33')}`, borderRadius: T.r.ctl,
+            }}>
+              <div style={{ width: 18, height: 18, borderRadius: 4, background: alpha(T.success, '22'), display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon d={ICONS.check} size={11} stroke={T.success} sw={2.4} /></div>
+              <div style={{ fontSize: T.fs.sm, fontWeight: 500, color: T.text2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{clip.name} <span style={{ fontSize: 10.5, color: T.success }}>· créé, dans la Bibliothèque</span></div>
+              <span style={{ fontFamily: T.fontMono, fontSize: T.fs.xs, color: T.text3 }}>{fmt(clip.start)} → {fmt(clip.end)}</span>
+              <span style={{ fontFamily: T.fontMono, fontSize: T.fs.xs, color: T.success }}>{(clip.end - clip.start).toFixed(1)}s</span>
+              <span />
+            </div>
+          ))}
+        </div>
+
+        {error && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'rgba(232,89,93,.05)', border: `1px solid ${alpha(T.danger, '44')}`, borderRadius: T.r.ctl, color: T.danger, fontSize: T.fs.xs, flexShrink: 0 }}>
+            <Icon d={ICONS.warn} size={14} stroke={T.danger} />{error}
+          </div>
+        )}
       </div>
+    </div>
+  )
+}
 
-      {/* Pending clips queue — inline rename */}
-      {pendingClips.length > 0 && (
-        <div style={{ padding: '12px 16px 8px' }}>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
-            <SectionLabel style={{ textTransform: 'uppercase' }}>
-              Clips en attente
-            </SectionLabel>
-            <span style={{ fontSize: 11, color: 'var(--text3)' }}>{pendingClips.length}</span>
-            <div style={{ flex: 1 }} />
-            <span style={{ fontSize: 11, color: 'var(--text4)' }}>Cliquer le nom pour éditer · ⏎ valider</span>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-            {pendingClips.map((c, idx) => (
-              <div key={c._id} style={{
-                display: 'grid', gridTemplateColumns: '28px 1fr auto auto 32px',
-                alignItems: 'center', gap: 10,
-                padding: '7px 10px', background: 'var(--surface)',
-                border: '1px solid var(--border)', borderRadius: 'var(--radius)',
-              }}>
-                <span style={{
-                  width: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  background: 'var(--accent-soft)', color: 'var(--accent)',
-                  fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 800, borderRadius: 4,
-                }}>{idx + 1}</span>
-                {editingId === c._id ? (
-                  <input
-                    autoFocus
-                    value={editValue}
-                    onChange={e => setEditValue(e.target.value)}
-                    onBlur={commitEdit}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter') commitEdit()
-                      if (e.key === 'Escape') setEditingId(null)
-                    }}
-                    style={{ fontSize: 13 }}
-                  />
-                ) : (
-                  <span
-                    onClick={() => startEdit(c)}
-                    style={{ fontSize: 13, cursor: 'text', color: c.name ? 'var(--text)' : 'var(--text3)', fontStyle: c.name ? 'normal' : 'italic' }}
-                  >
-                    {c.name || 'Sans nom — cliquer pour nommer ✎'}
-                  </span>
-                )}
-                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text2)' }}>
-                  {fmt(c.start)} → {fmt(c.end)}
-                </span>
-                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--accent)' }}>
-                  {(c.end - c.start).toFixed(1)}s
-                </span>
-                <button
-                  onClick={() => handleRemove(c._id)}
-                  title="Retirer"
-                  style={{ color: 'var(--text3)', background: 'none', padding: '3px 5px', borderRadius: 3, border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: 32, minHeight: 32 }}
-                  onMouseEnter={e => e.currentTarget.style.color = 'var(--danger)'}
-                  onMouseLeave={e => e.currentTarget.style.color = 'var(--text3)'}
-                ><Icon d={ICONS.trash} size={13} /></button>
-              </div>
-            ))}
-          </div>
+function Preview({ video, audioSrc, videoRef, currentTime, duration, markIn, onTimeUpdate, onLoadedMetadata }) {
+  const boxRef = useRef(null)
+  const [boxH, setBoxH] = useState(0)
 
-          <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <button
-              onClick={saveAll}
-              disabled={saving}
-              style={{
-                padding: '8px 16px',
-                background: saving ? 'var(--surface3)' : 'var(--accent)',
-                color: saving ? 'var(--text3)' : '#0b0b0d',
-                fontWeight: 600, fontSize: 13, borderRadius: 'var(--radius)',
-              }}
-            >
-              {saving
-                ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}><span style={{ width: 11, height: 11, borderRadius: '50%', border: '2px solid currentColor', borderTopColor: 'transparent', animation: 'brspin 0.7s linear infinite' }} /> Création…</span>
-                : `Créer ${pendingClips.length} clip${pendingClips.length > 1 ? 's' : ''}`}
-            </button>
-            <Kbd>Ctrl</Kbd>
-            <span style={{ fontSize: 11, color: 'var(--text3)' }}>+</span>
-            <Kbd>S</Kbd>
-          </div>
-        </div>
-      )}
+  useEffect(() => {
+    const el = boxRef.current
+    if (!el) return
+    const ro = new ResizeObserver(([entry]) => setBoxH(entry.contentRect.height))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
 
-      {/* Saved clips */}
-      {savedClips.length > 0 && (
-        <div style={{ padding: '0 16px 16px' }}>
-          <SectionLabel style={{ textTransform: 'uppercase', padding: '12px 0 8px' }}>
-            Clips créés ({savedClips.length})
-          </SectionLabel>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {savedClips.map(clip => (
-              <div key={clip.clip_id} style={{
-                display: 'flex', alignItems: 'center', gap: 10,
-                padding: '7px 10px', background: 'var(--surface)',
-                border: '1px solid var(--border)', borderRadius: 4,
-              }}>
-                <Icon d={ICONS.check} size={13} stroke="var(--success)" />
-                <span style={{ flex: 1, fontSize: 13 }}>{clip.name}</span>
-                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text2)' }}>
-                  {fmt(clip.start)} → {fmt(clip.end)}
-                </span>
-                <span style={{ fontSize: 11, color: 'var(--text3)' }}>{(clip.end - clip.start).toFixed(1)}s</span>
-              </div>
-            ))}
+  return (
+    <div ref={boxRef} style={{
+      flex: '1 1 0', minHeight: 180, background: '#000', borderRadius: T.r.card, border: `1px solid ${T.border}`,
+      position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center',
+    }}>
+      <VideoPlayer
+        src={video.url}
+        audioSrc={audioSrc}
+        videoRef={videoRef}
+        maxHeight={Math.max(120, boxH - PLAYER_BAR_H)}
+        onTimeUpdate={onTimeUpdate}
+        onLoadedMetadata={onLoadedMetadata}
+        style={{ width: '100%', height: '100%', justifyContent: 'space-between' }}
+        overlay={
+          <div style={{ position: 'absolute', top: 14, left: 16, padding: '4px 10px', background: 'rgba(0,0,0,.6)', borderRadius: 6, fontFamily: T.fontMono, fontSize: 11, color: T.text2, backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', gap: 7, pointerEvents: 'none' }}>
+            <Dot color={T.accent} size={6} /> {fmt(currentTime)} / {fmt(duration)}
+            {markIn != null && <span style={{ color: T.accent }}>· IN {fmt(markIn)}</span>}
           </div>
-          <div style={{ marginTop: 10, fontSize: 12, color: 'var(--text2)' }}>
-            → Retrouvez vos clips dans <strong style={{ color: 'var(--accent)' }}>Mes Clips</strong>
-          </div>
-        </div>
-      )}
-
-      {error && (
-        <div style={{
-          margin: '0 16px', padding: '10px 14px',
-          background: 'var(--danger-soft)', border: '1px solid var(--danger-soft)',
-          borderRadius: 4, color: 'var(--danger)', fontSize: 13,
-        }}>
-          {error}
-        </div>
-      )}
+        }
+      />
     </div>
   )
 }

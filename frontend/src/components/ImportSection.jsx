@@ -1,20 +1,15 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import VideoEditor from './VideoEditor'
 import PlexBrowser from './PlexBrowser'
-import { Icon, ICONS } from '../Icons'
-import { Btn, Dot, ScreenHeader, SectionLabel } from '../ui'
+import { Btn, Dot, Kbd, Icon, ICONS, T, alpha } from '../ui'
 import { useProgress } from '../ProgressContext'
-
-const selectStyle = {
-  background: 'var(--surface2)',
-  color: 'var(--text)',
-  border: '1px solid var(--border2)',
-  borderRadius: 4,
-  padding: '3px 8px',
-  fontSize: 12,
-}
+import { fmtClockHours } from '../utils/timecode'
 
 const TAB = { LOCAL: 'local', PLEX: 'plex', URL: 'url' }
+
+function Spinner({ size = 11, color = T.accent }) {
+  return <span style={{ width: size, height: size, borderRadius: '50%', border: `2px solid ${color}`, borderTopColor: 'transparent', animation: 'brspin 0.7s linear infinite', display: 'inline-block', flexShrink: 0 }} />
+}
 
 export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
   const [tab, setTab] = useState(TAB.LOCAL)
@@ -26,6 +21,9 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
   const [videoStream, setVideoStream] = useState(null)
   const [audioStream, setAudioStream] = useState(null)
   const [audioSrc, setAudioSrc] = useState(null)  // extracted audio track URL
+  const [plexStatus, setPlexStatus] = useState(null)
+  const [editorState, setEditorState] = useState({ count: 0, saving: false, duration: 0, marking: false })
+  const editorActions = useRef(null)
   const sourceIdRef = useRef(null)
   const pollRef = useRef(null)
   const progress = useProgress()
@@ -35,6 +33,15 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
   const stopPoll = useCallback(() => {
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
     if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null }
+  }, [])
+
+  useEffect(() => {
+    let alive = true
+    fetch('/api/plex/status')
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() })
+      .then(d => { if (alive) setPlexStatus(d) })
+      .catch(e => console.warn('Statut Plex indisponible', e))
+    return () => { alive = false }
   }, [])
 
   useEffect(() => {
@@ -138,6 +145,14 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
     return () => { stale = true; stopPoll() }
   }, [videoStream, audioStream])
 
+  function resetStreams() {
+    setStreams(null)
+    setVideoStream(null)
+    setAudioStream(null)
+    setRemuxing(false)
+    setAudioSrc(null)
+  }
+
   async function handleLocalPick() {
     if (picking) return
     setError(null)
@@ -149,11 +164,7 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
       const data = await res.json()
       if (data.cancelled) return
 
-      setStreams(null)
-      setVideoStream(null)
-      setAudioStream(null)
-      setRemuxing(false)
-      setAudioSrc(null)
+      resetStreams()
       sourceIdRef.current = data.source_id
 
       onVideoSet({
@@ -177,11 +188,7 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
     if (!u) return
     if (!/^https?:\/\//i.test(u)) { setError('URL invalide — doit commencer par http:// ou https://'); return }
     setError(null)
-    setStreams(null)
-    setVideoStream(null)
-    setAudioStream(null)
-    setRemuxing(false)
-    setAudioSrc(null)
+    resetStreams()
     stopPoll()
     sourceIdRef.current = null
     const filename = u.split('/').pop()?.split('?')[0] || 'video'
@@ -191,22 +198,14 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
   function clearSource() {
     stopPoll()
     setError(null)
-    setStreams(null)
-    setVideoStream(null)
-    setAudioStream(null)
-    setRemuxing(false)
-    setAudioSrc(null)
+    resetStreams()
     sourceIdRef.current = null
     onVideoSet(null)
   }
 
   function handlePlexSelected(source) {
     setError(null)
-    setStreams(null)
-    setVideoStream(null)
-    setAudioStream(null)
-    setRemuxing(false)
-    setAudioSrc(null)
+    resetStreams()
     stopPoll()
 
     sourceIdRef.current = source.sourceId
@@ -226,177 +225,204 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
 
   const videoOptions = streams?.video_streams ?? []
   const audioOptions = streams?.audio_streams ?? []
+  const plexHost = plexStatus?.url ? plexStatus.url.replace(/^https?:\/\//, '') : 'bibliothèque locale'
+  const { count, saving, duration, marking } = editorState
+
+  const meta = video ? [
+    duration ? fmtClockHours(duration) : null,
+    videoOptions[0]?.label,
+  ].filter(Boolean).join(' · ') : 'Fichier local, bibliothèque Plex ou URL directe'
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <ScreenHeader
-        kicker={`IMPORTER${tab === TAB.PLEX ? ' · SOURCE PLEX' : ''}`}
-        title={video ? video.filename : tab === TAB.PLEX ? 'Choisir un fichier dans Plex' : 'Importer une vidéo'}
-        sub={video ? video.sourcePath : 'Fichier local, bibliothèque Plex ou URL directe'}
-        right={(picking || remuxing) && (
-          <span style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, color: 'var(--accent)' }}>
-            <span style={{ width: 12, height: 12, borderRadius: '50%', border: '2px solid var(--accent)', borderTopColor: 'transparent', animation: 'brspin 0.7s linear infinite', display: 'inline-block' }} />
-            {picking ? 'Ouverture…' : 'Changement piste…'}
-          </span>
-        )}
-      />
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      {/* Header */}
+      <div style={{ padding: '26px 32px 0', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 14, marginBottom: 18 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: T.fs.micro, color: T.text3, letterSpacing: 1.4, fontWeight: 600, marginBottom: 4 }}>IMPORTER</div>
+            <div style={{ fontSize: T.fs.xxl, fontWeight: 600, letterSpacing: -0.6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {video ? video.filename : tab === TAB.PLEX ? 'Choisir un fichier dans Plex' : 'Importer une vidéo'}
+            </div>
+            <div style={{ fontSize: T.fs.xs, color: T.text3, fontFamily: T.fontMono, marginTop: 6, display: 'flex', gap: 8, alignItems: 'center', minWidth: 0, whiteSpace: 'nowrap' }}>
+              {meta}
+              {video?.plexTitle && <><Dot color={T.success} size={6} /> <span style={{ color: T.success, overflow: 'hidden', textOverflow: 'ellipsis' }}>depuis Plex · {video.plexTitle}{video.plexYear ? ` (${video.plexYear})` : ''}</span></>}
+              {video && !video.plexTitle && <span style={{ color: T.text4, overflow: 'hidden', textOverflow: 'ellipsis' }}>{video.sourceId ? video.sourcePath : 'URL directe'}</span>}
+              {(picking || remuxing) && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, color: T.accent }}><Spinner />{picking ? 'Ouverture…' : 'Changement piste…'}</span>}
+            </div>
+          </div>
+          {video && (
+            <>
+              <Btn variant="outline" icon={ICONS.back} onClick={clearSource}>{tab === TAB.PLEX ? 'Bibliothèque' : 'Changer de source'}</Btn>
+              <Btn variant="solid" icon={ICONS.scissors} onClick={() => editorActions.current?.mark()} active={marking}
+                title="1er clic : IN à la tête de lecture · 2e clic : OUT">
+                {marking ? 'Marquer la fin' : 'Marquer un clip'}
+              </Btn>
+              <Btn variant="primary" size="lg" onClick={() => editorActions.current?.save()} disabled={saving || count === 0}>
+                {saving
+                  ? <><Spinner size={12} color="#0b0b0d" /> Création…</>
+                  : <>Créer {count} clip{count > 1 ? 's' : ''} <span style={{ display: 'inline-flex', gap: 3, marginLeft: 4 }}><Kbd>Ctrl</Kbd><Kbd>S</Kbd></span></>}
+              </Btn>
+            </>
+          )}
+        </div>
 
-      {/* Source switcher — redesign screen-import */}
-      <div style={{ padding: '4px 28px 14px', flexShrink: 0 }}>
-        <div style={{ display: 'inline-flex', gap: 6, padding: 5, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 9 }}>
+        {/* Source switcher */}
+        <div style={{ display: 'flex', gap: 6, padding: 5, background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.r.ctl, width: 'fit-content' }}>
           {[
-            { id: TAB.LOCAL, icon: ICONS.upload, label: 'Fichier local', hint: 'glisser un .mp4' },
-            { id: TAB.PLEX,  icon: ICONS.film,   label: 'Plex',          hint: 'bibliothèque locale', online: true },
-            { id: TAB.URL,   icon: ICONS.link,   label: 'URL / Stream',  hint: 'http://…' },
+            { id: TAB.LOCAL, label: 'Fichier local', ic: ICONS.upload, hint: 'glisser un .mp4' },
+            { id: TAB.PLEX, label: 'Plex', ic: ICONS.film, hint: plexHost, online: !!plexStatus?.connected },
+            { id: TAB.URL, label: 'URL / Stream', ic: ICONS.plug, hint: 'http://…' },
           ].map(s => {
-            const active = tab === s.id
+            const active = s.id === tab
             return (
-              <button
-                key={s.id}
-                onClick={() => setTab(s.id)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 8, padding: '8px 15px', borderRadius: 6,
-                  background: active ? 'var(--bg2)' : 'transparent', border: 'none', cursor: 'pointer',
-                  color: active ? 'var(--text)' : 'var(--text2)', fontSize: 13, fontWeight: active ? 600 : 500,
-                  boxShadow: active ? 'inset 0 -2px 0 var(--accent)' : 'none',
-                }}
-              >
-                <Icon d={s.icon} size={15} style={{ color: active ? 'var(--accent)' : 'inherit' }} />
+              <button key={s.id} data-rd onClick={() => setTab(s.id)} style={{
+                display: 'flex', alignItems: 'center', gap: 8, padding: '8px 15px', borderRadius: T.r.chip,
+                border: 'none', cursor: 'pointer', background: active ? T.bg2 : 'transparent',
+                color: active ? T.text : T.text2, fontSize: T.fs.sm, fontWeight: active ? 600 : 500,
+                boxShadow: active ? `inset 0 -2px 0 ${T.accent}` : 'none', fontFamily: T.fontUI,
+              }}>
+                <Icon d={s.ic} size={15} stroke={active ? T.accent : 'currentColor'} />
                 {s.label}
-                {s.online && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, padding: '1px 5px', background: 'var(--success-soft)', color: 'var(--success)', borderRadius: 3, fontWeight: 700 }}><Dot color="var(--success)" size={5} />ONLINE</span>}
-                <span style={{ fontSize: 11, color: 'var(--text4)', marginLeft: 2 }}>{s.hint}</span>
+                {s.online && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 8.5, padding: '1px 5px', background: 'rgba(94,194,124,.16)', color: T.success, borderRadius: 3, fontWeight: 700 }}><Dot color={T.success} size={4} />ONLINE</span>}
+                <span style={{ fontSize: 10.5, color: T.text4, marginLeft: 2 }}>{s.hint}</span>
               </button>
             )
           })}
         </div>
+
+        {error && (
+          <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'rgba(232,89,93,.05)', border: `1px solid ${alpha(T.danger, '44')}`, borderRadius: T.r.ctl, color: T.danger, fontSize: T.fs.xs }}>
+            <Icon d={ICONS.warn} size={14} stroke={T.danger} />{error}
+          </div>
+        )}
       </div>
 
-      {error && (
-        <div style={{ margin: 16, padding: '10px 14px', background: 'var(--danger-soft)', border: '1px solid color-mix(in srgb, var(--danger) 30%, transparent)', borderRadius: 4, color: 'var(--danger)', fontSize: 13 }}>
-          {error}
-        </div>
-      )}
-
-      {/* Plex browser shown when no video selected yet or tab = plex */}
-      {tab === TAB.PLEX && !video && (
-        <div style={{ flex: 1, overflow: 'hidden' }}>
-          <PlexBrowser onSourceSelected={handlePlexSelected} />
-        </div>
-      )}
-
-      {/* Local empty state */}
-      {tab === TAB.LOCAL && !video && (
-        <div
-          style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, color: 'var(--text3)', cursor: 'pointer' }}
-          onClick={handleLocalPick}
-        >
-          <Icon d={ICONS.upload} size={44} sw={1.4} style={{ opacity: 0.3 }} />
-          <div style={{ fontSize: 14, color: 'var(--text2)' }}>Cliquez pour choisir un fichier local</div>
-          <div style={{ fontSize: 12 }}>MP4, MOV, MKV, AVI — lu directement, aucun upload</div>
-        </div>
-      )}
-
-      {/* URL source panel */}
-      {tab === TAB.URL && !video && (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, padding: 24 }}>
-          <Icon d={ICONS.link} size={40} sw={1.4} style={{ opacity: 0.3 }} />
-          <div style={{ fontSize: 14, color: 'var(--text2)' }}>Coller l’URL d’une vidéo</div>
-          <div style={{ display: 'flex', gap: 8, width: '100%', maxWidth: 540 }}>
-            <input
-              value={urlInput}
-              onChange={e => setUrlInput(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') handleUrlLoad() }}
-              placeholder="https://exemple.com/video.mp4"
-              style={{ flex: 1, fontFamily: 'var(--font-mono)', fontSize: 12 }}
+      {/* Body */}
+      <div style={{ flex: 1, minHeight: 0, padding: '16px 32px 20px', display: 'flex', gap: 18, overflow: 'hidden' }}>
+        {video ? (
+          <>
+            <VideoEditor
+              video={video}
+              onClipsCreated={onClipsCreated}
+              videoStream={videoStream}
+              audioStream={audioStream}
+              audioSrc={audioSrc}
+              actionsRef={editorActions}
+              onStateChange={setEditorState}
             />
-            <Btn variant="primary" onClick={handleUrlLoad}>Charger</Btn>
-          </div>
-          <div style={{ fontSize: 11, color: 'var(--text3)' }}>Le flux est lu directement — aucun téléchargement.</div>
-        </div>
-      )}
-
-      {/* Video loaded → editor */}
-      {video && (
-        <div style={{ flex: 1, overflow: 'auto' }}>
-          <div style={{ padding: '8px 16px', background: 'var(--surface2)', borderBottom: '1px solid var(--border)', fontSize: 12, color: 'var(--text2)', display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-            {video.plexTitle
-              ? <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}><Icon d={ICONS.film} size={14} style={{ color: 'var(--success)' }} /><strong style={{ color: 'var(--text)' }}>{video.plexTitle}</strong>{video.plexYear ? ` (${video.plexYear})` : ''}</span>
-              : <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}><Icon d={ICONS.film} size={14} style={{ color: 'var(--text3)' }} />{video.filename}</span>
-            }
-            <span style={{ color: 'var(--text3)', fontFamily: 'var(--font-mono)', fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 400 }}>
-              {video.sourcePath}
-            </span>
-            <Btn variant="outline" size="sm" onClick={clearSource} style={{ marginLeft: 'auto' }}>
-              {tab === TAB.PLEX ? '← Bibliothèque' : '← Changer de source'}
-            </Btn>
-          </div>
-
-          {/* Track selector */}
-          {streams && (
-            <div style={{
-              padding: '10px 16px', background: 'var(--surface)', borderBottom: '1px solid var(--border)',
-              display: 'flex', gap: 24, alignItems: 'center', flexWrap: 'wrap',
-            }}>
-              <SectionLabel>PISTES</SectionLabel>
-
-              {videoOptions.length > 0 && (
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
-                  <span style={{ color: 'var(--text2)' }}>Vidéo</span>
-                  <select
-                    value={videoStream ?? ''}
-                    onChange={e => setVideoStream(e.target.value === '' ? null : Number(e.target.value))}
-                    disabled={videoOptions.length <= 1 || remuxing}
-                    style={{ ...selectStyle, color: videoOptions.length > 1 ? 'var(--text)' : 'var(--text3)' }}
-                  >
-                    <option value=''>Auto</option>
-                    {videoOptions.map(s => (
-                      <option key={s.relative_index} value={s.relative_index}>
-                        V{s.relative_index} — {s.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
-
-              {audioOptions.length > 0 && (
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
-                  <span style={{ color: 'var(--text2)' }}>Audio</span>
-                  <select
-                    value={audioStream ?? ''}
-                    onChange={e => setAudioStream(e.target.value === '' ? null : Number(e.target.value))}
-                    disabled={remuxing}
-                    style={selectStyle}
-                  >
-                    <option value=''>Auto</option>
-                    {audioOptions.map(s => (
-                      <option key={s.relative_index} value={s.relative_index}>
-                        A{s.relative_index} — {s.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
-
-              {remuxing && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--accent)' }}><span style={{ width: 10, height: 10, borderRadius: '50%', border: '2px solid var(--accent)', borderTopColor: 'transparent', animation: 'brspin 0.7s linear infinite' }} /> Remux en cours…</span>}
+            <StreamPicker
+              videoOptions={videoOptions}
+              audioOptions={audioOptions}
+              videoStream={videoStream}
+              audioStream={audioStream}
+              onVideo={setVideoStream}
+              onAudio={setAudioStream}
+              remuxing={remuxing}
+              hasStreams={!!streams}
+            />
+          </>
+        ) : tab === TAB.PLEX ? (
+          <PlexBrowser onSourceSelected={handlePlexSelected} onStatus={setPlexStatus} />
+        ) : tab === TAB.LOCAL ? (
+          <EmptySource icon={ICONS.upload} onClick={handleLocalPick}
+            title={picking ? 'Ouverture du sélecteur…' : 'Cliquez pour choisir un fichier local'}
+            hint="MP4, MOV, MKV, AVI — lu directement, aucun upload" />
+        ) : (
+          <EmptySource icon={ICONS.plug} title="Coller l’URL d’une vidéo" hint="Le flux est lu directement — aucun téléchargement.">
+            <div style={{ display: 'flex', gap: 8, width: '100%', maxWidth: 540 }}>
+              <input
+                value={urlInput}
+                onChange={e => setUrlInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleUrlLoad() }}
+                placeholder="https://exemple.com/video.mp4"
+                style={{ flex: 1, height: 36, padding: '0 12px', background: T.bg2, border: `1px solid ${T.border2}`, borderRadius: T.r.ctl, fontFamily: T.fontMono, fontSize: T.fs.xs, color: T.text }}
+              />
+              <Btn variant="primary" onClick={handleUrlLoad}>Charger</Btn>
             </div>
-          )}
-
-          <VideoEditor
-            video={video}
-            onClipsCreated={onClipsCreated}
-            videoStream={videoStream}
-            audioStream={audioStream}
-            audioSrc={audioSrc}
-          />
-        </div>
-      )}
-
-      {/* Plex browser shown below editor if tab=plex but video selected — allow re-picking */}
-      {tab === TAB.PLEX && video && (
-        <div style={{ borderTop: '1px solid var(--border)' }}>
-          {/* collapsed — user clicked "← Bibliothèque" to go back via onVideoSet(null) */}
-        </div>
-      )}
+          </EmptySource>
+        )}
+      </div>
     </div>
+  )
+}
+
+function EmptySource({ icon, title, hint, onClick, children }) {
+  return (
+    <div onClick={onClick} style={{
+      flex: 1, minHeight: 0, background: T.surface, border: `1px dashed ${T.border2}`, borderRadius: T.r.card,
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, padding: 24,
+      cursor: onClick ? 'pointer' : 'default',
+    }}>
+      <Icon d={icon} size={40} sw={1.4} stroke={T.text4} />
+      <div style={{ fontSize: T.fs.base, color: T.text2 }}>{title}</div>
+      {children}
+      <div style={{ fontSize: T.fs.xs, color: T.text3 }}>{hint}</div>
+    </div>
+  )
+}
+
+// Reference screen-import.jsx StreamPicker. "Auto" rows keep the app's
+// default-track behaviour (no remux) — the reference has no such row.
+function StreamPicker({ videoOptions, audioOptions, videoStream, audioStream, onVideo, onAudio, remuxing, hasStreams }) {
+  return (
+    <div style={{ width: 264, flexShrink: 0, background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.r.card, padding: 16, display: 'flex', flexDirection: 'column', gap: 16, overflow: 'auto' }}>
+      <div>
+        <div style={{ fontSize: T.fs.micro, letterSpacing: 1.4, color: T.text3, fontWeight: 700, marginBottom: 4 }}>FLUX DÉTECTÉS</div>
+        <div style={{ fontSize: 10.5, color: T.text4 }}>ffprobe · choisir avant la découpe</div>
+      </div>
+      {!hasStreams && (
+        <div style={{ fontSize: T.fs.xs, color: T.text3, lineHeight: 1.5 }}>Aucun flux analysé pour cette source — pistes par défaut.</div>
+      )}
+      {videoOptions.length > 0 && (
+        <div>
+          <div style={{ fontSize: T.fs.xs, fontWeight: 600, color: T.text2, marginBottom: 8 }}>Vidéo{videoOptions.length > 1 ? ` · ${videoOptions.length} pistes` : ''}</div>
+          {videoOptions.length > 1 && (
+            <StreamRow on={videoStream == null} onClick={() => onVideo(null)} disabled={remuxing} icon={ICONS.film} label="Auto" meta="piste par défaut" />
+          )}
+          {videoOptions.map(s => (
+            <StreamRow key={s.relative_index} icon={ICONS.film} label={s.label} meta={`V${s.relative_index}`}
+              on={videoOptions.length === 1 || videoStream === s.relative_index}
+              disabled={remuxing || videoOptions.length === 1}
+              onClick={() => onVideo(s.relative_index)} />
+          ))}
+        </div>
+      )}
+      {audioOptions.length > 0 && (
+        <div>
+          <div style={{ fontSize: T.fs.xs, fontWeight: 600, color: T.text2, marginBottom: 8 }}>Audio · {audioOptions.length} piste{audioOptions.length > 1 ? 's' : ''}</div>
+          <StreamRow on={audioStream == null} onClick={() => onAudio(null)} disabled={remuxing} icon={ICONS.volume} label="Auto" meta="piste par défaut" />
+          {audioOptions.map(s => (
+            <StreamRow key={s.relative_index} icon={ICONS.volume} label={s.label} meta={`A${s.relative_index}`}
+              on={audioStream === s.relative_index} disabled={remuxing}
+              onClick={() => onAudio(s.relative_index)} />
+          ))}
+        </div>
+      )}
+      {hasStreams && (
+        <div style={{ padding: 11, background: T.bg2, border: `1px solid ${T.border}`, borderRadius: T.r.ctl, fontSize: 11, color: T.text3, lineHeight: 1.5, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+          {remuxing
+            ? <><Spinner size={10} /><span>Remux en cours — <span style={{ color: T.text2 }}>extraction de la piste</span> choisie.</span></>
+            : <span>Une piste autre qu’Auto est <span style={{ color: T.text2 }}>extraite (remux)</span> avant la découpe.</span>}
+        </div>
+      )}
+      <div style={{ flex: 1 }} />
+    </div>
+  )
+}
+
+function StreamRow({ on, onClick, disabled, icon, label, meta }) {
+  return (
+    <button data-rd onClick={disabled ? undefined : onClick} disabled={disabled && !on} style={{
+      display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 11px', marginBottom: 5,
+      borderRadius: T.r.ctl, cursor: disabled ? 'default' : 'pointer', textAlign: 'left',
+      background: on ? alpha(T.accent, '12') : T.bg2, border: `1px solid ${on ? alpha(T.accent, '66') : T.border}`,
+    }}>
+      <Icon d={icon} size={15} stroke={on ? T.accent : T.text3} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: T.fs.xs, color: on ? T.text : T.text2, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</div>
+        <div style={{ fontSize: 10, color: T.text4, fontFamily: T.fontMono }}>{meta}</div>
+      </div>
+      {on && <Icon d={ICONS.check} size={14} stroke={T.accent} />}
+    </button>
   )
 }

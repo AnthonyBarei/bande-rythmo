@@ -1,50 +1,49 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useSettings } from '../SettingsContext'
-import { Btn, Segmented, Select, Toggle, Chip, Dot, ScreenHeader, Icon, ICONS } from '../ui'
+import { Btn, Segmented, Select, Toggle, Chip, Dot, ScreenHeader, Icon, ICONS, T } from '../ui'
+
+// Réglages — reference screen-misc.jsx Settings (Section max 720 + Field rows).
 
 const ACCENTS = [
-  { hex: '#f5c518', name: 'Jaune' },
-  { hex: '#ff9900', name: 'Orange' },
-  { hex: '#7ec0ff', name: 'Bleu' },
-  { hex: '#7ed4a8', name: 'Vert' },
-  { hex: '#f08aaf', name: 'Rose' },
-  { hex: '#b98aff', name: 'Violet' },
+  { hex: '#F5C518', name: 'Jaune' },
+  { hex: '#5AA9F0', name: 'Bleu' },
+  { hex: '#F06AA0', name: 'Rose' },
+  { hex: '#5EC27C', name: 'Vert' },
+  { hex: '#A98BF0', name: 'Violet' },
+  { hex: '#FF8C42', name: 'Orange' },
 ]
 
 const BR_STYLES = [
-  { key: 'classique', label: 'Classique', desc: 'Blocs pleins, ondes, grille' },
-  { key: 'neon',      label: 'Néon',      desc: 'Contours lumineux, fond sombre' },
-  { key: 'minimal',   label: 'Minimal',  desc: 'Soulignement seul, épuré' },
+  { v: 'classique', l: 'Classique', desc: 'Blocs pleins, ondes, grille' },
+  { v: 'neon',      l: 'Néon',      desc: 'Contours lumineux, fond sombre' },
+  { v: 'minimal',   l: 'Minimal',   desc: 'Soulignement seul, épuré' },
 ]
 
 const DENSITIES = [
-  { key: 'compact',     label: 'Compact',     desc: 'Interface dense' },
-  { key: 'normal',      label: 'Normal',      desc: 'Par défaut' },
-  { key: 'comfortable', label: 'Confortable', desc: 'Plus d’espace' },
+  { v: 'compact',     l: 'Compact', desc: 'Interface dense' },
+  { v: 'normal',      l: 'Normal',  desc: 'Par défaut' },
+  { v: 'comfortable', l: 'Confort', desc: 'Plus d’espace' },
 ]
 
 const WHISPER_LANGS = [
-  { key: 'fr',   label: 'Français' },
-  { key: 'en',   label: 'Anglais' },
-  { key: 'es',   label: 'Espagnol' },
-  { key: 'de',   label: 'Allemand' },
-  { key: 'it',   label: 'Italien' },
-  { key: 'auto', label: 'Détection auto' },
+  { v: 'fr', l: 'FR — Français' }, { v: 'en', l: 'EN — English' }, { v: 'es', l: 'ES — Español' },
+  { v: 'de', l: 'DE — Deutsch' }, { v: 'it', l: 'IT — Italiano' }, { v: 'pt', l: 'PT — Português' },
+  { v: 'ja', l: 'JA — 日本語' }, { v: 'auto', l: 'Auto-détection' },
 ]
 
 const BR_FONTS = [
-  { id: 'atkinson',  label: 'Atkinson' },
-  { id: 'lisible',   label: 'Manuscrite lisible' },
-  { id: 'cursive',   label: 'Cursive (Caveat)' },
-  { id: 'inter',     label: 'Inter' },
-  { id: 'jetbrains', label: 'JetBrains Mono' },
+  { v: 'atkinson',  l: 'Atkinson' },
+  { v: 'lisible',   l: 'Manuscrite lisible' },
+  { v: 'cursive',   l: 'Cursive (Caveat)' },
+  { v: 'inter',     l: 'Inter' },
+  { v: 'jetbrains', l: 'JetBrains Mono' },
 ]
 
 function Section({ title, desc, children }) {
   return (
-    <div style={{ marginBottom: 26, maxWidth: 760 }}>
-      <div style={{ fontSize: 16, fontWeight: 600, marginBottom: desc ? 3 : 12, color: 'var(--text)' }}>{title}</div>
-      {desc && <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 14 }}>{desc}</div>}
+    <div style={{ marginBottom: 26, maxWidth: 720 }}>
+      <div style={{ fontSize: T.fs.md, fontWeight: 600, marginBottom: 3 }}>{title}</div>
+      {desc && <div style={{ fontSize: T.fs.xs, color: T.text3, marginBottom: 14 }}>{desc}</div>}
       {children}
     </div>
   )
@@ -52,11 +51,16 @@ function Section({ title, desc, children }) {
 
 function Field({ label, children }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '13px 0', borderBottom: '1px solid var(--surface2)' }}>
-      <div style={{ width: 200, flexShrink: 0, fontSize: 13, color: 'var(--text2)' }}>{label}</div>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '13px 0', borderBottom: `1px solid ${T.surface2}` }}>
+      <div style={{ width: 200, flexShrink: 0, fontSize: T.fs.sm, color: T.text2 }}>{label}</div>
       <div style={{ flex: 1 }}>{children}</div>
     </div>
   )
+}
+
+function StatusChip({ ok, children }) {
+  const c = ok ? T.success : T.text3
+  return <Chip soft color={c}><Dot color={c} size={6} />{children}</Chip>
 }
 
 export default function Preferences() {
@@ -71,79 +75,71 @@ export default function Preferences() {
   useEffect(() => { loadFonts() }, [loadFonts])
 
   useEffect(() => {
-    Promise.all([
-      fetch('/api/translate/status').then(r => r.ok ? r.json() : null).catch(() => null),
-      fetch('/api/clips/vocal-separation/status').then(r => r.ok ? r.json() : null).catch(() => null),
-    ]).then(([translate, vocal]) => setAiStatus({ translate, vocal }))
+    const status = url => fetch(url)
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() })
+      .catch(e => { console.warn(`Statut indisponible (${url})`, e); return null })
+    Promise.all([status('/api/translate/status'), status('/api/clips/vocal-separation/status')])
+      .then(([translate, vocal]) => setAiStatus({ translate, vocal }))
   }, [])
 
-  const seg = (opts, value, key) => (
-    <Segmented value={value} onChange={v => update({ [key]: v })} options={opts} />
-  )
+  const accent = (settings.accent || '').toLowerCase()
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--bg)' }}>
-      <ScreenHeader kicker="PRÉFÉRENCES" title="Réglages" right={<Btn variant="outline" size="sm" onClick={reset}>Réinitialiser</Btn>} />
-      <div style={{ flex: 1, overflow: 'auto', padding: '8px 32px 40px' }}>
-
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <ScreenHeader kicker="PRÉFÉRENCES" title="Réglages" right={<Btn variant="outline" size="sm" icon={ICONS.undo} onClick={reset}>Réinitialiser</Btn>} />
+      <div style={{ flex: 1, overflow: 'auto', padding: '6px 32px 40px' }}>
         <Section title="Apparence" desc="Identité visuelle de l'atelier.">
           <Field label="Couleur d'accent">
             <div style={{ display: 'flex', gap: 9, alignItems: 'center' }}>
               {ACCENTS.map(a => {
-                const active = settings.accent.toLowerCase() === a.hex.toLowerCase()
-                return (
-                  <div key={a.hex} onClick={() => update({ accent: a.hex })} title={a.name}
-                    style={{ width: 32, height: 32, borderRadius: 8, background: a.hex, cursor: 'pointer',
-                      border: active ? '2px solid var(--text)' : '1px solid transparent',
-                      boxShadow: active ? `0 0 0 2px ${a.hex}55` : 'none' }} />
-                )
+                const on = accent === a.hex.toLowerCase()
+                return <div key={a.hex} role="button" tabIndex={0} title={a.name} aria-pressed={on}
+                  onClick={() => update({ accent: a.hex })}
+                  onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); update({ accent: a.hex }) } }}
+                  style={{ width: 32, height: 32, borderRadius: 8, background: a.hex, cursor: 'pointer', border: on ? `2px solid ${T.text}` : '1px solid transparent', boxShadow: on ? `0 0 0 2px ${a.hex}55` : 'none' }} />
               })}
-              <label style={{ width: 32, height: 32, borderRadius: 8, overflow: 'hidden', cursor: 'pointer', border: '1px dashed var(--border2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Personnalisé">
-                <input type="color" value={settings.accent} onChange={e => update({ accent: e.target.value })} style={{ width: 40, height: 40, padding: 0, border: 'none', background: 'none', cursor: 'pointer' }} />
+              <label title="Couleur personnalisée" style={{ width: 32, height: 32, borderRadius: 8, overflow: 'hidden', cursor: 'pointer', border: `1px dashed ${T.border2}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <input type="color" value={settings.accent} onChange={e => update({ accent: e.target.value })}
+                  style={{ width: 40, height: 40, padding: 0, border: 'none', background: 'none', cursor: 'pointer' }} />
               </label>
             </div>
           </Field>
+          <Field label="Style de bande rythmo">
+            <Segmented value={settings.brStyle} onChange={v => update({ brStyle: v })} options={BR_STYLES} />
+          </Field>
+          <Field label="Police de bande rythmo">
+            <Select width={200} value={settings.brFont} onChange={v => update({ brFont: v })}
+              options={[...BR_FONTS, ...uploadedFonts.map(f => ({ v: f.id, l: f.name }))]} />
+          </Field>
           <Field label="Densité">
-            {seg(DENSITIES.map(d => ({ v: d.key, l: d.label })), settings.density, 'density')}
+            <Segmented value={settings.density} onChange={v => update({ density: v })} options={DENSITIES} />
           </Field>
-        </Section>
-
-        <Section title="Bande rythmo" desc="Style et police utilisés par l'éditeur et l'export — aussi réglables depuis Affichage dans l'éditeur.">
-          <Field label="Style">
-            {seg(BR_STYLES.map(s => ({ v: s.key, l: s.label })), settings.brStyle, 'brStyle')}
-          </Field>
-          <Field label="Police">
-            <Select width={210} value={settings.brFont} onChange={v => update({ brFont: v })}
-              options={[...BR_FONTS.map(f => ({ v: f.id, l: f.label })), ...uploadedFonts.map(f => ({ v: f.id, l: f.name }))]} />
-          </Field>
-          <Field label="Police personnalisée">
-            <FontUpload onUploaded={loadFonts} />
-          </Field>
+          <Field label="Police personnalisée"><FontUpload onUploaded={loadFonts} /></Field>
         </Section>
 
         <Section title="Traitement IA" desc="Outils optionnels, locaux quand possible.">
           <Field label="Séparation vocale">
-            <Chip soft color={aiStatus.vocal?.available ? 'var(--success)' : 'var(--text3)'}>
-              <Dot color={aiStatus.vocal?.available ? 'var(--success)' : 'var(--text3)'} size={6} />
-              {aiStatus.vocal?.available ? 'Demucs disponible' : 'Non installé (pip install demucs)'}
-            </Chip>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <StatusChip ok={aiStatus.vocal?.available}>{aiStatus.vocal?.available ? 'Demucs disponible' : 'Non installé (pip install demucs)'}</StatusChip>
+              <span style={{ fontSize: T.fs.xs, color: T.text3 }}>isoler la voix (demucs) pour comparer la prise</span>
+            </div>
           </Field>
           <Field label="Auto-traduction">
-            <Chip soft color={aiStatus.translate?.available ? 'var(--success)' : 'var(--text3)'}>
-              <Dot color={aiStatus.translate?.available ? 'var(--success)' : 'var(--text3)'} size={6} />
-              {aiStatus.translate?.available ? `${aiStatus.translate.provider}` : 'Aucun fournisseur (DEEPL_API_KEY / LIBRETRANSLATE_URL)'}
-            </Chip>
+            <StatusChip ok={aiStatus.translate?.available}>
+              {aiStatus.translate?.available ? aiStatus.translate.provider : 'Aucun fournisseur (DEEPL_API_KEY / LIBRETRANSLATE_URL)'}
+            </StatusChip>
           </Field>
         </Section>
 
         <Section title="Transcription Whisper" desc="Modèle local, hors-ligne.">
-          <Field label="Langue par défaut">
-            <Select width={210} value={settings.whisperLang || 'fr'} onChange={v => update({ whisperLang: v })}
-              options={WHISPER_LANGS.map(l => ({ v: l.key, l: l.label }))} />
+          <Field label="Modèle">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Chip soft color={T.text2}>{settings.whisperModel || 'large-v3'}</Chip>
+              <span style={{ fontSize: T.fs.micro, color: T.text3 }}>réglable via <span style={{ fontFamily: T.fontMono }}>WHISPER_MODEL</span></span>
+            </div>
           </Field>
-          <Field label="Modèle backend">
-            <Chip soft color="var(--text2)">{settings.whisperModel || 'large-v3'}</Chip>
-            <span style={{ fontSize: 11, color: 'var(--text3)', marginLeft: 10 }}>réglable via <code style={{ fontFamily: 'var(--font-mono)' }}>WHISPER_MODEL</code></span>
+          <Field label="Langue par défaut">
+            <Select width={200} value={settings.whisperLang || 'fr'} onChange={v => update({ whisperLang: v })} options={WHISPER_LANGS} />
           </Field>
         </Section>
 
@@ -151,13 +147,13 @@ export default function Preferences() {
           <PlexSection />
         </Section>
 
-        <Section title="Export" desc="Valeurs par défaut du panneau d'export.">
+        <Section title="Export" desc="Valeurs par défaut.">
           <Field label="Incruster la détection (MP4)">
             <Toggle on={!!settings.exportDetectionBurn} onClick={() => update({ exportDetectionBurn: !settings.exportDetectionBurn })} />
           </Field>
         </Section>
 
-        <div style={{ fontSize: 11, color: 'var(--text3)', borderTop: '1px solid var(--border)', paddingTop: 14, maxWidth: 760 }}>
+        <div style={{ fontSize: T.fs.micro, color: T.text3, maxWidth: 720 }}>
           Les préférences sont enregistrées localement dans ce navigateur.
         </div>
       </div>
@@ -167,6 +163,7 @@ export default function Preferences() {
 
 // Custom font upload (TTF/OTF) → /api/fonts
 function FontUpload({ onUploaded }) {
+  const inputRef = useRef(null)
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState(null)
   async function pick(e) {
@@ -190,14 +187,12 @@ function FontUpload({ onUploaded }) {
   }
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-      <label>
-        <input type="file" accept=".ttf,.otf" onChange={pick} style={{ display: 'none' }} />
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, height: 36, padding: '0 15px', borderRadius: 9, border: '1px solid var(--border2)', color: 'var(--text)', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
-          <Icon d={ICONS.upload} size={15} /> {busy ? 'Envoi…' : 'Importer une police (TTF / OTF)'}
-        </span>
-      </label>
+      <input ref={inputRef} type="file" accept=".ttf,.otf" onChange={pick} style={{ display: 'none' }} />
+      <Btn variant="outline" icon={ICONS.upload} disabled={busy} onClick={() => inputRef.current?.click()}>
+        {busy ? 'Envoi…' : 'Importer une police (TTF / OTF)'}
+      </Btn>
       {msg && (
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: msg.ok ? 'var(--success)' : 'var(--danger)' }}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: T.fs.xs, color: msg.ok ? T.success : T.danger }}>
           <Icon d={msg.ok ? ICONS.check : ICONS.warn} size={13} />{msg.text}
         </span>
       )}
@@ -205,7 +200,7 @@ function FontUpload({ onUploaded }) {
   )
 }
 
-// Plex — prototype Field rows (Statut chip / Token / Reconfigurer), real connect.
+// Plex — reference Field rows (Statut chip / Token / Reconfigurer), real connect.
 function PlexSection() {
   const [status, setStatus] = useState(null)    // { connected, server, url }
   const [url, setUrl]       = useState('')
@@ -216,11 +211,14 @@ function PlexSection() {
 
   useEffect(() => {
     let alive = true
-    fetch('/api/plex/status').then(r => r.json()).then(d => {
-      if (!alive) return
-      setStatus(d)
-      if (d.url) setUrl(d.url)
-    }).catch(() => {})
+    fetch('/api/plex/status')
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() })
+      .then(d => {
+        if (!alive) return
+        setStatus(d)
+        if (d.url) setUrl(d.url)
+      })
+      .catch(e => console.warn('Statut Plex indisponible', e))
     return () => { alive = false }
   }, [])
 
@@ -246,36 +244,34 @@ function PlexSection() {
   }
 
   const connected = status?.connected
+  const host = (status?.url || '').replace(/^https?:\/\//, '')
   return (
     <>
       <Field label="Statut">
-        <Chip soft color={connected ? 'var(--success)' : 'var(--text3)'}>
-          <Dot color={connected ? 'var(--success)' : 'var(--text3)'} size={6} />
-          {connected ? `Connecté · ${status.server || status.url}` : 'Non connecté'}
-        </Chip>
+        <StatusChip ok={connected}>{connected ? `Connecté · ${host || status.server}` : 'Non connecté'}</StatusChip>
       </Field>
       {connected && !form && (
-        <Field label="Token"><span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--text2)' }}>••••••••••••••••</span></Field>
+        <Field label="Token"><span style={{ fontFamily: T.fontMono, fontSize: T.fs.sm, color: T.text2 }}>••••••••••••••••</span></Field>
       )}
       {!form ? (
         <Field label="">
-          <Btn variant="outline" icon={ICONS.link} onClick={() => setForm(true)}>{connected ? 'Reconfigurer' : 'Connecter'}</Btn>
+          <Btn variant="outline" icon={ICONS.plug} onClick={() => setForm(true)}>{connected ? 'Reconfigurer' : 'Connecter'}</Btn>
         </Field>
       ) : (
         <>
           <Field label="URL serveur">
             <input placeholder="http://localhost:32400" value={url} onChange={e => setUrl(e.target.value)}
-              style={{ width: '100%', maxWidth: 320, minHeight: 34, fontSize: 13, fontFamily: 'var(--font-mono)' }} />
+              style={{ width: '100%', maxWidth: 320, height: 36, padding: '0 12px', fontSize: T.fs.sm, fontFamily: T.fontMono, background: T.surface, color: T.text, border: `1px solid ${T.border2}`, borderRadius: T.r.ctl }} />
           </Field>
           <Field label="Token">
             <input type="password" placeholder="Token Plex" value={token} onChange={e => setToken(e.target.value)}
-              style={{ width: '100%', maxWidth: 320, minHeight: 34, fontSize: 13 }} />
+              style={{ width: '100%', maxWidth: 320, height: 36, padding: '0 12px', fontSize: T.fs.sm, background: T.surface, color: T.text, border: `1px solid ${T.border2}`, borderRadius: T.r.ctl }} />
           </Field>
           <Field label="">
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <Btn variant="primary" onClick={connect} disabled={busy || !url || !token}>{busy ? 'Connexion…' : 'Connecter'}</Btn>
               <Btn variant="outline" onClick={() => { setForm(false); setErr(null) }}>Annuler</Btn>
-              {err && <span style={{ fontSize: 12, color: 'var(--danger)' }}>{err}</span>}
+              {err && <span style={{ fontSize: T.fs.xs, color: T.danger }}>{err}</span>}
             </div>
           </Field>
         </>
