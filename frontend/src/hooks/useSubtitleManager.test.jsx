@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
-import useSubtitleManager from './useSubtitleManager'
+import useSubtitleManager, { COALESCE_MS } from './useSubtitleManager'
 
 const sub = (start, text, character = '') => ({ start, end: start + 1, text, character })
 
@@ -164,5 +164,82 @@ describe('useSubtitleManager', () => {
         expect(result.current.canUndo).toBe(true)
         act(() => { result.current.undo() })
         expect(result.current.subtitles.map(s => s.start)).toEqual([0, 2])
+    })
+    const typeInto = (result, idx, text, key = `${idx}:text`) =>
+        act(() => { result.current.changeSubtitles(result.current.subtitles.map((s, i) => i === idx ? { ...s, text } : s), { coalesce: key }) })
+
+    it('coalesces a typing burst in one field into a single undo step', () => {
+        mockFetchOk()
+        const { result } = setup([sub(0, '')])
+        for (const text of ['b', 'bo', 'bon', 'bonj', 'bonjour']) {
+            typeInto(result, 0, text)
+            act(() => { vi.advanceTimersByTime(200) })
+        }
+        expect(result.current.subtitles[0].text).toBe('bonjour')
+        act(() => { result.current.undo() })
+        expect(result.current.subtitles[0].text).toBe('')
+        expect(result.current.canUndo).toBe(false)
+        act(() => { result.current.redo() })
+        expect(result.current.subtitles[0].text).toBe('bonjour')
+    })
+
+    it('starts a new undo step after a pause longer than the window', () => {
+        mockFetchOk()
+        const { result } = setup([sub(0, '')])
+        typeInto(result, 0, 'a')
+        act(() => { vi.advanceTimersByTime(COALESCE_MS + 1) })
+        typeInto(result, 0, 'ab')
+        act(() => { result.current.undo() })
+        expect(result.current.subtitles[0].text).toBe('a')
+    })
+
+    it('starts a new undo step when the field or the réplique changes', () => {
+        mockFetchOk()
+        const { result } = setup([sub(0, ''), sub(2, '')])
+        typeInto(result, 0, 'a')
+        typeInto(result, 0, 'n', '0:note')
+        typeInto(result, 1, 'x')
+        act(() => { result.current.undo() })
+        expect(result.current.subtitles.map(s => s.text)).toEqual(['n', ''])
+        act(() => { result.current.undo() })
+        expect(result.current.subtitles[0].text).toBe('a')
+        act(() => { result.current.undo() })
+        expect(result.current.subtitles[0].text).toBe('')
+    })
+
+    it('never merges non-typing edits, even back to back', () => {
+        mockFetchOk()
+        const { result } = setup([sub(0, 'a')])
+        typeInto(result, 0, 'ab')
+        act(() => { result.current.changeSubtitles([{ ...result.current.subtitles[0], hidden: true }]) })
+        act(() => { result.current.changeSubtitles([{ ...result.current.subtitles[0], take: true }]) })
+        act(() => { result.current.undo() })
+        expect(result.current.subtitles[0].take).toBeUndefined()
+        expect(result.current.subtitles[0].hidden).toBe(true)
+        act(() => { result.current.undo() })
+        expect(result.current.subtitles[0].hidden).toBeUndefined()
+        expect(result.current.subtitles[0].text).toBe('ab')
+    })
+
+    it('does not merge typing across an undo', () => {
+        mockFetchOk()
+        const { result } = setup([sub(0, '')])
+        typeInto(result, 0, 'a')
+        typeInto(result, 0, 'ab')
+        act(() => { result.current.undo() })
+        typeInto(result, 0, 'x')
+        act(() => { result.current.undo() })
+        expect(result.current.subtitles[0].text).toBe('')
+        expect(result.current.canRedo).toBe(true)
+    })
+
+    it('saves hidden / take flags in the PUT payload', async () => {
+        const fetchFn = mockFetchOk()
+        const { result } = setup([sub(0, 'a')])
+        act(() => { result.current.changeSubtitles([{ ...sub(0, 'a'), hidden: true, take: true }]) })
+        await act(async () => { result.current.saveNow() })
+        const saved = JSON.parse(fetchFn.mock.calls[0][1].body).subtitles[0]
+        expect(saved.hidden).toBe(true)
+        expect(saved.take).toBe(true)
     })
 })

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import { useSettings } from '../SettingsContext'
 import { Btn, Segmented, Select, Toggle, Chip, Dot, ScreenHeader, Icon, ICONS } from '../ui'
 
@@ -62,6 +62,13 @@ function Field({ label, children }) {
 export default function Preferences() {
   const { settings, update, reset } = useSettings()
   const [aiStatus, setAiStatus] = useState({ translate: null, vocal: null })
+  const [uploadedFonts, setUploadedFonts] = useState([])
+
+  const loadFonts = useCallback(() => fetch('/api/fonts')
+    .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() })
+    .then(setUploadedFonts)
+    .catch(e => console.warn('Chargement des polices importées échoué', e)), [])
+  useEffect(() => { loadFonts() }, [loadFonts])
 
   useEffect(() => {
     Promise.all([
@@ -96,14 +103,21 @@ export default function Preferences() {
               </label>
             </div>
           </Field>
-          <Field label="Style de bande rythmo">
-            {seg(BR_STYLES.map(s => ({ v: s.key, l: s.label })), settings.brStyle, 'brStyle')}
-          </Field>
           <Field label="Densité">
             {seg(DENSITIES.map(d => ({ v: d.key, l: d.label })), settings.density, 'density')}
           </Field>
+        </Section>
+
+        <Section title="Bande rythmo" desc="Style et police utilisés par l'éditeur et l'export — aussi réglables depuis Affichage dans l'éditeur.">
+          <Field label="Style">
+            {seg(BR_STYLES.map(s => ({ v: s.key, l: s.label })), settings.brStyle, 'brStyle')}
+          </Field>
+          <Field label="Police">
+            <Select width={210} value={settings.brFont} onChange={v => update({ brFont: v })}
+              options={[...BR_FONTS.map(f => ({ v: f.id, l: f.label })), ...uploadedFonts.map(f => ({ v: f.id, l: f.name }))]} />
+          </Field>
           <Field label="Police personnalisée">
-            <FontUpload />
+            <FontUpload onUploaded={loadFonts} />
           </Field>
         </Section>
 
@@ -137,14 +151,7 @@ export default function Preferences() {
           <PlexSection />
         </Section>
 
-        <Section title="Export" desc="Valeurs par défaut.">
-          <Field label="Police BR">
-            <Select width={210} value={settings.exportBrFont || 'atkinson'} onChange={v => update({ exportBrFont: v })}
-              options={BR_FONTS.map(f => ({ v: f.id, l: f.label }))} />
-          </Field>
-          <Field label="Style BR">
-            {seg(BR_STYLES.map(s => ({ v: s.key, l: s.label })), settings.exportBrStyle || 'classique', 'exportBrStyle')}
-          </Field>
+        <Section title="Export" desc="Valeurs par défaut du panneau d'export.">
           <Field label="Incruster la détection (MP4)">
             <Toggle on={!!settings.exportDetectionBurn} onClick={() => update({ exportDetectionBurn: !settings.exportDetectionBurn })} />
           </Field>
@@ -159,7 +166,7 @@ export default function Preferences() {
 }
 
 // Custom font upload (TTF/OTF) → /api/fonts
-function FontUpload() {
+function FontUpload({ onUploaded }) {
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState(null)
   async function pick(e) {
@@ -173,6 +180,7 @@ function FontUpload() {
       if (!r.ok) throw new Error(`HTTP ${r.status}`)
       const d = await r.json().catch(() => ({}))
       setMsg(`✓ ${d.name || file.name}`)
+      onUploaded?.()
     } catch (err) {
       setMsg('Erreur : ' + err.message)
     } finally {

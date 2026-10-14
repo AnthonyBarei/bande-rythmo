@@ -13,7 +13,7 @@ export default function BRTimeline({
   boucles = [],
   waveform = null,        // { samples: number[], duration, onsets: number[] } | null
   sceneCuts = [],         // number[] timecodes
-  subtitles = [],         // [{ start, end, character }]
+  subtitles = [],         // [{ start, end, character, hidden? }] — hidden ones not drawn
   charMap = {},           // character → track index
   viewStart = null,       // visible BR window start (s) — bracket
   viewEnd = null,         // visible BR window end (s)
@@ -82,6 +82,7 @@ export default function BRTimeline({
 
     // ── Subtitle ticks per track (thin colored marks at each réplique start) ──
     subtitles.forEach(s => {
+      if (s.hidden) return
       const tr = charMap[s.character || ''] ?? 0
       const color = TRACK_COLORS[tr % TRACK_COLORS.length]
       const x0 = tToX(s.start)

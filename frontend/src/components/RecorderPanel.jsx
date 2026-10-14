@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react'
 import { Icon, ICONS } from '../Icons'
 
-export default function RecorderPanel({ clipId, subtitles = [], activeCharacter = '', activeIndex = null, videoRef = null }) {
+const RecorderPanel = forwardRef(function RecorderPanel({ clipId, subtitles = [], activeCharacter = '', activeIndex = null, videoRef = null }, ref) {
   const [takes, setTakes] = useState([])
   const [recording, setRecording] = useState(false)
   const [error, setError] = useState(null)
@@ -125,6 +125,18 @@ export default function RecorderPanel({ clipId, subtitles = [], activeCharacter 
     setRecording(false)
     stopMeter()
   }
+
+  const isRecording = () => startingRef.current || mrRef.current?.state === 'recording'
+
+  // Keyboard R (DubbingWorkspace) drives the same start/stop as the button.
+  useImperativeHandle(ref, () => ({
+    isRecording,
+    toggle: () => {
+      if (startingRef.current) return
+      if (mrRef.current?.state === 'recording') stopRec()
+      else startRec()
+    },
+  }))
 
   function playTake(take) {
     stopSync()
@@ -360,7 +372,9 @@ export default function RecorderPanel({ clipId, subtitles = [], activeCharacter 
       </div>
     </div>
   )
-}
+})
+
+export default RecorderPanel
 
 const iconBtn = {
   background: 'none', border: 'none', fontSize: 12, padding: '5px 6px',

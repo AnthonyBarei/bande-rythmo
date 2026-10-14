@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { TRACK_COLORS } from '../config/tracks'
 import { fmtClockPrecise, parseTC } from '../utils/timecode'
+import { isActiveAt, activeIndexAt } from '../utils/band'
 
 const NOTATION_TAGS = [
   { label: '(HH)', title: 'Inspiration',  color: '#7ec0ff' },
@@ -277,7 +278,7 @@ function SubtitleRow({ sub, idx, active, selected, compact, charMap, charList, o
             <input
               ref={textInputRef}
               value={sub.text}
-              onChange={e => onChange({ ...sub, text: e.target.value })}
+              onChange={e => onChange({ ...sub, text: e.target.value }, 'text')}
               placeholder="Texte de la réplique…"
               onClick={e => e.stopPropagation()}
               style={{
@@ -310,7 +311,7 @@ function SubtitleRow({ sub, idx, active, selected, compact, charMap, charList, o
               <input
                 value={sub.note || ''}
                 autoFocus={showNote && !sub.note}
-                onChange={e => onChange({ ...sub, note: e.target.value })}
+                onChange={e => onChange({ ...sub, note: e.target.value }, 'note')}
                 onClick={e => e.stopPropagation()}
                 onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') { e.stopPropagation(); setShowNote(false); e.target.blur() } }}
                 placeholder="Note — intention, intonation, didascalie…"
@@ -385,7 +386,7 @@ function SubtitleRow({ sub, idx, active, selected, compact, charMap, charList, o
         <input
           ref={textInputRef}
           value={sub.text}
-          onChange={e => onChange({ ...sub, text: e.target.value })}
+          onChange={e => onChange({ ...sub, text: e.target.value }, 'text')}
           placeholder="Texte de la réplique…"
           onClick={e => e.stopPropagation()}
           style={{
@@ -467,7 +468,7 @@ export default function SubtitleEditor({ subtitles, onChange, currentTime = 0, o
 
   const charList = Array.from(new Set(subtitles.map(s => s.character || '')))
   const charMap = Object.fromEntries(charList.map((c, i) => [c, i]))
-  const curActive = subtitles.findIndex(s => currentTime >= s.start && currentTime <= s.end)
+  const curActive = activeIndexAt(subtitles, currentTime)
 
   useEffect(() => {
     if (curActive !== -1 && curActive !== prevActiveIdx.current) {
@@ -476,8 +477,10 @@ export default function SubtitleEditor({ subtitles, onChange, currentTime = 0, o
     }
   }, [curActive])
 
-  function update(i, next) {
-    onChange(subtitles.map((s, idx) => idx === i ? next : s))
+  // `field` marks a typing edit: consecutive keystrokes in the same field of
+  // the same réplique coalesce into one undo step.
+  function update(i, next, field) {
+    onChange(subtitles.map((s, idx) => idx === i ? next : s), field ? { coalesce: `${i}:${field}` } : undefined)
   }
 
   function del(i) {
@@ -591,15 +594,15 @@ export default function SubtitleEditor({ subtitles, onChange, currentTime = 0, o
             Aucune réplique — transcrivez avec Whisper ou ajoutez avec ⇧↵.
           </div>
         ) : subtitles.map((sub, i) => {
-          const active = currentTime >= sub.start && currentTime <= sub.end
+          const active = isActiveAt(sub, currentTime)
           if (charFilter && charFilter.size > 0 && !charFilter.has(sub.character || '')) return null
           return (
-            <div key={i} ref={active ? activeRef : null}>
+            <div key={i} ref={active ? activeRef : null} style={{ opacity: sub.hidden ? 0.45 : 1 }}>
               <SubtitleRow
                 sub={sub} idx={i} active={active} selected={selectedIdx === i}
                 compact={compact}
                 charMap={charMap} charList={charList}
-                onChange={next => update(i, next)}
+                onChange={(next, field) => update(i, next, field)}
                 onDelete={() => del(i)}
                 onSeek={onSeek}
                 onSelect={() => setSelectedIdx?.(selectedIdx === i ? null : i)}

@@ -4,14 +4,15 @@ const STORAGE_KEY = 'br_settings'
 
 const DEFAULTS = {
   accent: '#f5c518',
+  // Bande rythmo look — single source of truth for the editor band AND the
+  // export (WYSIWYG). Changed from Préférences or the editor's Affichage menu.
   brStyle: 'classique',
+  brFont: 'cursive',
   density: 'normal',
   // Whisper transcription defaults — applied when a clip is opened without override.
   whisperLang: 'fr',                // fr | en | auto | …
   whisperModel: 'large-v3',         // mirrors backend WHISPER_MODEL env var, info-only here
   // Export defaults — pre-filled in ExportPanel form.
-  exportBrFont: 'atkinson',
-  exportBrStyle: 'classique',
   exportDetectionBurn: false,
 }
 
@@ -44,12 +45,30 @@ function applySettings(s) {
   root.style.fontSize = `${DENSITY_FONT[s.density] || 14}px`
 }
 
+// Pre-unification keys: the editor kept its font in 'br-font'; Préférences had
+// unused exportBrFont / exportBrStyle duplicates. Read once, then dropped.
+const LEGACY_FONT_KEY = 'br-font'
+
+function migrate(stored) {
+  const { exportBrFont: _font, exportBrStyle: _style, ...rest } = stored
+  if (rest.brFont) return rest
+  try {
+    const legacy = localStorage.getItem(LEGACY_FONT_KEY)
+    if (legacy) rest.brFont = legacy
+  } catch (e) {
+    console.warn('Migration de la police BR impossible', e)
+  }
+  return rest
+}
+
 function load() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) return { ...DEFAULTS, ...JSON.parse(raw) }
-  } catch { /* unavailable or corrupt storage → defaults */ }
-  return { ...DEFAULTS }
+    return { ...DEFAULTS, ...migrate(raw ? JSON.parse(raw) : {}) }
+  } catch (e) {
+    console.warn('Préférences illisibles — valeurs par défaut', e)
+    return { ...DEFAULTS }
+  }
 }
 
 const SettingsContext = createContext(null)
@@ -61,6 +80,7 @@ export function SettingsProvider({ children }) {
     applySettings(settings)
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(settings))
+      localStorage.removeItem(LEGACY_FONT_KEY)
     } catch { /* storage unavailable — settings stay in memory */ }
   }, [settings])
 

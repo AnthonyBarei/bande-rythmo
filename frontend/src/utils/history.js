@@ -17,6 +17,14 @@ export function pushHistory(h, value) {
   return h
 }
 
+// Overwrite the current snapshot in place (coalesced edits), dropping any
+// redo branch. Mutates and returns h.
+export function replaceHistory(h, value) {
+  h.stack = h.stack.slice(0, h.idx + 1)
+  h.stack[h.idx] = snap(value)
+  return h
+}
+
 export const canUndo = h => !!h && h.idx > 0
 export const canRedo = h => !!h && h.idx < h.stack.length - 1
 

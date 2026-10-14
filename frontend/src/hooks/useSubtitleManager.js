@@ -1,5 +1,8 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { createHistory, pushHistory, undoHistory, redoHistory, canUndo as hCanUndo, canRedo as hCanRedo } from '../utils/history'
+import { createHistory, pushHistory, replaceHistory, undoHistory, redoHistory, canUndo as hCanUndo, canRedo as hCanRedo } from '../utils/history'
+
+// Consecutive edits sharing a coalesce key within this window = one undo step.
+export const COALESCE_MS = 1000
 
 // Subtitle state machine for the editor — extracted from DubbingWorkspace
 // (Phase 2). Owns: subtitles array, selection, undo/redo history (cap 50),
@@ -7,7 +10,10 @@ import { createHistory, pushHistory, undoHistory, redoHistory, canUndo as hCanUn
 //
 // API (names match the old in-component functions one-for-one):
 //   subtitles, selectedIdx, setSelectedIdx, saveStatus
-//   changeSubtitles(subs)      sort + selection-remap + history + save (1.5s)
+//   changeSubtitles(subs, { coalesce }?)  sort + selection-remap + history + save (1.5s)
+//                              same `coalesce` key (e.g. '3:text') within
+//                              COALESCE_MS of the previous edit → merged into
+//                              that undo step (typing bursts)
 //   setSubtitlesTransient(subs) raw set — mid-drag working state
 //   commitDrag(subs)           set + save (0.8s), no sort, no history
 //   finishDrag()               end of a drag: sort + history + save now
@@ -29,6 +35,7 @@ export default function useSubtitleManager({ clipId, initialSubtitles, onSaved }
   const saveSeqRef = useRef(0)
   const debounceRef = useRef(null)
   const historyRef = useRef(null)
+  const coalesceRef = useRef(null)   // { key, at } of the last coalescible edit
   const onSavedRef = useRef(onSaved)
   useEffect(() => { onSavedRef.current = onSaved }, [onSaved])
 
@@ -79,10 +86,11 @@ export default function useSubtitleManager({ clipId, initialSubtitles, onSaved }
     if (seedRef.current === clipId) return
     seedRef.current = clipId
     historyRef.current = createHistory(initialSubtitles || [])
+    coalesceRef.current = null
     syncHistoryFlags()
   }, [clipId])
 
-  const changeSubtitles = useCallback((subs) => {
+  const changeSubtitles = useCallback((subs, { coalesce } = {}) => {
     const prevSubs = subtitlesRef.current
     const sorted = [...subs].sort((a, b) => a.start - b.start)
     // Track the selected réplique: by identity first (insert / delete of
@@ -98,12 +106,20 @@ export default function useSubtitleManager({ clipId, initialSubtitles, onSaved }
       return null
     })
     setSubs(sorted)
-    pushHistory(historyRef.current, sorted)
+    const now = Date.now()
+    const last = coalesceRef.current
+    if (coalesce != null && last && last.key === coalesce && now - last.at <= COALESCE_MS) {
+      replaceHistory(historyRef.current, sorted)
+    } else {
+      pushHistory(historyRef.current, sorted)
+    }
+    coalesceRef.current = coalesce != null ? { key: coalesce, at: now } : null
     syncHistoryFlags()
     scheduleSave(sorted, 1500)
   }, [scheduleSave, setSubs])
 
   const applyHistorySubs = useCallback((subs) => {
+    coalesceRef.current = null
     const sorted = [...subs].sort((a, b) => a.start - b.start)
     setSubs(sorted)
     setSelectedIdx(null)

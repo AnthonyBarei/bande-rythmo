@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { createHistory, pushHistory, undoHistory, redoHistory, canUndo, canRedo } from './history'
+import { createHistory, pushHistory, replaceHistory, undoHistory, redoHistory, canUndo, canRedo } from './history'
 
 const sub = (start, text) => ({ start, end: start + 1, text, character: '' })
 
@@ -63,5 +63,15 @@ describe('history', () => {
         pushHistory(h, live)
         const prev = undoHistory(h)
         expect(prev[0].text).toBe('a')
+    })
+    it('replaceHistory overwrites the current snapshot and drops the redo branch', () => {
+        const h = createHistory([sub(0, 'a')])
+        pushHistory(h, [sub(0, 'b')])
+        pushHistory(h, [sub(0, 'c')])
+        undoHistory(h)
+        replaceHistory(h, [sub(0, 'bb')])
+        expect(canRedo(h)).toBe(false)
+        expect(undoHistory(h)[0].text).toBe('a')
+        expect(redoHistory(h)[0].text).toBe('bb')
     })
 })

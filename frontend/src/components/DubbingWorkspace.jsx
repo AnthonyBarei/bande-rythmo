@@ -11,6 +11,8 @@ import { classifyChar, SIGN_KINDS, DEFAULT_SIGN_TOGGLES } from '../detection'
 import { useProgress } from '../ProgressContext'
 import { useToast } from '../ToastContext'
 import useSubtitleManager from '../hooks/useSubtitleManager'
+import { bandTimeOf, videoTimeOf, isActiveAt, activeIndexAt } from '../utils/band'
+import { mergeTranslations } from '../utils/mergeTranslations'
 
 // BR canvas — constant-speed scrolling
 // Cursor is at CURSOR_X_RATIO * W from left
@@ -221,18 +223,18 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   // DOUBLAGE_IA_REVIEW §7 — default 150 px/s (comfortable reading cadence at
   // normal speech). pxPerSec is also re-measured per clip in the auto-fit block.
   const [pxPerSec, setPxPerSec] = useState(150)
-  const { settings } = useSettings()
+  const { settings, update: updateSettings } = useSettings()
   const progress = useProgress()
   const undoToast = useToast()
-  const [rythmoStyle, setRythmoStyle] = useState(settings.brStyle || 'classique')
+  // Band style + font live in Préférences (one source of truth): the editor
+  // picker writes the same settings, and the export receives what is shown.
+  const rythmoStyle = settings.brStyle || 'classique'
+  const setRythmoStyle = style => updateSettings({ brStyle: style })
+  const brFont = settings.brFont || 'cursive'
+  const setBrFont = font => updateSettings({ brFont: font })
   const [lang, setLang] = useState(settings.whisperLang || 'fr')
 
   const [brInPlayer, setBrInPlayer] = useState('play')
-  const [brFont, setBrFont] = useState(() => {
-    // Pro classique default = Caveat manuscrite (DOUBLAGE_IA_REVIEW §7).
-    // localStorage override wins so user choice persists across sessions.
-    try { return localStorage.getItem('br-font') || 'cursive' } catch { return 'cursive' }
-  })
   // Détection layer toggles — independent persisted booleans so the user can
   // hide noise without losing manual signs. `layer` is the whole-layer kill switch.
   const [detection, setDetection] = useState(() => {
@@ -324,7 +326,13 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   // Smooth time interpolation: video.currentTime only updates at video fps (e.g. 24fps).
   // Between updates, we interpolate using wall clock so the canvas scrolls at 60fps.
   const interpTimeRef = useRef({ videoTime: 0, wallMs: 0, active: false })
+  const selectedIdxRef = useRef(selectedIdx)
+  const onToggleExportRef = useRef(onToggleExport)
+  const recorderRef = useRef(null)
+  const [recordRequest, setRecordRequest] = useState(0)
   subtitlesRef.current = subtitles
+  selectedIdxRef.current = selectedIdx
+  onToggleExportRef.current = onToggleExport
   brOffsetRef.current = brOffset
   pxPerSecRef.current = pxPerSec
   rythmoStyleRef.current = rythmoStyle
@@ -338,6 +346,12 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   bouclesRef.current = boucles
   clipFpsRef.current = clipFps
   sceneCutsRef.current = sceneCuts
+
+  // Band time (video + brOffset) is the one time base for réplique edits and
+  // lookups; seeks to a band position convert back to video time.
+  function getBandTime() { return bandTimeOf(videoRef.current?.currentTime, brOffsetRef.current) }
+  function seekBand(t) { const v = videoRef.current; if (v) v.currentTime = videoTimeOf(t, brOffsetRef.current) }
+  const bandNow = bandTimeOf(currentTime, brOffset)
 
   const masterUrl = `/${clip.segment_path}`
   // Proxy playback (720p) for smooth scrubbing of heavy segments.
@@ -363,18 +377,17 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   charMapRef.current = charMap
   numTracksRef.current = numTracks
 
-  const activeSubtitle = useMemo(() => {
-    const t = currentTime + brOffset
-    return subtitles.find(s => t >= s.start && t <= s.end) || null
-  }, [subtitles, currentTime, brOffset])
+  const activeSubtitle = useMemo(
+    () => subtitles.find(s => isActiveAt(s, bandNow)) || null,
+    [subtitles, bandNow])
 
   function toggleLoopActive() {
     if (loopActive) { setLoopActive(false); return }
     const sub = (selectedIdx != null ? subtitles[selectedIdx] : null) || activeSubtitle
     if (!sub) return
     loopSubRef.current = sub
-    const v = videoRef.current
-    if (v && (v.currentTime < sub.start || v.currentTime > sub.end)) v.currentTime = sub.start
+    const t = getBandTime()
+    if (t < sub.start || t > sub.end) seekBand(sub.start)
     setLoopActive(true)
   }
   useEffect(() => {
@@ -382,7 +395,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
     const v = videoRef.current; if (!v) return
     const check = () => {
       const s = loopSubRef.current
-      if (s && v.currentTime > s.end + 0.05) v.currentTime = s.start
+      if (s && getBandTime() > s.end + 0.05) seekBand(s.start)
     }
     v.addEventListener('timeupdate', check)
     return () => v.removeEventListener('timeupdate', check)
@@ -414,9 +427,6 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
 
   // Report save status up to the App top bar
   useEffect(() => { onSaveStatus?.(saveStatus) }, [saveStatus, onSaveStatus])
-
-  // Persist BR font choice
-  useEffect(() => { try { localStorage.setItem('br-font', brFont) } catch { /* storage unavailable — preference not persisted */ } }, [brFont])
 
   // Persist détection toggles
   useEffect(() => { try { localStorage.setItem('br-detection', JSON.stringify(detection)) } catch { /* not persisted */ } }, [detection])
@@ -450,7 +460,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   function addBoucleAtCursor() {
     const v = videoRef.current
     if (!v) return
-    const t = v.currentTime
+    const t = getBandTime()
     const cur = bouclesRef.current
     // Inside an existing boucle → split it at t.
     const containing = cur.find(b => t > b.start + 0.1 && t < b.end - 0.1)
@@ -616,10 +626,14 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`)
-      const tr = data.translations || []
+      const { merged, skipped } = mergeTranslations(subs, data.translations || [], subtitlesRef.current)
       // Apply via handleSubtitlesChange → undoable + autosaved.
-      handleSubtitlesChange(subs.map((s, i) => ({ ...s, text: tr[i] ?? s.text, words: null })))
-      setToast({ msg: `Traduit en ${translateTarget.toUpperCase()} · annulable (Ctrl+Z)`, type: 'success' })
+      handleSubtitlesChange(merged)
+      setToast({
+        msg: `Traduit en ${translateTarget.toUpperCase()} · annulable (Ctrl+Z)`
+          + (skipped ? ` · ${skipped} réplique${skipped > 1 ? 's' : ''} modifiée${skipped > 1 ? 's' : ''} entre-temps, non traduite${skipped > 1 ? 's' : ''}` : ''),
+        type: 'success',
+      })
     } catch (e) {
       setToast({ msg: 'Traduction : ' + e.message, type: 'error' })
     } finally {
@@ -842,6 +856,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
       const _cFilter = charFilterRef.current
       const _filterActive = _cFilter && _cFilter.size > 0
       for (const sub of subtitlesRef.current) {
+        if (sub.hidden) continue
         const trackIdx = charMap[sub.character || ''] ?? 0
         const trackH = H / numTracks
         const yTop = trackIdx * trackH
@@ -1210,8 +1225,9 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
           if (rx >= 0 && rx <= W) { ctx.beginPath(); ctx.moveTo(rx, 0); ctx.lineTo(rx, H); ctx.stroke() }
           ctx.setLineDash([])
         }
-        if (!video.paused && (video.currentTime >= lr.end || video.currentTime < lr.start - 0.05)) {
-          video.currentTime = lr.start
+        const vt = bandTimeOf(video.currentTime, brOffsetRef.current)
+        if (!video.paused && (vt >= lr.end || vt < lr.start - 0.05)) {
+          video.currentTime = videoTimeOf(lr.start, brOffsetRef.current)
         }
       }
 
@@ -1331,6 +1347,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
         }
         // Subtitle blocks + text
         for (const sub of subtitlesRef.current) {
+          if (sub.hidden) continue
           const trackIdx = charMapRef.current[sub.character || ''] ?? 0
           const color = TRACK_COLORS[trackIdx % TRACK_COLORS.length]
           const leftX = oCursorX + (sub.start - t) * pxSec
@@ -1358,7 +1375,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
             const O_PAD = 4
             let oNextStart = Infinity
             for (const o of subtitlesRef.current) {
-              if (o === sub) continue
+              if (o === sub || o.hidden) continue
               if ((charMapRef.current[o.character || ''] ?? 0) === trackIdx && o.start >= sub.end && o.start < oNextStart) oNextStart = o.start
             }
             const oRoomRightX = oNextStart === Infinity ? oW : Math.min(oW, oCursorX + (oNextStart - t) * pxSec - 3)
@@ -1437,10 +1454,13 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
       }
       // Single-key shortcuts must not fire on browser/app combos (Ctrl+S, Ctrl+K, Alt+…).
       if ((e.ctrlKey || e.metaKey || e.altKey) && !e.key.startsWith('Arrow')) return
+      // An app-level dialog (raccourcis, palette…) owns the keyboard.
+      if (document.querySelector('[aria-modal="true"]')) return
       const v = videoRef.current; if (!v) return
-      const t = v.currentTime
+      const vt = v.currentTime
+      const t = getBandTime()
       const subs = subtitlesRef.current
-      const activeI = subs.findIndex(s => t >= s.start && t <= s.end)
+      const activeI = activeIndexAt(subs, t)
 
       switch (e.key) {
         case ' ': case 'k': e.preventDefault(); v.paused ? v.play() : v.pause(); break
@@ -1448,26 +1468,26 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
           e.preventDefault()
           if (e.ctrlKey || e.metaKey) {
             const prev = [...subs].reverse().find(s => s.start < t - 0.05)
-            if (prev) v.currentTime = prev.start
+            if (prev) seekBand(prev.start)
           } else {
             // Shift+← = one frame back; ← = 1s back
             const step = e.shiftKey ? 1 / (clipFpsRef.current || 25) : 1
-            v.currentTime = Math.max(0, t - step)
+            v.currentTime = Math.max(0, vt - step)
           }
           break
         case 'ArrowRight':
           e.preventDefault()
           if (e.ctrlKey || e.metaKey) {
             const next = subs.find(s => s.start > t + 0.05)
-            if (next) v.currentTime = next.start
+            if (next) seekBand(next.start)
           } else {
             // Shift+→ = one frame forward; → = 1s forward
             const step = e.shiftKey ? 1 / (clipFpsRef.current || 25) : 1
-            v.currentTime = Math.min(v.duration || t + step, t + step)
+            v.currentTime = Math.min(v.duration || vt + step, vt + step)
           }
           break
-        case ',': e.preventDefault(); v.pause(); v.currentTime = Math.max(0, t - 0.04); break
-        case '.': e.preventDefault(); v.pause(); v.currentTime = Math.min(v.duration || t, t + 0.04); break
+        case ',': e.preventDefault(); v.pause(); v.currentTime = Math.max(0, vt - 0.04); break
+        case '.': e.preventDefault(); v.pause(); v.currentTime = Math.min(v.duration || vt, vt + 0.04); break
         case 'Delete': case 'Backspace':
           if (activeI >= 0) { e.preventDefault(); deleteReplicaWithUndo(activeI) }
           break
@@ -1502,6 +1522,14 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
             }
           }
           break
+        case 'r': case 'R':
+          e.preventDefault()
+          requestRecordToggle()
+          break
+        case 'e': case 'E':
+          e.preventDefault()
+          onToggleExportRef.current?.()
+          break
         default: break
       }
     }
@@ -1509,25 +1537,44 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
+  // R — start/stop a take for the selected (else active) réplique, through
+  // the RecorderPanel (same path as its record button: mic permission, errors).
+  // Opens the panel first when closed; the toggle fires once it is mounted
+  // with the réplique selected.
+  function requestRecordToggle() {
+    if (recorderRef.current?.isRecording()) { recorderRef.current.toggle(); return }
+    const subs = subtitlesRef.current
+    const sel = selectedIdxRef.current
+    const idx = sel != null && subs[sel] ? sel : activeIndexAt(subs, getBandTime())
+    if (idx < 0) return
+    setSelectedIdx(idx)
+    setRightTab('repliques')
+    setShowRecorder(true)
+    setRecordRequest(n => n + 1)
+  }
+  useEffect(() => {
+    if (recordRequest) recorderRef.current?.toggle()
+  }, [recordRequest])
+
   function togglePlay() { const v = videoRef.current; if (v) v.paused ? v.play() : v.pause() }
   function toggleMute() { const v = videoRef.current; if (!v) return; v.muted = !v.muted; setMuted(v.muted) }
   function changeSpeed(s) { const v = videoRef.current; if (v) v.playbackRate = +s; setSpeed(+s) }
-  function seekTo(t) { const v = videoRef.current; if (v) v.currentTime = t }
+  function seekVideo(t) { const v = videoRef.current; if (v) v.currentTime = t }
 
   function gotoPrevSub() {
-    const v = videoRef.current; if (!v) return
-    const t = v.currentTime
+    if (!videoRef.current) return
+    const t = getBandTime()
     const subs = subtitlesRef.current
     const i = subs.findIndex(s => s.start > t - 0.01)
     const ti = i < 0 ? subs.length - 1 : Math.max(0, i - 1)
-    if (subs[ti]) { v.currentTime = subs[ti].start; setSelectedIdx(ti) }
+    if (subs[ti]) { seekBand(subs[ti].start); setSelectedIdx(ti) }
   }
   function gotoNextSub() {
-    const v = videoRef.current; if (!v) return
-    const t = v.currentTime
+    if (!videoRef.current) return
+    const t = getBandTime()
     const subs = subtitlesRef.current
     const i = subs.findIndex(s => s.start > t + 0.01)
-    if (i >= 0) { v.currentTime = subs[i].start; setSelectedIdx(i) }
+    if (i >= 0) { seekBand(subs[i].start); setSelectedIdx(i) }
   }
 
   // Réplique delete via undo toast — 5s window to recover before auto-save commits.
@@ -1566,7 +1613,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
     const y = e.clientY - rect.top
     const W = rect.width
     const H = rect.height
-    const t = (videoRef.current?.currentTime || 0) + brOffsetRef.current
+    const t = getBandTime()
     const pxSec = pxPerSecRef.current
     const cursor_x = W * CURSOR_X_RATIO
     return { x, y, W, H, t, pxSec, cursor_x, time: t + (x - cursor_x) / pxSec }
@@ -1583,6 +1630,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
     let bestIdx = -1, bestZone = null
     for (let i = 0; i < subs.length; i++) {
       const sub = subs[i]
+      if (sub.hidden) continue
       const sTrack = cMap[sub.character || ''] ?? 0
       if (sTrack !== trackIdx) continue
       const left = c.cursor_x + (sub.start - c.t) * c.pxSec
@@ -1618,6 +1666,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
     let result = null
     for (let i = 0; i < subs.length; i++) {
       const sub = subs[i]
+      if (sub.hidden) continue
       const sTrack = cMap[sub.character || ''] ?? 0
       if (sTrack !== trackIdx) continue
       const left = c.cursor_x + (sub.start - c.t) * c.pxSec
@@ -1714,7 +1763,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
       const sub = subtitlesRef.current[hit.subIdx]
       setLoopRegion({ start: sub.start, end: sub.end })
       const v = videoRef.current
-      if (v) { v.currentTime = sub.start; if (v.paused) v.play() }
+      if (v) { seekBand(sub.start); if (v.paused) v.play() }
       return
     }
     // Shift+drag in empty → loop region custom
@@ -1859,7 +1908,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
       const lr = loopRegionRef.current
       if (lr) {
         const v = videoRef.current
-        if (v) { v.currentTime = lr.start; if (v.paused) v.play() }
+        if (v) { seekBand(lr.start); if (v.paused) v.play() }
       }
       return
     }
@@ -1876,7 +1925,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
         }
       }
       const hit = hitTest(e)
-      if (hit) seekTo(Math.max(0, hit.time))
+      if (hit) seekBand(Math.max(0, hit.time))
     } else {
       endEditDrag(drag)
     }
@@ -1951,9 +2000,9 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
       const name = prompt('Nom du personnage :', sub.character || '')
       if (name != null) handleSubtitlesChange(subs.map((s, idx) => idx === i ? { ...s, character: name.trim() } : s))
     } else if (action === 'seekStart') {
-      seekTo(sub.start)
+      seekBand(sub.start)
     } else if (action === 'seekEnd') {
-      seekTo(sub.end)
+      seekBand(sub.end)
     }
     setCtxMenu(null)
   }
@@ -2074,8 +2123,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
           onClick={() => {
             const name = window.prompt('Nom du nouveau personnage :')
             if (name == null || !name.trim()) return
-            const v = videoRef.current
-            const t = v ? v.currentTime : 0
+            const t = getBandTime()
             handleSubtitlesChange([...subtitles, { start: t, end: t + 1.5, character: name.trim(), text: '', reactions: [] }].sort((a, b) => a.start - b.start))
           }}
           title="Ajouter un personnage"
@@ -2188,7 +2236,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
 
           {/* Mini transport */}
           <div style={{ flexShrink: 0, height: 44, background: 'var(--bg2)', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', padding: '0 12px', gap: 6 }}>
-            <button onClick={() => seekTo(0)} style={tBtn}><Ic d={ICONS.start} size={14} /></button>
+            <button onClick={() => seekVideo(0)} style={tBtn}><Ic d={ICONS.start} size={14} /></button>
             <button onClick={gotoPrevSub} style={tBtn}><Ic d={ICONS.prev} size={14} /></button>
             <button onClick={togglePlay} style={{ ...tBtn, background: 'var(--accent)', color: '#000', border: 'none', width: 40, height: 34, borderRadius: 9 }}>
               <Ic d={playing ? ICONS.pause : ICONS.play} size={15} fill="#000" />
@@ -2203,7 +2251,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
               {fmt(currentTime)} / {fmt(duration)}
             </span>
             <input type="range" min={0} max={duration || 1} step={0.05} value={currentTime}
-              onChange={e => seekTo(parseFloat(e.target.value))}
+              onChange={e => seekVideo(parseFloat(e.target.value))}
               style={{ flex: 1, color: '#f5c518', cursor: 'pointer', height: 3, '--pct': `${(currentTime / (duration || 1)) * 100}%` }} />
             <UISegmented size="sm" value={speed} onChange={v => changeSpeed(v)}
               options={[{ v: 0.5, l: '0.5×' }, { v: 1, l: '1×' }, { v: 1.5, l: '1.5×' }, { v: 2, l: '2×' }]} />
@@ -2301,12 +2349,13 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
                       <button onClick={transcribe} style={{ padding: '6px 16px', background: '#f5c518', color: '#000', fontWeight: 600, borderRadius: 4, fontSize: 12 }}>◉ Transcrire</button>
                     </div>
                   ) : (
-                    <SubtitleEditor subtitles={subtitles} onChange={handleSubtitlesChange} onDelete={deleteReplicaWithUndo} currentTime={currentTime} onSeek={seekTo} selectedIdx={selectedIdx} setSelectedIdx={setSelectedIdx} compact={true} charFilter={charFilter} clipId={clip.clip_id} />
+                    <SubtitleEditor subtitles={subtitles} onChange={handleSubtitlesChange} onDelete={deleteReplicaWithUndo} currentTime={bandNow} onSeek={seekBand} selectedIdx={selectedIdx} setSelectedIdx={setSelectedIdx} compact={true} charFilter={charFilter} clipId={clip.clip_id} />
                   )}
                 </div>
                 {showRecorder && (
                   <div style={{ flexShrink: 0, borderTop: '1px solid var(--border)', maxHeight: 300, overflow: 'auto' }}>
                     <RecorderPanel
+                      ref={recorderRef}
                       clipId={clip.clip_id}
                       subtitles={subtitles}
                       activeCharacter={(selectedIdx != null ? subtitles[selectedIdx]?.character : activeSubtitle?.character) || ''}
@@ -2334,7 +2383,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
               const wpm = totalDur > 0 ? Math.round(wordCount / totalDur * 60) : 0
               const recorded = new Set(takes.filter(t => (t.character || '') === focusChar && t.subtitle_index != null).map(t => t.subtitle_index))
               const recordedCount = charIndices.filter(({ i }) => recorded.has(i)).length
-              const queue = charIndices.filter(({ s }) => s.end >= currentTime).slice(0, 5)
+              const queue = charIndices.filter(({ s }) => s.end >= bandNow).slice(0, 5)
               const stats = [
                 ['Répliques', charSubs.length],
                 ['Durée', totalDur.toFixed(1) + 's'],
@@ -2380,7 +2429,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                       {queue.map(({ s, i }, qi) => (
-                        <button key={i} onClick={() => { seekTo(s.start); setSelectedIdx(i) }}
+                        <button key={i} onClick={() => { seekBand(s.start); setSelectedIdx(i) }}
                           style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 9px', background: 'var(--surface)', border: `1px solid ${recorded.has(i) ? color.hex + '40' : 'var(--border)'}`, borderRadius: 6, cursor: 'pointer', textAlign: 'left' }}>
                           <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: 'var(--text3)', flexShrink: 0 }}>{String(i + 1).padStart(2, '0')}</span>
                           {qi === 0 && <span style={{ fontSize: 8, fontWeight: 700, color: color.hex, background: color.hex + '22', padding: '1px 5px', borderRadius: 3, flexShrink: 0 }}>SUIVANT</span>}
@@ -2450,7 +2499,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
                   <p style={{ fontSize: 12, color: 'var(--text3)' }}>Aucune boucle. Placez le curseur et ajoutez.</p>
                 ) : boucles.map(b => (
                   <div key={b.number} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', marginBottom: 4, background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 8 }}>
-                    <button onClick={() => { const v = videoRef.current; if (v) v.currentTime = b.start }} style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontWeight: 700, fontFamily: 'var(--font-mono)', fontSize: 12 }}>B{b.number}</button>
+                    <button onClick={() => seekBand(b.start)} style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontWeight: 700, fontFamily: 'var(--font-mono)', fontSize: 12 }}>B{b.number}</button>
                     <span style={{ flex: 1, fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>{fmtTC(b.start, clipFps)} — {fmtTC(b.end, clipFps)} · {(b.end - b.start).toFixed(1)}s</span>
                     <button onClick={() => removeBoucle(b.number)} title="Supprimer" style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: 13 }}>✕</button>
                   </div>
@@ -2497,7 +2546,8 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
           onSubtitlesChange={handleSubtitlesChange}
           selectedIdx={selectedIdx}
           setSelectedIdx={setSelectedIdx}
-          videoRef={videoRef}
+          getBandTime={getBandTime}
+          seekBand={seekBand}
           brOffset={brOffset}
           setBrOffset={setBrOffset}
           pxPerSec={pxPerSec}
@@ -2565,7 +2615,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
             if (!sub || !canvas) return null
             const rect = canvas.getBoundingClientRect()
             const cur_x = rect.width * CURSOR_X_RATIO
-            const t = (videoRef.current?.currentTime || 0) + brOffset
+            const t = getBandTime()
             const left = cur_x + (sub.start - t) * pxPerSec
             const right = cur_x + (sub.end - t) * pxPerSec
             const trackIdx = charMap[sub.character || ''] ?? 0
@@ -2631,11 +2681,11 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
         {/* Full-clip nav timeline — whole clip at a glance, click/drag to seek */}
         {(() => {
           const span = ((canvasRef.current?.offsetWidth || 800) / (pxPerSec || 1))
-          const vStart = (currentTime + brOffset) - CURSOR_X_RATIO * span
+          const vStart = bandNow - CURSOR_X_RATIO * span
           return (
             <BRTimeline
               duration={duration}
-              currentTime={currentTime}
+              currentTime={bandNow}
               boucles={boucles}
               waveform={waveformData}
               sceneCuts={sceneCuts}
@@ -2643,7 +2693,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
               charMap={charMap}
               viewStart={vStart}
               viewEnd={vStart + span}
-              onSeek={seekTo}
+              onSeek={seekBand}
             />
           )
         })()}
@@ -2702,7 +2752,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
 
 function BandeRythmoToolbar({
   subtitles, onSubtitlesChange, selectedIdx, setSelectedIdx,
-  videoRef,
+  getBandTime, seekBand,
   brOffset, setBrOffset, pxPerSec, setPxPerSec,
   charMap, brInPlayer, setBrInPlayer, rythmoStyle, setRythmoStyle,
   fontScale, setFontScale,
@@ -2717,11 +2767,7 @@ function BandeRythmoToolbar({
 }) {
   const [showDetection, setShowDetection] = React.useState(false)
   const [showBoucles, setShowBoucles] = React.useState(false)
-  const liveIdx = subtitles.findIndex(s => {
-    const v = videoRef.current
-    const t = v ? v.currentTime : 0
-    return t >= s.start && t <= s.end
-  })
+  const liveIdx = activeIndexAt(subtitles, getBandTime())
   const targetIdx = selectedIdx != null ? selectedIdx : (liveIdx >= 0 ? liveIdx : null)
   const target = targetIdx != null ? subtitles[targetIdx] : null
 
@@ -2779,24 +2825,26 @@ function BandeRythmoToolbar({
     return () => { clearTimeout(id); document.removeEventListener('mousedown', onDown) }
   }, [showCharPicker, showDetection, showBoucles, showResp, showReact, showNote, showInserer, showAffichage])
 
-  function updateTarget(patch) {
+  // `field` marks a typing edit (coalesced into one undo step per burst).
+  function updateTarget(patch, field) {
     if (targetIdx == null) return
-    onSubtitlesChange(subtitles.map((s, i) => i === targetIdx ? { ...s, ...patch } : s))
+    onSubtitlesChange(
+      subtitles.map((s, i) => i === targetIdx ? { ...s, ...patch } : s),
+      field ? { coalesce: `${targetIdx}:${field}` } : undefined)
   }
 
   function setIN() {
-    const v = videoRef.current; if (!target || !v) return
-    updateTarget({ start: Math.min(v.currentTime, target.end - 0.1) })
+    if (!target) return
+    updateTarget({ start: Math.min(getBandTime(), target.end - 0.1) })
   }
   function setOUT() {
-    const v = videoRef.current; if (!target || !v) return
-    updateTarget({ end: Math.max(v.currentTime, target.start + 0.1) })
+    if (!target) return
+    updateTarget({ end: Math.max(getBandTime(), target.start + 0.1) })
   }
 
   function splitAtCurrentTime() {
     if (!target || targetIdx == null) return
-    const v = videoRef.current; if (!v) return
-    const t = v.currentTime
+    const t = getBandTime()
     if (t <= target.start || t >= target.end) return
     const next = [...subtitles]
     next.splice(targetIdx, 1, { ...target, end: t }, { ...target, start: t, text: '' })
@@ -2805,8 +2853,7 @@ function BandeRythmoToolbar({
   }
 
   function insertTagSub(text, dur = 0.5) {
-    const v = videoRef.current
-    const t = v ? v.currentTime : 0
+    const t = getBandTime()
     const newSub = { start: t, end: t + dur, text, character: activeChar, reactions: [] }
     const next = [...subtitles, newSub].sort((a, b) => a.start - b.start)
     onSubtitlesChange(next)
@@ -3034,7 +3081,7 @@ function BandeRythmoToolbar({
               <div style={{ fontSize: 11, color: 'var(--text3)', padding: 6 }}>Aucune boucle. Placez le curseur et cliquez « Boucle + ».</div>
             ) : boucles.map(b => (
               <div key={b.number} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 4px', fontSize: 11, fontFamily: 'var(--font-mono)' }}>
-                <button onClick={() => { const v = videoRef.current; if (v) v.currentTime = b.start }}
+                <button onClick={() => seekBand(b.start)}
                   style={{ background: 'none', border: 'none', color: '#f5c518', cursor: 'pointer', fontWeight: 700 }}>
                   B{b.number}
                 </button>
@@ -3178,7 +3225,7 @@ function BandeRythmoToolbar({
           <div style={{ fontSize: 9, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>
             Note — réplique #{targetIdx + 1}
           </div>
-          <textarea value={target.note || ''} onChange={e => updateTarget({ note: e.target.value })} rows={2}
+          <textarea value={target.note || ''} onChange={e => updateTarget({ note: e.target.value }, 'note')} rows={2}
             placeholder="Intention, ton, timing…"
             style={{ width: '100%', fontFamily: 'var(--font-ui)', fontStyle: 'italic', fontSize: 11, padding: '5px 7px', background: '#0a0a0a', color: 'var(--text)', border: '1px solid var(--border2)', borderRadius: 3, resize: 'vertical' }} />
         </div>,
@@ -3256,7 +3303,7 @@ function BandeRythmoToolbar({
               </div>
               <textarea
                 value={target.note || ''}
-                onChange={e => updateTarget({ note: e.target.value })}
+                onChange={e => updateTarget({ note: e.target.value }, 'note')}
                 rows={2}
                 placeholder="Intention, ton, timing…"
                 style={{
