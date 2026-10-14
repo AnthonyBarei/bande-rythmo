@@ -93,7 +93,7 @@ export default function Inspector({
         })}
       </div>
 
-      <div style={{ flex: 1, overflow: 'auto', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ flex: 1, overflow: 'auto', minHeight: 0, display: 'flex', flexDirection: 'column', paddingBottom: 'var(--toast-safe-bottom, 0px)' }}>
         {rightTab === 'repliques' && <InspectorRepliques {...repliquesProps} />}
         {rightTab === 'voix' && <InspectorVoix {...voixProps} />}
         {rightTab === 'detection' && <InspectorDetection {...detectionProps} />}

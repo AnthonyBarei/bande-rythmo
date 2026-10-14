@@ -157,7 +157,7 @@ export default function ClipsLibrary({ clips, onDub, onRecord, onMeme, onDelete,
         </div>
       ) : (
         <div style={{
-          flex: 1, overflow: 'auto', padding: 28,
+          flex: 1, overflow: 'auto', padding: 28, paddingBottom: 'calc(28px + var(--toast-safe-bottom, 0px))',
           display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gridAutoRows: 'max-content', gap: 18,
           alignContent: 'flex-start',
         }}>

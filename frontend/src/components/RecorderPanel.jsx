@@ -596,7 +596,7 @@ const RecorderPanel = forwardRef(function RecorderPanel({
         {micStage}
       </div>
       {/* Right: take queue + A/B */}
-      <div style={{ width: 340, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto' }}>
+      <div style={{ width: 340, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto', paddingBottom: 'var(--toast-safe-bottom, 0px)' }}>
         {takesColumn}
       </div>
     </div>

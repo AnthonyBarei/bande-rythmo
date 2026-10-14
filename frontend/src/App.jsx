@@ -351,7 +351,7 @@ function AppInner() {
           <StudioScreen key={activeClip.clip_id} clip={activeClip} onBack={() => navigate('dub')} />
         )}
         {section === 'memes' && (
-          <MemeGenerator clip={memeClip} initialTab={memeInitialTab} onBack={memeClip ? () => setSection('clips') : null}
+          <MemeGenerator clip={memeClip} initialTab={memeInitialTab}
             clips={clips} onSelectClip={setMemeClip} onClipsCreated={addClips} onOpenInImporter={openInImporter} />
         )}
         {section === 'settings' && <Preferences />}

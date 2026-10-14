@@ -333,7 +333,8 @@ export function ProgressToasts({ route, queueClipId = null, onOpenActivity }) {
   if (!visible) return null
   return (
     <div ref={stackRef} style={{
-      position: 'fixed', right: TOAST_EDGE, bottom: TOAST_EDGE, width: TOAST_W, zIndex: 'var(--z-toast)',
+      // In the editor, sit above the inspector's 40px hint bar so it stays usable.
+      position: 'fixed', right: TOAST_EDGE, bottom: route === 'dub' ? TOAST_EDGE + 40 : TOAST_EDGE, width: TOAST_W, zIndex: 'var(--z-toast)',
       display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 8,
     }}>
       {hidden > 0 && (
