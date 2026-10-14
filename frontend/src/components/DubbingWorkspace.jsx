@@ -7,7 +7,7 @@ import Inspector from './editor/Inspector'
 import BandToolbar from './editor/BandToolbar'
 import Transport from './editor/Transport'
 import TimelineNav from './editor/TimelineNav'
-import { T, Btn, Chip, Dot, Icon, ICONS, MenuItem, MenuLabel, MenuSep } from '../ui'
+import { T, Btn, Chip, Dot, Icon, ICONS, MenuItem, MenuLabel, MenuSep, Splitter } from '../ui'
 import { useSettings } from '../SettingsContext'
 import { classifyChar, SIGN_KINDS, DEFAULT_SIGN_TOGGLES } from '../detection'
 import { useProgress } from '../ProgressContext'
@@ -60,9 +60,31 @@ const brCanvasFont = (id, scale, isReact) => {
   const px = isReact ? 14 : (id === 'cursive' ? 26 : 20)
   return `${isReact ? 'italic ' : ''}600 ${Math.max(10, Math.round(px * scale))}px ${brFontStack(id)}`
 }
-// Canvas can't read CSS variables — --text4 token (not user-swappable).
+// Canvas can't read CSS variables — --text4 / --danger tokens (not user-swappable).
 const TEXT4 = '#565660'
+const DANGER = '#E8595D'
 const DEFAULT_ACCENT = '#F5C518'
+
+// Resizable panes (reference screen-editor.jsx › Editor bandH / inspW / inspOpen).
+const LAYOUT_KEY = 'br.editor.layout'
+const BAND_DEFAULT = 190
+const BAND_MIN = 120
+const BAND_MAX = 520
+const INSP_DEFAULT = 392
+const INSP_MIN = 300
+const INSP_MAX = 600
+// Left column chrome under the video: transport (50) + nav (56) + toolbar (48).
+const COLUMN_CHROME_H = 50 + 56 + 48
+const VIDEO_MIN_H = 160
+const CANVAS_HINT = 'glisser pour créer · ⇧ glisser : boucle · double-clic : éditer · clic droit : menu'
+
+function readLayout() {
+  try {
+    const v = JSON.parse(localStorage.getItem(LAYOUT_KEY))
+    return v && typeof v === 'object' ? v : {}
+  } catch { return {} }
+}
+const clampNum = (v, lo, hi, fallback) => (Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : fallback)
 
 // SMPTE HH:MM:SS:FF — replaces decimal `fmt` everywhere a frame-accurate
 // readout is wanted (cursor, grid majors, list timecodes). Negative time is
@@ -208,7 +230,32 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   const [waveformData, setWaveformData] = useState(null)
   const [sceneCuts, setSceneCuts] = useState(clip.scene_cuts || [])
   useEffect(() => { setSceneCuts(clip.scene_cuts || []) }, [clip.clip_id])
-  const [brPanelHeight, setBrPanelHeight] = useState(190)
+  const [savedLayout] = useState(readLayout)
+  const [bandH, setBandH] = useState(() => clampNum(savedLayout.bandH, BAND_MIN, BAND_MAX, BAND_DEFAULT))
+  const [inspW, setInspW] = useState(() => clampNum(savedLayout.inspW, INSP_MIN, INSP_MAX, INSP_DEFAULT))
+  const [inspOpen, setInspOpen] = useState(savedLayout.inspOpen !== false)
+  const colRef = useRef(null)
+  // Band cap keeps the video ≥ 160px: column − transport − nav − toolbar − 160.
+  const clampBand = useCallback(v => {
+    const colH = colRef.current ? colRef.current.offsetHeight : 900
+    const max = Math.max(BAND_MIN, colH - COLUMN_CHROME_H - VIDEO_MIN_H)
+    return Math.max(BAND_MIN, Math.min(BAND_MAX, max, v))
+  }, [])
+  useEffect(() => {
+    const fit = () => setBandH(h => clampBand(h))
+    fit()
+    const col = colRef.current
+    if (!col || !window.ResizeObserver) {
+      window.addEventListener('resize', fit)
+      return () => window.removeEventListener('resize', fit)
+    }
+    const ro = new ResizeObserver(fit)
+    ro.observe(col)
+    return () => ro.disconnect()
+  }, [clampBand])
+  useEffect(() => {
+    try { localStorage.setItem(LAYOUT_KEY, JSON.stringify({ bandH, inspW, inspOpen })) } catch { /* layout not persisted */ }
+  }, [bandH, inspW, inspOpen])
   const [importing, setImporting] = useState(false)
   const [fontScale, setFontScale] = useState(1.0)
   const [editingIdx, setEditingIdx] = useState(null)
@@ -893,20 +940,16 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
             ctx.restore()
             ctx.shadowBlur = 0
 
-            // ── Stretch marker — 2px bar at bottom of word block ──
-            // Color-codes compression (amber/red) and sparse hold (blue).
-            // Only drawn in word-by-word mode when scaleX deviates from natural.
-            if (wordByWordRef.current && words.length > 1) {
-              const mc = scaleX < 0.45
-                ? 'rgba(229,69,69,0.80)'
-                : scaleX < 0.75
-                ? 'rgba(245,197,24,0.70)'
-                : scaleX >= 1.05
-                ? 'rgba(126,192,255,0.55)'
-                : null
-              if (mc) {
-                ctx.fillStyle = mc
-                ctx.fillRect(wbx, yTop + trackH - 2, wbw, 2)
+            // ── Stretch marker — reference BandCanvas: 2px danger bar INSIDE
+            // the block (y0 + trackH − 4), only when the text is squeezed
+            // (< 0.82). Held words (capped stretch) get no bar: a sparse
+            // réplique is normal, and per-word bars read as a block outline.
+            if (!isMinimal && scaleX < 0.82) {
+              const mx0 = Math.max(wbx, leftX + 2)
+              const mx1 = Math.min(wbx + wbw, rightX - 2)
+              if (mx1 > mx0) {
+                ctx.fillStyle = DANGER
+                ctx.fillRect(mx0, yTop + trackH - 4, mx1 - mx0, 2)
               }
             }
 
@@ -1099,8 +1142,11 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
           ctx.stroke()
         }
         ctx.setLineDash([])
+        // PI sits on the play cursor at t≈0: offset its label off the line and
+        // skip it while the playhead triangle is within 30px.
+        if (cal.kind === 'pi' && Math.abs(cx - cursor_x) < 30) continue
         ctx.fillStyle = cal.kind === 'bip' ? '#7ec0ff' : '#fff'
-        ctx.fillText(cal.label, cx + 3, 3)
+        ctx.fillText(cal.label, cx + (cal.kind === 'pi' ? 6 : 3), 3)
       }
 
       // ── Scene cuts — dashed blue verticals (changement de plan, mirror plan_cut) ──
@@ -1385,6 +1431,15 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
         if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); undoRedoRef.current.redo(); return }
         if (k === 's') { e.preventDefault(); saveNow(); return }
       }
+      // `\` toggles the inspector. On AZERTY it is AltGr+8 (reported as Ctrl+Alt),
+      // so AltGraph is the one modifier allowed for it.
+      const altGr = e.getModifierState?.('AltGraph')
+      if (e.key === '\\' && (altGr || !(e.ctrlKey || e.metaKey || e.altKey))) {
+        if (document.querySelector('[aria-modal="true"]')) return
+        e.preventDefault()
+        setInspOpen(o => !o)
+        return
+      }
       // Single-key shortcuts must not fire on browser/app combos (Ctrl+S, Ctrl+K, Alt+…).
       if ((e.ctrlKey || e.metaKey || e.altKey) && !e.key.startsWith('Arrow')) return
       // An app-level dialog (raccourcis, palette…) owns the keyboard.
@@ -1481,6 +1536,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
     const idx = sel != null && subs[sel] ? sel : activeIndexAt(subs, getBandTime())
     if (idx < 0) return
     setSelectedIdx(idx)
+    setInspOpen(true)
     setRightTab('repliques')
     setShowRecorder(true)
     setRecordRequest(n => n + 1)
@@ -2146,11 +2202,13 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
         onBack={onBack}
         onToggleExport={onToggleExport}
         onHelp={openHelp}
+        inspOpen={inspOpen}
+        onToggleInspector={() => setInspOpen(o => !o)}
       />
 
       {/* ── Main: left column (video · transport · nav · toolbar · band) + inspector ── */}
       <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
-        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+        <div ref={colRef} style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
 
           <VideoStage
             videoRef={videoRef}
@@ -2199,7 +2257,9 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
             bandNow={bandNow}
             clipFps={clipFps}
             boucles={boucles}
+            onBouclesChange={saveBoucles}
             loopRegion={loopRegion}
+            onLoopRegionChange={setLoopRegion}
             duration={duration}
             waveform={waveformData}
             sceneCuts={sceneCuts}
@@ -2241,12 +2301,15 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
             }}
           />
 
-          {/* ── Band canvas ── */}
-          <div style={{ height: brPanelHeight, flexShrink: 0, borderTop: `2px solid ${T.border2}`, position: 'relative', overflow: 'hidden', background: '#0a0a0c' }}>
+          {/* ── Band: top edge is a resize handle (Splitter) ── */}
+          <Splitter dir="row" title="Glisser pour redimensionner la bande · double-clic : réinitialiser"
+            start={bandH} onDrag={(dy, start) => setBandH(clampBand(start - dy))} onReset={() => setBandH(clampBand(BAND_DEFAULT))} />
+          <div style={{ height: bandH, flexShrink: 0, position: 'relative', overflow: 'hidden', background: '#0a0a0c' }}>
             <canvas
               ref={canvasRef}
               width={800}
               height={canvasH}
+              title={CANVAS_HINT}
               style={{ display: 'block', width: '100%', height: '100%', cursor: 'crosshair', userSelect: 'none' }}
               onMouseDown={onCanvasMouseDown}
               onMouseMove={onCanvasMouseMove}
@@ -2254,22 +2317,6 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
               onMouseLeave={onCanvasMouseLeave}
               onDoubleClick={onCanvasDoubleClick}
               onContextMenu={onCanvasContextMenu}
-            />
-            {/* Height drag handle — overlays the top edge, takes no layout space */}
-            <div
-              title="Glisser pour redimensionner la bande"
-              onMouseDown={e => {
-                e.preventDefault()
-                const startY = e.clientY
-                const startH = brPanelHeight
-                const onMove = ev => setBrPanelHeight(Math.max(100, Math.min(500, startH - (ev.clientY - startY))))
-                const onUp = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
-                window.addEventListener('mousemove', onMove)
-                window.addEventListener('mouseup', onUp)
-              }}
-              style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 5, cursor: 'row-resize', background: 'transparent', transition: 'background 0.15s', zIndex: 4 }}
-              onMouseEnter={e => { e.currentTarget.style.background = 'var(--accent-ring)' }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
             />
             <CanvasCoachmark />
 
@@ -2315,11 +2362,6 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
                 />
               )
             })()}
-            {editingIdx == null && (
-              <div style={{ position: 'absolute', right: 10, bottom: 8, fontSize: 9, color: T.text4, fontFamily: T.fontMono, pointerEvents: 'none' }}>
-                {hoverHint || 'glisser pour créer · double-clic éditer · clic-droit menu'}
-              </div>
-            )}
             {ctxMenu && (() => {
               const sub = subtitles[ctxMenu.subIdx]
               if (!sub) return null
@@ -2358,7 +2400,24 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
           </div>
         </div>
 
+        {/* Inspector — resizable + hideable. Stays mounted while hidden so the
+            embedded recorder (and an in-flight take) survives the toggle. */}
+        {inspOpen && (
+          <Splitter dir="col" title="Glisser pour redimensionner le panneau · double-clic : réinitialiser"
+            start={inspW} onDrag={(dx, start) => setInspW(Math.max(INSP_MIN, Math.min(INSP_MAX, start - dx)))} onReset={() => setInspW(INSP_DEFAULT)} />
+        )}
+        {!inspOpen && (
+          <button onClick={() => setInspOpen(true)} title="Afficher le panneau (\)" style={{
+            width: 32, flexShrink: 0, background: T.surface, border: 'none', borderLeft: `1px solid ${T.border}`, cursor: 'pointer',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, paddingTop: 14, color: T.text3, fontFamily: T.fontUI }}>
+            <Icon d={ICONS.sidebar} size={16} stroke={T.text2} />
+            <span style={{ writingMode: 'vertical-rl', fontSize: 11, fontWeight: 600, letterSpacing: 0.6, color: T.text3, whiteSpace: 'nowrap' }}>Répliques · Voix · Détection</span>
+          </button>
+        )}
         <Inspector
+          open={inspOpen}
+          width={inspW}
+          hint={hoverHint}
           rightTab={rightTab}
           setRightTab={setRightTab}
           target={inspectorTarget}
@@ -2379,7 +2438,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
           voixProps={{
             charList, charMap, subtitles, activeSubtitle, selectedIdx, setSelectedIdx,
             takes, bandNow, comediens, onSetComedien: setComedien,
-            onRecord: () => { setShowRecorder(true); setRightTab('repliques') },
+            onRecord: () => { setInspOpen(true); setShowRecorder(true); setRightTab('repliques') },
             onSeek: seekBand, clipDuration: clip.end - clip.start, onAddCharacter: addCharacter,
           }}
           detectionProps={{ detection, setDetection, detectionAuto, setDetectionAuto, wordByWord, setWordByWord, brFont, setBrFont }}

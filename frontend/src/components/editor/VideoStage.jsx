@@ -22,7 +22,7 @@ export default function VideoStage({
     onToggleProxy()
   }
   return (
-    <div style={{ flex: 1, minHeight: 0, background: '#000', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <div style={{ flex: 1, minHeight: 160, overflow: 'hidden', background: '#000', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ width: '74%', aspectRatio: '16/9', maxHeight: '92%', background: '#000', borderRadius: 8, position: 'relative', overflow: 'hidden' }}>
         <video
           ref={videoRef}

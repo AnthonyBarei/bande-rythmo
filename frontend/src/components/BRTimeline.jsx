@@ -29,6 +29,7 @@ export default function BRTimeline({
   viewEnd = null,         // visible BR window end (s)
   onSeek,
   height = 56,
+  labelRowH = 0,          // px reserved at the top for overlay labels (bracket starts below)
 }) {
   const canvasRef = useRef(null)
   const draggingRef = useRef(false)
@@ -93,20 +94,22 @@ export default function BRTimeline({
     })
     ctx.setLineDash([])
 
-    // visible-window bracket (what the BR canvas currently shows)
+    // visible-window bracket (what the BR canvas currently shows) — outline
+    // only, starting below the label row so it never boxes the overlay labels.
     if (viewStart != null && viewEnd != null && viewEnd > viewStart) {
       const x0 = Math.max(0, tToX(viewStart))
       const x1 = Math.min(w, tToX(viewEnd))
+      const top = Math.min(labelRowH, h - 2)
       ctx.strokeStyle = cssVar('--border3', '#3f3f4a')
       ctx.lineWidth = 1
-      ctx.strokeRect(x0 + 0.5, 0.5, (x1 - x0) - 1, h - 1)
+      ctx.strokeRect(x0 + 0.5, top + 0.5, (x1 - x0) - 1, h - top - 1)
     }
 
     // playhead
     const px = tToX(currentTime)
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(px, 0); ctx.lineTo(px, h); ctx.stroke()
     ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.moveTo(px - 5, 0); ctx.lineTo(px + 5, 0); ctx.lineTo(px, 6); ctx.fill()
-  }, [duration, currentTime, boucles, waveform, sceneCuts, subtitles, charMap, viewStart, viewEnd])
+  }, [duration, currentTime, boucles, waveform, sceneCuts, subtitles, charMap, viewStart, viewEnd, labelRowH])
 
   useEffect(() => { draw() }, [draw])
 

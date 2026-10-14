@@ -34,6 +34,7 @@ export default function EditorHeader({
   vocalAvailable, separatingVocals, onSeparateVocals,
   saveStatus, onUndo, onRedo, canUndo, canRedo,
   onBack, onToggleExport, onHelp,
+  inspOpen, onToggleInspector,
 }) {
   const importRef = useRef(null)
   const namedChars = charList.filter(c => c)
@@ -109,6 +110,7 @@ export default function EditorHeader({
         </>)}
       </Popover>
       <Btn size="sm" icon={ICONS.keyboard} title="Raccourcis (?)" onClick={onHelp} />
+      <Btn size="sm" icon={ICONS.sidebar} active={inspOpen} onClick={onToggleInspector} title={(inspOpen ? 'Masquer' : 'Afficher') + ' le panneau (\\)'} />
       <Btn size="sm" variant="primary" icon={ICONS.download} onClick={() => onToggleExport?.()} title="Exporter (E)">Exporter</Btn>
     </div>
   )

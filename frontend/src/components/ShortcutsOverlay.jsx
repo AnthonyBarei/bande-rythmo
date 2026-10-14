@@ -23,6 +23,7 @@ const GROUPS = [
   { title: 'Général', rows: [
     { k: ['Ctrl', 'Z'], l: 'Annuler' }, { k: ['Ctrl', 'Y'], l: 'Rétablir' }, { k: ['⌘', 'K'], l: 'Palette de commandes' },
     { k: ['/'], l: 'Palette de commandes' }, { k: ['Ctrl', 'S'], l: 'Sauvegarder' }, { k: ['E'], l: 'Exporter' },
+    { k: ['\\'], l: 'Afficher / masquer le panneau' }, { k: ['N'], l: 'Nouveau clip (importer une vidéo)' },
     { k: ['?'], l: 'Cette aide' },
   ]},
 ]

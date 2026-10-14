@@ -62,15 +62,17 @@ function TargetHeader({ target, subIdx, charMap, charList, clipFps, showRecorder
   )
 }
 
-// Inspector — reference screen-editor.jsx › Inspector (fixed 392px).
+// Inspector — reference screen-editor.jsx › Inspector (resizable 300–600px).
+// `hint` = live band hover hint, moved out of the canvas (F1.2).
 export default function Inspector({
+  open = true, width = 392, hint,
   rightTab, setRightTab,
   target, subIdx, charMap, charList, clipFps, showRecorder, onToggleRecorder,
   onSetTargetCharacter, onNewTargetCharacter,
   repliquesProps, voixProps, detectionProps, bouclesProps, lexiqueProps,
 }) {
   return (
-    <div style={{ width: 392, flexShrink: 0, display: 'flex', flexDirection: 'column', background: T.surface, borderLeft: `1px solid ${T.border}`, overflow: 'hidden' }}>
+    <div style={{ width, flexShrink: 0, display: open ? 'flex' : 'none', flexDirection: 'column', background: T.surface, overflow: 'hidden' }}>
       <TargetHeader target={target} subIdx={subIdx} charMap={charMap} charList={charList} clipFps={clipFps}
         showRecorder={showRecorder} onToggleRecorder={onToggleRecorder}
         onSetCharacter={onSetTargetCharacter} onNewCharacter={onNewTargetCharacter} />
@@ -100,8 +102,12 @@ export default function Inspector({
       </div>
 
       <div style={{ padding: '9px 16px', borderTop: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', gap: 8, fontSize: 10, color: T.text3, flexShrink: 0 }}>
-        <Kbd>⇧</Kbd><Kbd>↵</Kbd><span style={{ color: T.text4 }}>nouvelle réplique</span>
-        {rightTab === 'voix' && <><Kbd>R</Kbd><span style={{ color: T.text4 }}>enregistrer la réplique</span></>}
+        {hint
+          ? <span title={hint} style={{ color: T.text3, fontFamily: T.fontMono, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{hint}</span>
+          : <>
+            <Kbd>⇧</Kbd><Kbd>↵</Kbd><span style={{ color: T.text4, whiteSpace: 'nowrap' }}>nouvelle réplique</span>
+            {rightTab === 'voix' && <><Kbd>R</Kbd><span style={{ color: T.text4, whiteSpace: 'nowrap' }}>enregistrer la réplique</span></>}
+          </>}
         <div style={{ flex: 1 }} /><Kbd>?</Kbd><span style={{ color: T.text4 }}>aide</span>
       </div>
     </div>
