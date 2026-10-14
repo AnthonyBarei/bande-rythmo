@@ -30,11 +30,52 @@ def _ass_time(s: str) -> float:
     return float(parts[0]) * 3600 + float(parts[1]) * 60 + float(parts[2])
 
 
+# Escaped literal braces (\{ \}) are swapped out before override blocks are
+# stripped, so they are neither eaten nor taken for a tag delimiter.
+_ESC_OPEN, _ESC_CLOSE = '\x00', '\x01'
+
+
+def _ass_unescape_braces(text: str) -> str:
+    return text.replace('\\{', _ESC_OPEN).replace('\\}', _ESC_CLOSE)
+
+
 def _ass_strip(text: str) -> str:
     """Remove ASS override tags {\\an8}, {\\c&H…} etc. and hard-code line breaks."""
+    text = _ass_unescape_braces(text)
     text = re.sub(r'\{[^}]*\}', '', text)
     text = text.replace('\\N', ' ').replace('\\n', ' ').replace('\\h', ' ')
-    return text.strip()
+    return text.replace(_ESC_OPEN, '{').replace(_ESC_CLOSE, '}').strip()
+
+
+def _ass_is_drawing(text: str) -> bool:
+    """Vector drawing event ({\\p1} …): a shape, not dialogue."""
+    blocks = re.findall(r'\{([^}]*)\}', _ass_unescape_braces(text))
+    return any(re.search(r'\\p[1-9]', b) for b in blocks)
+
+
+_ASS_MOVE = re.compile(r'\\move\(\s*(-?[\d.]+)\s*,\s*-?[\d.]+\s*,\s*(-?[\d.]+)\s*,')
+
+
+def _br_cue_times(text: str, ev_start: float, ev_end: float, play_res_x: float):
+    """Our scrolling BR export times each event to its scroll window, not the
+    cue: recover the cue start from the \\move x-span (cursor at
+    CURSOR_X_RATIO). The cue end is only known when it outlasts the scroll-out."""
+    from services.subtitle_service import CURSOR_X_RATIO
+    m = _ASS_MOVE.search(text)
+    if not m or ev_end <= ev_start:
+        return ev_start, ev_end
+    x1, x2 = float(m.group(1)), float(m.group(2))
+    px_per_sec = (x1 - x2) / (ev_end - ev_start)
+    if px_per_sec <= 0:
+        return ev_start, ev_end
+    cursor_x = play_res_x * CURSOR_X_RATIO
+    start = max(0.0, ev_start + (x1 - cursor_x) / px_per_sec)
+    natural_exit = start + cursor_x / px_per_sec
+    if ev_end - natural_exit > 0.05:
+        end = ev_end
+    else:
+        end = min(ev_end, start + max(0.3, len(_ass_strip(text)) * 0.06))
+    return round(start, 3), round(max(start, end), 3)
 
 
 def parse_srt(content: str) -> List[Dict]:
@@ -89,6 +130,12 @@ def parse_ass(content: str) -> List[Dict]:
     results = []
     content = content.replace('\r\n', '\n').replace('\r', '\n')
 
+    # Our own scrolling BR export: background band (style BRBg, drawing) +
+    # pinned name labels (\pos) + one \move event per réplique.
+    is_br_export = re.search(r'^\s*Style:\s*BRBg\s*,', content, re.MULTILINE | re.IGNORECASE) is not None
+    res_x = re.search(r'^\s*PlayResX:\s*(\d+)', content, re.MULTILINE | re.IGNORECASE)
+    play_res_x = float(res_x.group(1)) if res_x else 384.0
+
     # Find [Events] section
     in_events = False
     format_map = {}
@@ -115,6 +162,13 @@ def parse_ass(content: str) -> List[Dict]:
             end = _ass_time(parts[format_map.get('end', 2)])
             char = parts[format_map.get('name', 4)].strip() if 'name' in format_map else ''
             text_raw = parts[format_map.get('text', -1)].strip() if 'text' in format_map else parts[-1].strip()
+            style = parts[format_map['style']].strip() if 'style' in format_map else ''
+            if _ass_is_drawing(text_raw) or style.lower() == 'brbg':
+                continue
+            if is_br_export:
+                if '\\move(' not in text_raw:
+                    continue
+                start, end = _br_cue_times(text_raw, start, end, play_res_x)
             text = _ass_strip(text_raw)
             if text:
                 results.append({'start': start, 'end': end, 'character': char, 'text': text})

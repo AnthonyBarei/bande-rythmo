@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import mimetypes
 import os
 import subprocess
@@ -10,6 +11,8 @@ from fastapi.responses import FileResponse
 
 from services.ffmpeg_service import probe_streams
 from services.jobs import create_job, get_job
+
+log = logging.getLogger("br.files")
 
 router = APIRouter()
 
@@ -80,21 +83,30 @@ def _extract_audio(src: str, dst: str, audio_idx: int, job=None):
             raise RuntimeError("ffmpeg remux failed (copy + transcode fallback)")
 
 
-async def _remux_task(path: str, remux_path: str, cache_key: tuple, status_key: str):
-    job = create_job("plex-remux", title="Préparation audio Plex")
-    _remux_jobs[status_key] = job.id
+def _discard_partial(path: str):
+    if os.path.exists(path):
+        try:
+            os.remove(path)
+        except OSError:
+            log.warning("could not remove partial remux %s", path, exc_info=True)
+
+
+async def _remux_task(job, path: str, remux_path: str, cache_key: tuple, status_key: str):
     try:
         a_idx = cache_key[2]
         job.update(stage="Extraction piste audio", pct=0.05)
         await asyncio.to_thread(_extract_audio, path, remux_path, a_idx, job)
         if job.cancelled:
             _remux_status[status_key] = "error"
+            _discard_partial(remux_path)
             return
         _remux_cache[cache_key] = remux_path
         _remux_status[status_key] = "ready"
         job.done({"path": remux_path})
     except Exception as e:
+        log.exception("remux failed for %s", status_key)
         _remux_status[status_key] = "error"
+        _discard_partial(remux_path)
         job.fail(str(e))
 
 
@@ -146,9 +158,10 @@ async def start_remux(
     os.makedirs("sources", exist_ok=True)
     remux_path = f"sources/{source_id}_a{audio}.m4a"
     _remux_status[status_key] = "pending"
-    asyncio.create_task(_remux_task(path, remux_path, cache_key, status_key))
-    # Spin briefly so the task has time to create_job; otherwise job_id will appear on next status poll.
-    return {"status": "pending", "job_id": _remux_jobs.get(status_key)}
+    job = create_job("plex-remux", title="Préparation audio Plex")
+    _remux_jobs[status_key] = job.id
+    asyncio.create_task(_remux_task(job, path, remux_path, cache_key, status_key))
+    return {"status": "pending", "job_id": job.id}
 
 
 @router.get("/remux-status/{source_id}")

@@ -50,6 +50,8 @@ class Subtitle(BaseModel):
     dos: bool = False
     ambiance: bool = False
     plan_cut: Optional[float] = None
+    hidden: bool = False
+    take: bool = False
 
 
 class Boucle(BaseModel):
@@ -80,6 +82,29 @@ class ExportRequest(BaseModel):
     gpu: str = "off"   # off | auto | nvenc | qsv | amf — HW-accelerated H.264 encode
 
 
+def _sub_dict(s: Subtitle) -> dict:
+    return {
+        "start": s.start, "end": s.end, "character": s.character, "text": s.text,
+        "words": [
+            {
+                "w": w.w, "start": w.start, "end": w.end,
+                "signs": [sg.dict() for sg in w.signs] if w.signs else None,
+            }
+            for w in s.words
+        ] if s.words else None,
+        "off": s.off, "dos": s.dos, "ambiance": s.ambiance, "plan_cut": s.plan_cut,
+        "hidden": s.hidden,
+    }
+
+
+def _export_subs(payload: List[Subtitle], clip_row: dict) -> list:
+    """Subtitles to export: the request payload, else the saved clip (server as
+    source of truth — an empty payload must not silently produce empty files).
+    Hidden (masked) répliques never reach any export."""
+    subs = [_sub_dict(s) for s in payload]
+    if not subs:
+        subs = clip_row.get("subtitles") or []
+    return [s for s in subs if not s.get("hidden")]
 
 
 def _trim_subs_to_range(subs: list, a: float, b: float) -> list:
@@ -112,6 +137,14 @@ def _trim_subs_to_range(subs: list, a: float, b: float) -> list:
         ns["plan_cut"] = (pc - a) if (pc is not None and a <= pc <= b) else None
         out.append(ns)
     return out
+
+
+def _remove_quietly(path: str) -> None:
+    if os.path.exists(path):
+        try:
+            os.remove(path)
+        except OSError:
+            log.warning("could not remove %s", path, exc_info=True)
 
 
 class DubEntry(BaseModel):
@@ -153,10 +186,19 @@ async def export_mp4_dubbed(req: DubMixRequest, db: Session = Depends(get_db)):
             raise HTTPException(404, f"Prise {e.take_id} introuvable pour ce clip")
         if not os.path.isfile(take.audio_path):
             raise HTTPException(404, f"Fichier audio manquant pour la prise {e.take_id}")
+        # subtitle_index addresses the full saved list (hidden lines included).
+        line = subs[take.subtitle_index] if (
+            take.subtitle_index is not None and 0 <= take.subtitle_index < len(subs)
+        ) else None
+        if line and line.get("hidden"):
+            log.info("mp4-dubbed: take %s skipped (réplique %s masquée)", take.id, take.subtitle_index)
+            continue
         at = e.at
-        if at is None and take.subtitle_index is not None and take.subtitle_index < len(subs):
-            at = subs[take.subtitle_index]["start"]
+        if at is None and line:
+            at = line["start"]
         entries.append({"path": take.audio_path, "at": at or 0.0, "gain_db": e.gain_db})
+    if not entries:
+        raise HTTPException(400, "Toutes les prises sélectionnées appartiennent à des répliques masquées")
 
     export_id = str(uuid.uuid4())
     output = f"exports/{export_id}_dubbed.mp4"
@@ -168,6 +210,7 @@ async def export_mp4_dubbed(req: DubMixRequest, db: Session = Depends(get_db)):
         )
     except (RuntimeError, ValueError) as exc:
         log.error("dub mix failed for clip %s: %s", req.segment_id, exc)
+        _remove_quietly(output)
         raise HTTPException(500, "Mixage échoué — vérifiez les prises sélectionnées")
 
     try:
@@ -207,24 +250,7 @@ async def export(req: ExportRequest, db: Session = Depends(get_db)):
             log.exception("export history write failed (gif, clip %s)", req.segment_id)
         return FileResponse(output, filename="clip.gif", media_type="image/gif")
 
-    subs = [
-        {
-            "start": s.start, "end": s.end, "character": s.character, "text": s.text,
-            "words": [
-                {
-                    "w": w.w, "start": w.start, "end": w.end,
-                    "signs": [sg.dict() for sg in w.signs] if w.signs else None,
-                }
-                for w in s.words
-            ] if s.words else None,
-            "off": s.off, "dos": s.dos, "ambiance": s.ambiance, "plan_cut": s.plan_cut,
-        }
-        for s in req.subtitles
-    ]
-    # DB fallback (Phase 2 — server as source of truth): a payload without
-    # subtitles exports what's saved instead of silently producing empty files.
-    if not subs and clip_row.get("subtitles"):
-        subs = clip_row["subtitles"]
+    subs = _export_subs(req.subtitles, clip_row)
 
     # Custom time-range: keep subs overlapping [in,out], clamp + shift to 0.
     # Applies to every subtitle format (SRT/ASS/DetX/croisillé).
@@ -507,7 +533,7 @@ async def export_gif_job(req: ExportRequest, db: Session = Depends(get_db)):
 @router.post("/dubpack-job", response_model=JobStartResponse)
 async def export_dubpack_job(req: ExportRequest, db: Session = Depends(get_db)):
     """Choicer Voicer dub pack (OGV + one clip per réplique) as a ZIP job."""
-    from services.dubpack_service import build_dubpack, prepare_lines
+    from services.dubpack_service import build_dubpack, prepare_lines, probe_media, media_end
 
     segment = f"segments/{req.segment_id}.mp4"
     if not os.path.exists(segment):
@@ -515,19 +541,16 @@ async def export_dubpack_job(req: ExportRequest, db: Session = Depends(get_db)):
 
     clip_row = get_clip(db, req.segment_id) or {}
     subs = [
-        {"start": s.start, "end": s.end, "character": s.character, "text": s.text}
-        for s in req.subtitles
+        {"start": s["start"], "end": s["end"], "character": s.get("character") or "", "text": s.get("text") or ""}
+        for s in _export_subs(req.subtitles, clip_row)
     ]
-    if not subs and clip_row.get("subtitles"):
-        subs = [
-            {"start": s["start"], "end": s["end"], "character": s.get("character") or "", "text": s.get("text") or ""}
-            for s in clip_row["subtitles"]
-        ]
     check = subs
-    if req.in_point is not None and req.out_point is not None and req.out_point > req.in_point:
+    ranged = req.in_point is not None and req.out_point is not None and req.out_point > req.in_point
+    if ranged:
         check = _trim_subs_to_range(subs, req.in_point, req.out_point)
+    media_s, _ = await asyncio.to_thread(probe_media, segment)
     try:
-        prepare_lines(check)
+        prepare_lines(check, media_end=media_end(media_s, req.in_point if ranged else None))
     except ValueError as exc:
         raise HTTPException(400, str(exc))
 
@@ -605,20 +628,7 @@ async def export_mp4_job(req: ExportRequest, db: Session = Depends(get_db)):
     export_id = str(uuid.uuid4())
 
     # Snapshot the request (Pydantic objects don't cross threads safely after the request ends).
-    subs_data = [
-        {
-            "start": s.start, "end": s.end, "character": s.character, "text": s.text,
-            "words": [
-                {
-                    "w": w.w, "start": w.start, "end": w.end,
-                    "signs": [sg.dict() for sg in w.signs] if w.signs else None,
-                }
-                for w in s.words
-            ] if s.words else None,
-            "off": s.off, "dos": s.dos, "ambiance": s.ambiance, "plan_cut": s.plan_cut,
-        }
-        for s in req.subtitles
-    ]
+    subs_data = _export_subs(req.subtitles, clip_row)
     px_per_sec = req.px_per_sec
     br_offset = req.br_offset
     canvas_w = req.canvas_w
@@ -875,8 +885,12 @@ async def export_mp4_canvas(
         "-c:a", "copy",
         output,
     ]
-    result = await asyncio.to_thread(subprocess.run, cmd, capture_output=True)
+    try:
+        result = await asyncio.to_thread(subprocess.run, cmd, capture_output=True)
+    finally:
+        _remove_quietly(overlay_path)
     if result.returncode != 0:
+        _remove_quietly(output)
         raise HTTPException(500, f"ffmpeg: {result.stderr.decode(errors='replace')}")
 
     return FileResponse(output, filename="bande_rythmo_canvas.mp4", media_type="video/mp4")

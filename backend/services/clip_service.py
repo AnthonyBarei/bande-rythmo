@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Annotated
 from pydantic import StringConstraints
 from sqlalchemy.orm import Session
-from models import Clip, Subtitle, Boucle
+from models import Clip, Subtitle, Boucle, Take, Export
 
 log = logging.getLogger("br.clips")
 
@@ -58,6 +58,7 @@ def _to_dict(clip: Clip) -> dict:
                 "off": bool(s.off), "dos": bool(s.dos),
                 "ambiance": bool(s.ambiance), "plan_cut": s.plan_cut,
                 "note": s.note or "",
+                "hidden": bool(s.hidden), "take": bool(s.take),
             }
             for s in clip.subtitles
         ],
@@ -124,6 +125,8 @@ def update_subtitles(db: Session, clip_id, subtitles):
             ambiance=bool(s.get("ambiance", False)),
             plan_cut=plan_cut,
             note=(s.get("note") or None),
+            hidden=bool(s.get("hidden", False)),
+            take=bool(s.get("take", False)),
         ))
     db.commit()
     db.refresh(clip)
@@ -207,23 +210,53 @@ def update_status(db: Session, clip_id, status):
     return _to_dict(clip)
 
 
+def _inside(path: str, folder: str) -> bool:
+    root = os.path.realpath(folder)
+    try:
+        return os.path.commonpath([os.path.realpath(path), root]) == root
+    except ValueError:
+        return False
+
+
+def _remove_owned(path, folder: str):
+    if not path or not os.path.exists(path):
+        return
+    if not _inside(path, folder):
+        log.warning("not removing %s: outside %s/", path, folder)
+        return
+    try:
+        os.remove(path)
+    except OSError:
+        log.warning("could not remove %s", path, exc_info=True)
+
+
 def delete_clip(db: Session, clip_id):
     clip = db.query(Clip).filter(Clip.clip_id == clip_id).first()
     if not clip:
         return False
     segment_path = clip.segment_path
     thumbnail_path = clip.thumbnail_path
+    take_paths = [t.audio_path for t in db.query(Take).filter(Take.clip_id == clip_id)]
+    export_paths = [e.path for e in db.query(Export).filter(Export.clip_id == clip_id)]
+    db.query(Take).filter(Take.clip_id == clip_id).delete()
+    db.query(Export).filter(Export.clip_id == clip_id).delete()
     db.delete(clip)
     db.commit()
     # Derived per-clip files are unreachable once the row is gone.
-    derived = (f"segments/{clip_id}_proxy.mp4", f"segments/{clip_id}_bed.wav")
-    for p in (segment_path, thumbnail_path, *derived):
-        if p and os.path.exists(p):
-            try:
-                os.remove(p)
-            except OSError:
-                log.warning("could not remove %s", p, exc_info=True)
+    owned = [
+        (segment_path, "segments"),
+        (thumbnail_path, "thumbnails"),
+        (f"segments/{clip_id}_proxy.mp4", "segments"),
+        (f"segments/{clip_id}_bed.wav", "segments"),
+        *((p, "takes") for p in take_paths),
+        *((p, "exports") for p in export_paths),
+    ]
+    for path, folder in owned:
+        _remove_owned(path, folder)
     stems = os.path.join("segments", "stems", "htdemucs", clip_id)
     if os.path.isdir(stems):
-        shutil.rmtree(stems, ignore_errors=True)
+        try:
+            shutil.rmtree(stems)
+        except OSError:
+            log.warning("could not remove %s", stems, exc_info=True)
     return True

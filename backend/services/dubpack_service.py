@@ -5,18 +5,29 @@ Layout (Godot ConfigFile, CRLF, the reference community packs actually load):
     Mon Pack/
       _pack_info.ini
       icon.png
-      dub_video.ogv          Theora + Vorbis (Godot)
+      dub_video.ogv          Theora + silent Vorbis track (Godot)
       _backing_track.mp3     optional — clip bed (instrumental / replacement)
-      01_voix_bonjour.ogg
+      01_voix_bonjour.ogg    original voice of the line
       01_voix_bonjour.txt    caption, image, dub_timestamps, dub_characters
       01_voix_bonjour.png
+
+Audio model (Choicer Voicer): the game plays each line's sample — or the
+player's recording — at its dub_timestamp over dub_video, and plays
+_backing_track (music & effects, no voices) alongside. Unselected characters
+fall back to their original sample. As in a pro dubbing deliverable (M&E +
+new voices), the original dialogue never lives in the bed: dub_video.ogv
+carries a silent Vorbis track (container layout kept identical to the
+reference packs), so the only voices heard are the per-line clips.
 """
 
 from __future__ import annotations
 
+import json
+import logging
 import os
 import re
 import shutil
+import subprocess
 import unicodedata
 import zipfile
 from pathlib import Path
@@ -24,6 +35,8 @@ from typing import Any, Callable, Optional
 
 from services.ffmpeg_service import run_ffmpeg_with_progress
 from services.jobs import CancelledJobError
+
+log = logging.getLogger("br.dubpack")
 
 MAX_CLIP_S = 60.0
 MIN_CLIP_S = 0.05
@@ -93,13 +106,18 @@ def clip_basename(index: int, text: str, character: str, width: int) -> str:
     return f"{index:0{width}d}_{who}_{words}".strip("_")
 
 
-def prepare_lines(subs: list) -> list[dict]:
-    """Drop empty/tiny cues. Refuse cues the game will reject (> 60 s)."""
+def prepare_lines(subs: list, media_end: Optional[float] = None) -> list[dict]:
+    """Drop empty/tiny cues. Refuse cues the game will reject (> 60 s).
+
+    `media_end` (seconds): cues are clamped to it; a cue starting at/after it
+    has nothing to cut and is dropped instead of yielding an empty clip."""
     lines = []
     too_long = []
     for i, s in enumerate(subs, start=1):
         start = float(s.get("start") or 0)
         end = float(s.get("end") or 0)
+        if media_end is not None:
+            end = min(end, media_end)
         dur = end - start
         text = (s.get("text") or "").strip()
         if dur <= MIN_CLIP_S or not text:
@@ -120,6 +138,11 @@ def prepare_lines(subs: list) -> list[dict]:
             + ". Découpe-les avant d'exporter."
         )
     if not lines:
+        if media_end is not None and subs:
+            raise ValueError(
+                "Aucune réplique exportable : toutes tombent après la fin de la vidéo "
+                f"({media_end:.2f} s), sont vides ou de durée nulle."
+            )
         raise ValueError("Aucune réplique exportable (texte vide ou durée nulle).")
     lines.sort(key=lambda ln: ln["start"])
     return lines
@@ -146,6 +169,29 @@ def _seek(start: float, duration: float, source: str) -> list:
         "-ss", f"{pre:.3f}", "-i", source,
         "-ss", f"{fine:.3f}", "-t", f"{duration:.3f}",
     ]
+
+
+def probe_media(path: str) -> tuple[float, bool]:
+    """(duration in seconds — 0 when unknown, has an audio stream)."""
+    proc = subprocess.run(
+        ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", path],
+        capture_output=True, text=True,
+    )
+    try:
+        data = json.loads(proc.stdout or "{}")
+        duration = float(data.get("format", {}).get("duration") or 0)
+    except (ValueError, TypeError):
+        log.warning("ffprobe: unreadable output for %s", path)
+        return 0.0, False
+    has_audio = any(s.get("codec_type") == "audio" for s in data.get("streams", []))
+    return duration, has_audio
+
+
+def media_end(media_s: float, in_point: Optional[float]) -> Optional[float]:
+    """Media end on the (range-shifted) timeline, None when the duration is unknown."""
+    if media_s <= 0:
+        return None
+    return max(0.0, media_s - (in_point or 0.0))
 
 
 def build_dubpack(
@@ -182,7 +228,6 @@ def build_dubpack(
             })
         subs = ranged
 
-    lines = prepare_lines(subs)
     pack_name = safe_folder_name(title)
     staging = Path(out_zip).with_suffix("")
     pack_dir = staging / pack_name
@@ -197,24 +242,13 @@ def build_dubpack(
             raise CancelledJobError()
 
     try:
-        # Probe duration for the OGV progress bar.
-        import json
-        import subprocess
-        probe = subprocess.run(
-            ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", segment],
-            capture_output=True, text=True,
-        )
-        duration_s = 0.0
-        has_audio = False
-        try:
-            data = json.loads(probe.stdout or "{}")
-            duration_s = float(data.get("format", {}).get("duration") or 0)
-            has_audio = any(s.get("codec_type") == "audio" for s in data.get("streams", []))
-        except (ValueError, TypeError):
-            duration_s = 0.0
-        if window:
-            duration_s = window[1] - window[0]
-        elif duration_s <= 0:
+        media_s, has_audio = probe_media(segment)
+        end_s = media_end(media_s, shift)
+        duration_s = (window[1] - window[0]) if window else media_s
+        if window and end_s is not None:
+            duration_s = min(duration_s, end_s)
+        lines = prepare_lines(subs, media_end=end_s)
+        if duration_s <= 0:
             duration_s = max(ln["end"] for ln in lines) + 0.5
 
         report(0.02, "Encodage OGV")
@@ -224,17 +258,17 @@ def build_dubpack(
             vcmd += _seek(window[0], duration_s, segment)
         else:
             vcmd += ["-i", segment]
+        # Silent audio of the exact picture length — never the original voices.
         vcmd += [
-            "-map", "0:v:0",
+            "-f", "lavfi", "-t", f"{duration_s:.3f}", "-i", "anullsrc=r=44100:cl=stereo",
+            "-map", "0:v:0", "-map", "1:a:0",
             "-vf", f"scale=-2:{int(video_height)}:flags=lanczos",
             "-c:v", "libtheora", "-q:v", "7",
             "-pix_fmt", "yuv420p",
+            "-c:a", "libvorbis", "-q:a", "1",
+            "-shortest",
+            str(video_out),
         ]
-        if has_audio:
-            vcmd += ["-map", "0:a:0", "-c:a", "libvorbis", "-q:a", "4"]
-        else:
-            vcmd += ["-an"]
-        vcmd.append(str(video_out))
         def _video_progress(p, _eta):
             if on_progress:
                 on_progress(0.02 + 0.40 * p, "Encodage OGV")

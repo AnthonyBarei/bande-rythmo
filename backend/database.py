@@ -70,6 +70,10 @@ def init_db():
             conn.execute(text("ALTER TABLE subtitles ADD COLUMN plan_cut REAL"))
         if "note" not in sub_cols:
             conn.execute(text("ALTER TABLE subtitles ADD COLUMN note TEXT"))
+        if "hidden" not in sub_cols:
+            conn.execute(text("ALTER TABLE subtitles ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0"))
+        if "take" not in sub_cols:
+            conn.execute(text("ALTER TABLE subtitles ADD COLUMN take INTEGER NOT NULL DEFAULT 0"))
         # FK indexes — list/lookup endpoints filter on clip_id constantly.
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_subtitles_clip_id ON subtitles (clip_id)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_takes_clip_id ON takes (clip_id)"))

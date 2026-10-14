@@ -59,6 +59,8 @@ class Subtitle(Base):
     ambiance = Column(Boolean, nullable=False, default=False)   # ambiance ON/OFF (non-dialogue)
     plan_cut = Column(Float, nullable=True)                     # change-of-plan timecode within line
     note = Column(String, nullable=True)                        # free-text annotation per réplique
+    hidden = Column(Boolean, nullable=False, default=False)     # masked: off the band + every export
+    take = Column(Boolean, nullable=False, default=False)       # "prise à enregistrer" marker
 
     clip = relationship("Clip", back_populates="subtitles")
 

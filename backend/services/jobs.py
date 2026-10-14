@@ -191,6 +191,7 @@ def _offer(q: asyncio.Queue, payload: dict):
 
 
 def create_job(kind: str, title: str = "") -> Job:
+    cleanup_old_jobs()
     job = Job(kind, title)
     with _lock:
         JOBS[job.id] = job
