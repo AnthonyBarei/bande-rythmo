@@ -72,3 +72,5 @@ backend/takes/
 *.sqlite3
 *.sqlite
 *.sqlite3
+# --- Design capture bundles (regenerable) ---
+design/*.zip

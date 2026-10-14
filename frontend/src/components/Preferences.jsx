@@ -204,7 +204,7 @@ function FontUpload({ onUploaded }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
       <input ref={inputRef} type="file" accept=".ttf,.otf" onChange={pick} style={{ display: 'none' }} />
-      <Btn variant="outline" icon={ICONS.upload} disabled={busy} onClick={() => inputRef.current?.click()}>
+      <Btn variant="outline" icon={ICONS.upload} disabled={busy} title={busy ? 'Envoi en cours…' : undefined} onClick={() => inputRef.current?.click()}>
         {busy ? 'Envoi…' : 'Importer une police (TTF / OTF)'}
       </Btn>
       {msg && (
@@ -285,7 +285,8 @@ function PlexSection() {
           </Field>
           <Field label="">
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <Btn variant="primary" onClick={connect} disabled={busy || !url || !token}>{busy ? 'Connexion…' : 'Connecter'}</Btn>
+              <Btn variant="primary" onClick={connect} disabled={busy || !url || !token}
+                title={busy ? 'Connexion en cours…' : (!url || !token) ? "Renseignez l'URL et le token Plex" : undefined}>{busy ? 'Connexion…' : 'Connecter'}</Btn>
               <Btn variant="outline" onClick={() => { setForm(false); setErr(null) }}>Annuler</Btn>
               {err && <span style={{ fontSize: T.fs.xs, color: T.danger }}>{err}</span>}
             </div>

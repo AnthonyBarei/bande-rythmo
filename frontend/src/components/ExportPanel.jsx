@@ -276,6 +276,9 @@ function ExportScreen({ segmentId, subtitles, boucles = [], pxPerSec = 180, brOf
   const unavailable = sel === 'mp4-dubbed'
     ? (mix.busy || !mix.selected.length)
     : (!!selFmt.needsSubs && !subtitles.length)
+  const unavailableReason = !unavailable ? undefined
+    : sel !== 'mp4-dubbed' ? 'Ce format nécessite des répliques'
+    : mix.busy ? 'Mixage en cours…' : 'Sélectionnez au moins une prise'
 
   const jobs = (progress.jobs || []).filter(j => JOB_META.get(j.key)?.clipId === segmentId)
   const runningCount = jobs.filter(j => j.status === 'running').length
@@ -357,7 +360,8 @@ function ExportScreen({ segmentId, subtitles, boucles = [], pxPerSec = 180, brOf
             <div style={{ flex: 1 }} />
             {status && <div style={{ fontSize: T.fs.micro, color: status.c, lineHeight: 1.5, marginTop: 10 }}>{status.text}</div>}
             <Btn variant="primary" size="lg" full icon={ICONS.download} style={{ marginTop: 14 }}
-              disabled={!!loading || unavailable} onClick={() => handleExport(sel)}>
+              disabled={!!loading || unavailable} onClick={() => handleExport(sel)}
+              title={loading ? 'Un export est déjà en cours' : unavailableReason}>
               {sel === 'mp4-dubbed' && mix.busy ? 'Mixage en cours…' : loading ? 'Export…' : 'Lancer l\'export'}
             </Btn>
             <div style={{ fontSize: 10, color: T.text4, textAlign: 'center', marginTop: 8 }}>apparaît dans la liste → téléchargez quand prêt</div>
@@ -370,7 +374,7 @@ function ExportScreen({ segmentId, subtitles, boucles = [], pxPerSec = 180, brOf
               {runningCount > 0 && <Chip soft color={T.accent}>{runningCount} en cours</Chip>}
               <div style={{ flex: 1 }} />
               <Btn size="sm" icon={ICONS.loop} title="Rafraîchir la liste" onClick={refreshHistory} />
-              <Btn size="sm" variant="outline" icon={ICONS.download} disabled={!history.length} onClick={downloadAll}>Tout télécharger</Btn>
+              <Btn size="sm" variant="outline" icon={ICONS.download} disabled={!history.length} title={history.length ? undefined : 'Aucun export à télécharger'} onClick={downloadAll}>Tout télécharger</Btn>
             </div>
             <div style={{ flex: 1, overflow: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
               {jobs.map(j => (

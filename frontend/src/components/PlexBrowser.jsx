@@ -93,7 +93,8 @@ function PlexConnect({ initialUrl, onConnected }) {
             </div>
           )}
 
-          <Btn variant="primary" full icon={ICONS.plug} onClick={handleConnect} disabled={loading || !token} style={{ marginTop: 4 }}>
+          <Btn variant="primary" full icon={ICONS.plug} onClick={handleConnect} disabled={loading || !token} style={{ marginTop: 4 }}
+            title={loading ? 'Connexion en cours…' : !token ? 'Renseignez le token Plex' : undefined}>
             {loading ? 'Connexion…' : 'Connecter'}
           </Btn>
 

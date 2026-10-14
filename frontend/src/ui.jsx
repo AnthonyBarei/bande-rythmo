@@ -72,8 +72,11 @@ export function Btn({ children, variant = 'ghost', size = 'md', icon, iconR, act
   if (active && variant === 'ghost') bg = T.accentDim
   if (danger) { col = T.danger; if (h) bg = 'rgba(232,89,93,.13)' }
   if (disabled) { bg = T.surface2; col = T.text3; bord = `1px solid ${T.border2}`; shadow = 'none' }
-  return (
-    <button data-rd onClick={onClick} title={title} disabled={disabled}
+  // Disabled buttons swallow pointer events in Chromium, so their own title
+  // never shows: carry the "why disabled" tooltip on a wrapper instead.
+  const tipOnWrapper = disabled && title
+  const button = (
+    <button data-rd onClick={onClick} title={tipOnWrapper ? undefined : title} disabled={disabled}
       onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
       style={{
         height: H, minWidth: H, padding: icon && !children ? 0 : pad, borderRadius: T.r.ctl,
@@ -82,6 +85,7 @@ export function Btn({ children, variant = 'ghost', size = 'md', icon, iconR, act
         fontSize: fz, fontWeight: variant === 'primary' ? 600 : 500, fontFamily: T.fontUI,
         width: full ? '100%' : undefined, transition: 'background .14s, color .14s, box-shadow .14s, transform .14s', flexShrink: 0,
         boxShadow: shadow, transform: variant === 'primary' && h ? 'translateY(-1px)' : 'none', whiteSpace: 'nowrap',
+        pointerEvents: tipOnWrapper ? 'none' : undefined,
         ...style,
       }}>
       <BtnDisabledCtx.Provider value={!!disabled}>
@@ -90,6 +94,12 @@ export function Btn({ children, variant = 'ghost', size = 'md', icon, iconR, act
         {iconR && <Icon d={iconR} size={fz + 2} stroke={col} />}
       </BtnDisabledCtx.Provider>
     </button>
+  )
+  if (!tipOnWrapper) return button
+  return (
+    <span title={title} style={{ display: full ? 'flex' : 'inline-flex', width: full ? '100%' : undefined, flexShrink: 0, cursor: 'not-allowed' }}>
+      {button}
+    </span>
   )
 }
 
