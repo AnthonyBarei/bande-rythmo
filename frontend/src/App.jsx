@@ -302,6 +302,7 @@ function AppInner() {
                 onBack={() => { setDubExportOpen(false); setSection('clips') }}
                 exportOpen={dubExportOpen}
                 onToggleExport={() => setDubExportOpen(v => !v)}
+                onHelp={() => setShortcutsOpen(true)}
               />
             </div>
           </ExportScreenContext.Provider>

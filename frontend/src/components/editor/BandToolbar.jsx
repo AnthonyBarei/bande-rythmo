@@ -91,25 +91,25 @@ export default function BandToolbar({
       </Cluster>
       {/* insert cluster */}
       <Cluster>
-        <Popover width={250} trigger={(o, tog) => <Btn size="sm" active={o} onClick={tog} icon={ICONS.breath} iconR={ICONS.chevron}>Resp.</Btn>}>
+        <Popover placement="top" width={250} trigger={(o, tog) => <Btn size="sm" active={o} onClick={tog} icon={ICONS.breath} iconR={ICONS.chevron}>Resp.</Btn>}>
           {close => <RespMenu close={close} onInsert={insertTagSub} />}
         </Popover>
-        <Popover width={230} trigger={(o, tog) => <Btn size="sm" active={o} onClick={tog} icon={ICONS.sparkle} iconR={ICONS.chevron}>Réact.</Btn>}>
+        <Popover placement="top" width={230} trigger={(o, tog) => <Btn size="sm" active={o} onClick={tog} icon={ICONS.sparkle} iconR={ICONS.chevron}>Réact.</Btn>}>
           {close => <ReactMenu close={close} onInsert={insertTagSub} />}
         </Popover>
       </Cluster>
       {/* flags */}
       <Cluster>
-        <Popover width={230} trigger={(o, tog) => <Btn size="sm" active={o} onClick={tog} icon={ICONS.flag} title="État de la réplique" />}>
+        <Popover placement="top" width={230} trigger={(o, tog) => <Btn size="sm" active={o} onClick={tog} icon={ICONS.flag} title="État de la réplique" />}>
           {close => <StateMenu close={close} target={target}
             onToggleFlag={k => updateTarget({ [k]: !target[k] })} onTogglePlan={togglePlan} />}
         </Popover>
-        <Popover width={250} trigger={(o, tog) => <Btn size="sm" active={o} onClick={tog} icon={ICONS.film} title="Plans / raccords (détection auto)" />}>
+        <Popover placement="top" width={250} trigger={(o, tog) => <Btn size="sm" active={o} onClick={tog} icon={ICONS.film} title="Plans / raccords (détection auto)" />}>
           {close => <PlansMenu close={close} sceneCuts={sceneCuts} clipFps={clipFps} detectingScenes={detectingScenes}
             onDetectScenes={onDetectScenes} onClearScenes={onClearScenes} hasTarget={!!target}
             onAddPlan={() => updateTarget({ plan_cut: getBandTime() })} />}
         </Popover>
-        <Popover width={280} align="left" trigger={(o, tog) => <Btn size="sm" active={o} onClick={tog} icon={ICONS.note} title="Note de direction" />}>
+        <Popover placement="top" width={280} align="left" trigger={(o, tog) => <Btn size="sm" active={o} onClick={tog} icon={ICONS.note} title="Note de direction" />}>
           {close => <NoteMenu close={close} target={target} targetIdx={targetIdx} onNoteChange={v => updateTarget({ note: v }, 'note')} />}
         </Popover>
         <Btn size="sm" icon={ICONS.mic} danger={!!target?.take} disabled={!target}
@@ -125,7 +125,7 @@ export default function BandToolbar({
       <div style={{ flex: 1 }} />
 
       {/* font select */}
-      <Select size="sm" width={132} value={brFont} onChange={setBrFont} options={fontOptions} />
+      <Select size="sm" width={132} placement="top" value={brFont} onChange={setBrFont} options={fontOptions} />
       {/* view cluster */}
       <Cluster>
         <Btn size="sm" icon={locked ? ICONS.lock : ICONS.unlock} active={locked} onClick={() => setLocked(l => !l)}

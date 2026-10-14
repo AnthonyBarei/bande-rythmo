@@ -9,7 +9,6 @@ let _pendingId = 0
 const newId = () => ++_pendingId
 const MIN_DUR = 0.2
 // VideoPlayer's own transport bar (5 + 32 + 5 padding/button + 1 border).
-const PLAYER_BAR_H = 43
 
 // Importer left column — reference screen-import.jsx Preview · ZoomTimeline · PendingList.
 // The header actions (Marquer un clip / Créer N clips) live in ImportSection and
@@ -276,7 +275,8 @@ function Preview({ video, audioSrc, videoRef, currentTime, duration, markIn, onT
         src={video.url}
         audioSrc={audioSrc}
         videoRef={videoRef}
-        maxHeight={Math.max(120, boxH - PLAYER_BAR_H)}
+        maxHeight={Math.max(120, boxH)}
+        controls={false}
         onTimeUpdate={onTimeUpdate}
         onLoadedMetadata={onLoadedMetadata}
         style={{ width: '100%', height: '100%', justifyContent: 'space-between' }}

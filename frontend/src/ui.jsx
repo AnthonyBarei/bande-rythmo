@@ -177,7 +177,7 @@ export function Segmented({ options, value, onChange, size = 'md' }) {
 }
 
 // ── Popover / Dropdown / Menu ─────────────────────────────
-export function Popover({ trigger, children, align = 'left', width = 240 }) {
+export function Popover({ trigger, children, align = 'left', width = 240, placement = 'bottom' }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
   useEffect(() => {
@@ -193,7 +193,7 @@ export function Popover({ trigger, children, align = 'left', width = 240 }) {
       {trigger(open, () => setOpen(o => !o))}
       {open && (
         <div style={{
-          position: 'absolute', top: 'calc(100% + 6px)', [align]: 0, zIndex: 'var(--z-dropdown)', width,
+          position: 'absolute', [placement === 'top' ? 'bottom' : 'top']: 'calc(100% + 6px)', [align]: 0, zIndex: 'var(--z-dropdown)', width,
           background: T.surface, border: `1px solid ${T.border2}`, borderRadius: T.r.card,
           boxShadow: T.shadowL, padding: 6, overflow: 'hidden',
         }}>
@@ -229,11 +229,11 @@ export function MenuLabel({ children }) {
 export function MenuSep() { return <div style={{ height: 1, background: T.border, margin: '5px 4px' }} /> }
 
 // Native-feeling Select (opens a Popover menu)
-export function Select({ value, options, onChange, width = 'auto', size = 'md', placeholder }) {
+export function Select({ value, options, onChange, width = 'auto', size = 'md', placeholder, placement }) {
   const H = { sm: 30, md: 36 }[size] || 36
   const cur = options.find(o => o.v === value)
   return (
-    <Popover width={typeof width === 'number' ? width : 200}
+    <Popover width={typeof width === 'number' ? width : 200} placement={placement}
       trigger={(open, toggle) => (
         <button data-rd onClick={toggle} style={{
           height: H, padding: '0 11px', borderRadius: T.r.ctl, cursor: 'pointer',
