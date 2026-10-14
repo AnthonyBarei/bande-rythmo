@@ -79,13 +79,15 @@ export default function ActivityCenter({ onOpenClip }) {
   const finished = history
 
   // Newest first: this session's finished jobs, then the persisted export history.
+  // F7.1 / FIXES_R3 §18: only the newest row per file name keeps the primary
+  // Télécharger — computed over the whole list, so it holds once expanded too.
   const doneRows = useMemo(() => {
-    const sorted = [...exports].sort((a, b) => exportTime(b) - exportTime(a))
+    const sorted = [...exports].sort((a, b) => exportTime(b) - exportTime(a) || (b.id ?? 0) - (a.id ?? 0))
     const seen = new Set()
     return [
       ...finished.map(j => ({ type: 'job', key: j.key, j })),
       ...sorted.map(e => {
-        const fileKey = `${e.clip_id}|${e.filename}`
+        const fileKey = (e.filename || '').toLowerCase()
         const latest = !seen.has(fileKey)
         seen.add(fileKey)
         return { type: 'export', key: `export-${e.id}`, e, latest }
@@ -118,14 +120,14 @@ export default function ActivityCenter({ onOpenClip }) {
         {running.length > 0 && <>
           <GroupLabel color={T.accent}>EN COURS · {running.length}</GroupLabel>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 24 }}>
-            {running.map(j => <RunRow key={j.key} j={j} onCancel={() => cancelByKey(j.key)} />)}
+            {running.map(j => <RunRow key={j.key} j={j} clip={j.clip || clips[j.clipId]?.name} onCancel={() => cancelByKey(j.key)} />)}
           </div>
         </>}
 
         {failed.length > 0 && <>
           <GroupLabel color={T.danger}>ÉCHECS · {failed.length}</GroupLabel>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 24 }}>
-            {failed.map(j => <FailRow key={j.key} j={j} onRetry={() => retry(j.key)} onDismiss={() => dismiss(j.key)} />)}
+            {failed.map(j => <FailRow key={j.key} j={j} clip={j.clip || clips[j.clipId]?.name} onRetry={() => retry(j.key)} onDismiss={() => dismiss(j.key)} />)}
           </div>
         </>}
 
@@ -153,14 +155,14 @@ function GroupLabel({ children, color }) {
   return <div style={{ fontSize: T.fs.micro, fontWeight: 700, letterSpacing: 1.2, color, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 9 }}>{children}<div style={{ flex: 1, height: 1, background: T.border }} /></div>
 }
 
-function RunRow({ j, onCancel }) {
+function RunRow({ j, clip, onCancel }) {
   const pct = Math.round((j.pct || 0) * 100)
   const eta = fmtEta(j.eta)
   return (
     <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.r.ctl, padding: '13px 16px', display: 'flex', alignItems: 'center', gap: 14 }}>
       <div style={{ width: 38, height: 38, flexShrink: 0, borderRadius: 9, background: alpha(T.accent, '14'), border: `1px solid ${alpha(T.accent, '33')}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon d={iconFor(j.kind)} size={18} stroke={T.accent} /></div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}><span style={{ fontSize: T.fs.base, fontWeight: 600, whiteSpace: 'nowrap' }}>{j.title}</span>{j.clip && <span style={{ fontSize: T.fs.xs, color: T.text3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{j.clip}</span>}</div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}><span style={{ fontSize: T.fs.base, fontWeight: 600, whiteSpace: 'nowrap' }}>{j.title}</span>{clip && <span style={{ fontSize: T.fs.xs, color: T.text3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{clip}</span>}</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}><ProgressBar pct={pct} /><span style={{ fontSize: 11, color: T.text2, fontFamily: T.fontMono, minWidth: 100, whiteSpace: 'nowrap' }}>{j.stage || '…'}</span></div>
       </div>
       <div style={{ textAlign: 'right', minWidth: 60 }}><div style={{ fontSize: T.fs.md, fontWeight: 700, fontFamily: T.fontMono, color: T.accent }}>{pct}%</div>{eta && <div style={{ fontSize: 10, color: T.text3, fontFamily: T.fontMono }}>~{eta}</div>}</div>
@@ -169,12 +171,12 @@ function RunRow({ j, onCancel }) {
   )
 }
 
-function FailRow({ j, onRetry, onDismiss }) {
+function FailRow({ j, clip, onRetry, onDismiss }) {
   return (
     <div style={{ background: 'rgba(232,89,93,.05)', border: `1px solid ${alpha(T.danger, '44')}`, borderRadius: T.r.ctl, padding: '13px 16px', display: 'flex', alignItems: 'center', gap: 14 }}>
       <div style={{ width: 36, height: 36, flexShrink: 0, borderRadius: 9, background: alpha(T.danger, '14'), border: `1px solid ${alpha(T.danger, '44')}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon d={iconFor(j.kind)} size={17} stroke={T.danger} /></div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}><span style={{ fontSize: T.fs.sm, fontWeight: 600, whiteSpace: 'nowrap' }}>{j.title}</span>{j.clip && <span style={{ fontSize: T.fs.xs, color: T.text3 }}>{j.clip}</span>}</div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}><span style={{ fontSize: T.fs.sm, fontWeight: 600, whiteSpace: 'nowrap' }}>{j.title}</span>{clip && <span style={{ fontSize: T.fs.xs, color: T.text3 }}>{clip}</span>}</div>
         <div style={{ fontSize: T.fs.xs, color: T.danger, fontFamily: T.fontMono, marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{j.error || 'Erreur'}</div>
       </div>
       {j.retry && <Btn size="sm" variant="primary" icon={ICONS.loop} onClick={onRetry}>Réessayer</Btn>}

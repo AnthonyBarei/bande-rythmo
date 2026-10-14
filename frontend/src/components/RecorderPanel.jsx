@@ -487,7 +487,7 @@ const RecorderPanel = forwardRef(function RecorderPanel({
 
   const prerollChip = (
     <button data-rd onClick={() => setPreroll(v => !v)} disabled={recording}
-      title={preroll
+      title={recording ? 'Indisponible pendant l’enregistrement' : preroll
         ? `Pré-roll ${PREROLL_SEC} s : la vidéo repart ${PREROLL_SEC} s avant la réplique, décompte 3-2-1 (cliquer pour désactiver)`
         : 'Pré-roll désactivé — l’enregistrement démarre immédiatement (cliquer pour activer)'}
       style={{ background: 'transparent', padding: 0, cursor: recording ? 'default' : 'pointer' }}>
@@ -529,7 +529,7 @@ const RecorderPanel = forwardRef(function RecorderPanel({
           {[{ s: 'A', t: takeA, c: T.accent }, { s: 'B', t: takeB, c: T.info }].map(x => (
             <div key={x.s} style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
               <div style={{ width: 22, height: 22, borderRadius: 6, background: alpha(x.c, '22'), color: x.c, fontWeight: 800, fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{x.s}</div>
-              <Btn size="sm" icon={x.t && playing === x.t.id ? ICONS.pause : ICONS.play} disabled={!x.t} title="Écouter"
+              <Btn size="sm" icon={x.t && playing === x.t.id ? ICONS.pause : ICONS.play} disabled={!x.t} title={x.t ? 'Écouter' : `Aucune prise ${x.s} choisie`}
                 onClick={() => x.t && togglePlay(x.t)} style={{ width: 28, height: 28, background: T.surface2 }} />
               <span style={{ flex: 1, minWidth: 0, fontSize: T.fs.xs, color: x.t ? T.text : T.text3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {x.t ? takeLabel(x.t) : 'Choisir une prise (A/B)'}
@@ -538,8 +538,10 @@ const RecorderPanel = forwardRef(function RecorderPanel({
             </div>
           ))}
           <div style={{ display: 'flex', gap: 6 }}>
-            <Btn size="sm" variant="outline" full style={{ flex: 1, minWidth: 0 }} disabled={!takeA || takeA.best} onClick={() => markBest(takeA)}>Garder A</Btn>
-            <Btn size="sm" variant="outline" full style={{ flex: 1, minWidth: 0 }} disabled={!takeB || takeB.best} onClick={() => markBest(takeB)}>Garder B</Btn>
+            <Btn size="sm" variant="outline" full style={{ flex: 1, minWidth: 0 }} disabled={!takeA || takeA.best} onClick={() => markBest(takeA)}
+              title={!takeA ? "Choisissez d'abord une prise A" : takeA.best ? 'La prise A est déjà la meilleure' : 'Garder la prise A comme meilleure'}>Garder A</Btn>
+            <Btn size="sm" variant="outline" full style={{ flex: 1, minWidth: 0 }} disabled={!takeB || takeB.best} onClick={() => markBest(takeB)}
+              title={!takeB ? "Choisissez d'abord une prise B" : takeB.best ? 'La prise B est déjà la meilleure' : 'Garder la prise B comme meilleure'}>Garder B</Btn>
           </div>
         </div>
       )}
@@ -562,7 +564,9 @@ const RecorderPanel = forwardRef(function RecorderPanel({
           onDelete={() => removeTake(t.id)} />
       ))}
       <Btn variant="solid" full icon={ICONS.check} disabled={!selected || selected.best}
-        title={selected?.best ? 'Cette prise est déjà la meilleure' : 'Marquer la prise sélectionnée comme meilleure prise de la réplique'}
+        title={!selected
+          ? (shown.length ? "Sélectionnez d'abord une prise" : "Enregistrez d'abord une prise (R)")
+          : selected.best ? 'Cette prise est déjà la meilleure' : 'Marquer la prise sélectionnée comme meilleure prise de la réplique'}
         onClick={() => markBest(selected)}>
         Valider la prise sélectionnée
       </Btn>
@@ -689,10 +693,10 @@ function LineCard({ subtitles, index, fps, onSelectIndex }) {
       </div>
       {n > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <Btn size="sm" icon={ICONS.prev} title="Réplique précédente" disabled={!onSelectIndex || index == null || index <= 0}
+          <Btn size="sm" icon={ICONS.prev} title={index != null && index <= 0 ? 'Déjà sur la première réplique' : 'Réplique précédente'} disabled={!onSelectIndex || index == null || index <= 0}
             onClick={() => onSelectIndex?.(Math.max(0, (index ?? 0) - 1))} />
           <span style={{ fontSize: 10.5, color: T.text3, fontFamily: T.fontMono, minWidth: 44, textAlign: 'center' }}>{index != null ? index + 1 : '–'} / {n}</span>
-          <Btn size="sm" icon={ICONS.next} title="Réplique suivante" disabled={!onSelectIndex || (index != null && index >= n - 1)}
+          <Btn size="sm" icon={ICONS.next} title={index != null && index >= n - 1 ? 'Déjà sur la dernière réplique' : 'Réplique suivante'} disabled={!onSelectIndex || (index != null && index >= n - 1)}
             onClick={() => onSelectIndex?.(index == null ? 0 : Math.min(n - 1, index + 1))} />
         </div>
       )}

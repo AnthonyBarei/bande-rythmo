@@ -1,6 +1,34 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react'
-import { T, Icon, ICONS, Btn, Chip, Segmented, ScreenHeader, alpha } from '../ui'
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { T, Icon, ICONS, Btn, Chip, Segmented, Select, ScreenHeader, alpha } from '../ui'
 import { useProgress } from '../ProgressContext'
+import { TRACK_HEXES } from '../config/tracks'
+
+// F12 — short videos are imported inline as clips of this project.
+const MEME_PROJECT = 'Memes & extraits'
+const SHORT_VIDEO_MAX_S = 60
+const IMAGE_RE = /\.(png|jpe?g|webp|gif)$/i
+const VIDEO_RE = /\.(mp4|m4v|mov|webm|mkv|avi)$/i
+const isVideoFile = f => (f.type || '').startsWith('video/') || VIDEO_RE.test(f.name)
+
+function probeVideoDuration(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file)
+    const v = document.createElement('video')
+    const release = () => { v.removeAttribute('src'); v.load(); URL.revokeObjectURL(url) }
+    v.preload = 'metadata'
+    v.muted = true
+    v.onloadedmetadata = () => {
+      const d = v.duration
+      release()
+      if (Number.isFinite(d) && d > 0) resolve(d)
+      else reject(new Error('durée de la vidéo inconnue'))
+    }
+    v.onerror = () => { release(); reject(new Error('vidéo illisible par le navigateur')) }
+    v.src = url
+  })
+}
+
+const fmtDur = s => `${s.toFixed(1)}s`
 
 const FONTS = [
   { id: 'impact',   label: 'Impact',  css: 'Impact, "Arial Black", sans-serif' },
@@ -38,9 +66,35 @@ const fmtTime = t => {
   return `${String(m).padStart(2, '0')}:${s}`
 }
 
-export default function MemeGenerator({ clip = null, onBack = null, initialTab = null }) {
-  const segmentUrl = clip?.segment_path ? `/${clip.segment_path}` : null
+export default function MemeGenerator({
+  clip: clipProp = null, onBack = null, initialTab = null,
+  clips: clipsProp, onSelectClip, onClipsCreated, onOpenInImporter,
+}) {
   const progress = useProgress()
+
+  // Source clip: the one handed in by App, unless the user picked another in the header Select.
+  const [fetchedClips, setFetchedClips] = useState([])
+  const [createdClips, setCreatedClips] = useState([])
+  const [pickedId, setPickedId] = useState(null)
+  const [importing, setImporting] = useState(false)
+
+  const clipList = useMemo(() => {
+    const base = clipsProp || fetchedClips
+    const ids = new Set(base.map(c => c.clip_id))
+    const all = [...createdClips.filter(c => !ids.has(c.clip_id)), ...base]
+    if (clipProp && !all.some(c => c.clip_id === clipProp.clip_id)) all.unshift(clipProp)
+    return [...all].sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
+  }, [clipsProp, fetchedClips, createdClips, clipProp])
+
+  const clip = pickedId ? (clipList.find(c => c.clip_id === pickedId) || null) : clipProp
+  const segmentUrl = clip?.segment_path ? `/${clip.segment_path}` : null
+
+  // Same project → color mapping as the library's project filter.
+  const clipOptions = useMemo(() => {
+    const projects = [...new Set(clipList.map(c => c.project).filter(Boolean))].sort((a, b) => a.localeCompare(b))
+    const color = p => p ? TRACK_HEXES[projects.indexOf(p) % TRACK_HEXES.length] : T.text4
+    return clipList.map(c => ({ v: c.clip_id, l: c.name || `Clip ${c.clip_id.slice(0, 6)}`, dot: color(c.project) }))
+  }, [clipList])
 
   // MEME_PLEX_HANDOFF §2 entry intent:
   //   ClipCard "GIF" → initialTab='video' (GIF tab)
@@ -74,6 +128,16 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
   const [error, setError] = useState(null)
   const [resultUrl, setResultUrl] = useState(null)
 
+  useEffect(() => {
+    if (clipsProp) return
+    let live = true
+    fetch('/api/clips/')
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() })
+      .then(d => { if (live) setFetchedClips(d || []) })
+      .catch(e => { console.error('Atelier: liste des clips', e); if (live) setError('Liste des clips indisponible : ' + e.message) })
+    return () => { live = false }
+  }, [clipsProp])
+
   // Shared video state
   const [videoTime, setVideoTime] = useState(0)
   const [videoDuration, setVideoDuration] = useState(0)
@@ -90,6 +154,7 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
   const canvasRef = useRef(null)
   const imgRef = useRef(null)
   const fileInputRef = useRef(null)
+  const videoInputRef = useRef(null)
   const stageRef = useRef(null)
   const canvasWrapRef = useRef(null)
   const videoRef = useRef(null)
@@ -105,6 +170,15 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
 
   // Reset only when the clip actually changes — running on mount would
   // override initialTab (ClipCard "GIF" must land on the GIF tab).
+  const prevPropIdRef = useRef(clipProp?.clip_id)
+  useEffect(() => {
+    if (prevPropIdRef.current === clipProp?.clip_id) return
+    prevPropIdRef.current = clipProp?.clip_id
+    setPickedId(null)
+    setSourceTab(clipProp && initialTab ? initialTab : 'image')
+  }, [clipProp?.clip_id, initialTab])
+
+  // Any source swap (App prop or header Select) drops the previous clip's frame / range.
   const prevClipIdRef = useRef(clip?.clip_id)
   useEffect(() => {
     if (prevClipIdRef.current === clip?.clip_id) return
@@ -116,8 +190,8 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
     setVideoReady(false)
     setInPoint(0)
     setOutPoint(0)
-    setSourceTab(clip && initialTab ? initialTab : 'image')
-  }, [clip?.clip_id, initialTab])
+    setPlaying(false)
+  }, [clip?.clip_id])
 
   // Release replaced blob URLs (frames, GIFs, results can weigh several MB).
   useEffect(() => () => { if (imageUrl?.startsWith('blob:')) URL.revokeObjectURL(imageUrl) }, [imageUrl])
@@ -340,10 +414,68 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
 
   function handleFile(f) {
     if (!f) return
-    if (!/\.(png|jpe?g|webp|gif)$/i.test(f.name)) { setError('Format non supporté (PNG, JPG, WEBP, GIF).'); return }
+    if (isVideoFile(f)) { handleVideoFile(f); return }
+    if (!IMAGE_RE.test(f.name)) { setError('Format non supporté (PNG, JPG, WEBP, GIF, MP4).'); return }
     setError(null); setResultUrl(null)
     setImageName(f.name)
     setImageUrl(URL.createObjectURL(f))
+  }
+
+  function selectClip(id) {
+    if (!id || id === clip?.clip_id) return
+    setError(null)
+    setPickedId(id)
+    const picked = clipList.find(c => c.clip_id === id)
+    if (picked) onSelectClip?.(picked)
+  }
+
+  // F12: ≤ 60 s → imported inline as a clip of MEME_PROJECT (no transcription) and
+  // selected; longer → handed to Importer to be cut.
+  async function handleVideoFile(f) {
+    if (importing) return
+    setError(null)
+    let duration
+    try {
+      duration = await probeVideoDuration(f)
+    } catch (e) {
+      setError(`Impossible de lire « ${f.name} » : ${e.message}.`)
+      return
+    }
+    if (duration > SHORT_VIDEO_MAX_S) {
+      if (onOpenInImporter) onOpenInImporter(f)
+      else setError(`Vidéo de ${fmtDur(duration)} (> ${SHORT_VIDEO_MAX_S} s) — ouvrez-la dans Importer pour la découper.`)
+      return
+    }
+    setImporting(true)
+    try {
+      const form = new FormData()
+      form.append('file', f, f.name)
+      const name = f.name.replace(/\.[^.]+$/, '').trim().slice(0, 120)
+      form.append('clips_json', JSON.stringify([{ name, start: 0, end: duration }]))
+      const res = await fetch('/api/clips/batch', { method: 'POST', body: form })
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail || `HTTP ${res.status}`) }
+      let created = (await res.json())[0]
+      if (!created) throw new Error('aucun clip créé')
+      try {
+        const pr = await fetch(`/api/clips/${created.clip_id}/project`, {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ project: MEME_PROJECT }),
+        })
+        if (!pr.ok) throw new Error(`HTTP ${pr.status}`)
+        created = await pr.json()
+      } catch (e) {
+        console.error('Atelier: projet du clip importé', e)
+        setError(`Clip importé, mais pas rangé dans « ${MEME_PROJECT} » : ${e.message}`)
+      }
+      setCreatedClips(prev => [created, ...prev.filter(c => c.clip_id !== created.clip_id)])
+      onClipsCreated?.([created])
+      setPickedId(created.clip_id)
+      onSelectClip?.(created)
+    } catch (e) {
+      setError('Import de la vidéo échoué : ' + e.message)
+    } finally {
+      setImporting(false)
+    }
   }
 
   function onVideoLoaded(e) {
@@ -435,6 +567,7 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
       const jobId = await fireJob()
       progress.start({
         kind: 'export-gif',
+        clipId: clip.clip_id,
         title: 'GIF — génération',
         jobId,
         retry: fireJob,
@@ -576,6 +709,39 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
     </div>
   )
 
+  const clipSelect = (
+    <Select width={250} value={clip?.clip_id ?? null} onChange={selectClip} options={clipOptions} placeholder="Choisir un clip…" />
+  )
+  const uploadBtn = (
+    <Btn variant="outline" icon={ICONS.upload} onClick={() => videoInputRef.current?.click()} disabled={importing}
+      title={importing ? 'Import de la vidéo en cours…' : `Importer une vidéo de ${SHORT_VIDEO_MAX_S} s max. comme clip « ${MEME_PROJECT} »`}>
+      {importing ? 'Import…' : 'Vidéo courte…'}
+    </Btn>
+  )
+  const dropProps = {
+    onDragOver: e => { e.preventDefault(); setDragOver(true) },
+    onDragLeave: () => setDragOver(false),
+    onDrop: e => { e.preventDefault(); setDragOver(false); handleFile(e.dataTransfer.files?.[0]) },
+  }
+
+  // F12 / FIXES_R3 §16 — no source yet: a centered chooser instead of a dead preview.
+  const emptySource = (
+    <div {...dropProps} style={{
+      position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14,
+      outline: dragOver ? `2px dashed ${T.accent}` : 'none', outlineOffset: -10,
+    }}>
+      <div style={{ width: 52, height: 52, borderRadius: T.r.card, background: T.surface2, border: `1px solid ${T.border2}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <Icon d={ICONS.film} size={24} stroke={T.text3} />
+      </div>
+      <div style={{ fontSize: T.fs.md, fontWeight: 600, color: T.text }}>Choisissez un clip</div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        {clipSelect}
+        {uploadBtn}
+      </div>
+      <div style={{ fontSize: T.fs.xs, color: T.text3 }}>ou glissez une image / vidéo ici</div>
+    </div>
+  )
+
   const videoStub = footer => (
     <div style={{ background: '#000', borderRadius: T.r.card, border: `1px solid ${T.border}`, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
       <div onClick={segmentUrl ? togglePlay : undefined} style={{
@@ -585,6 +751,7 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
       }}>
         {segmentUrl ? (
           <video
+            key={segmentUrl}
             ref={videoRef}
             src={segmentUrl}
             style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
@@ -593,11 +760,9 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
             onPlay={() => setPlaying(true)}
             onPause={() => setPlaying(false)}
           />
-        ) : (
-          <span style={{ color: T.text4, fontSize: 11, letterSpacing: 4, fontFamily: T.fontMono }}>APERÇU</span>
-        )}
+        ) : emptySource}
       </div>
-      <div style={noClip ? { pointerEvents: 'none' } : undefined}>{footer}</div>
+      {!noClip && footer}
     </div>
   )
 
@@ -650,42 +815,50 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
       role="button" tabIndex={0}
       onClick={() => fileInputRef.current?.click()}
       onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInputRef.current?.click() } }}
-      onDragOver={e => { e.preventDefault(); setDragOver(true) }}
-      onDragLeave={() => setDragOver(false)}
-      onDrop={e => { e.preventDefault(); setDragOver(false); handleFile(e.dataTransfer.files?.[0]) }}
+      {...dropProps}
       style={{ padding: 22, border: `2px dashed ${dragOver ? T.accent : T.border2}`, borderRadius: T.r.card, textAlign: 'center', color: T.text3, cursor: 'pointer', transition: 'border-color .2s' }}>
       <Icon d={ICONS.upload} size={26} stroke={T.text3} style={{ margin: '0 auto' }} />
-      <div style={{ fontSize: T.fs.xs, fontWeight: 600, marginTop: 8, color: T.text2 }}>Glisser une image</div>
-      <div style={{ fontSize: 10.5, marginTop: 2 }}>PNG · JPG · WEBP · GIF</div>
+      <div style={{ fontSize: T.fs.xs, fontWeight: 600, marginTop: 8, color: T.text2 }}>{importing ? 'Import de la vidéo…' : 'Glisser une image ou une vidéo'}</div>
+      <div style={{ fontSize: 11, marginTop: 2 }}>PNG · JPG · WEBP · GIF · MP4 ≤ 60 s</div>
+      <div style={{ fontSize: 11, marginTop: 8, color: T.text4, lineHeight: 1.5 }}>Plus longue ? Elle s'ouvre dans <span style={{ color: T.accent }}>Importer</span> pour découper.</div>
     </div>
   )
 
   let sourcePanel
-  const openClipHint = 'Ouvrez un clip depuis la bibliothèque pour '
+  const pickClipTitle = "Choisissez un clip d'abord"
+  const pickClipHint = 'Choisissez un clip en haut à droite pour '
+  // Why a source action is unavailable — shown as the disabled button's tooltip.
+  const rangeBlocker = busyMsg => noClip ? pickClipTitle
+    : busyMsg ? busyMsg
+      : !videoReady ? 'Chargement de la vidéo…'
+        : outPoint <= inPoint ? 'Le point OUT doit être après IN' : undefined
   if (sourceTab === 'video') {
+    const gifTitle = rangeBlocker(gifLoading && 'GIF en cours de génération…')
     sourcePanel = (<>
-      <Btn variant="primary" size="lg" full icon={ICONS.layers} onClick={createGif} disabled={noClip || gifLoading || !videoReady || outPoint <= inPoint}>
+      <Btn variant="primary" size="lg" full icon={ICONS.layers} onClick={createGif} disabled={!!gifTitle} title={gifTitle}>
         {gifLoading ? 'Génération GIF…' : 'Créer le GIF'}
       </Btn>
       {errorBox}
-      {hint(noClip ? openClipHint + 'en extraire un GIF.' : "Réglez IN / OUT puis créez le GIF. Il s'ouvre dans l'éditeur de texte.")}
+      {hint(noClip ? pickClipHint + 'en extraire un GIF.' : "Réglez IN / OUT puis créez le GIF. Il s'ouvre dans l'éditeur de texte.")}
     </>)
   } else if (sourceTab === 'audio') {
-    const audioDisabled = noClip || audioLoading || !videoReady || outPoint <= inPoint
+    const audioTitle = rangeBlocker(audioLoading && 'Export audio en cours…')
+    const audioDisabled = !!audioTitle
     sourcePanel = (<>
-      <Btn variant="primary" size="lg" full icon={ICONS.download} onClick={() => createAudio('mp3')} disabled={audioDisabled}>
+      <Btn variant="primary" size="lg" full icon={ICONS.download} onClick={() => createAudio('mp3')} disabled={audioDisabled} title={audioTitle}>
         {audioLoading ? 'Export…' : 'Télécharger MP3'}
       </Btn>
-      <Btn variant="solid" full icon={ICONS.download} onClick={() => createAudio('wav')} disabled={audioDisabled}>Télécharger WAV</Btn>
+      <Btn variant="solid" full icon={ICONS.download} onClick={() => createAudio('wav')} disabled={audioDisabled} title={audioTitle}>Télécharger WAV</Btn>
       {errorBox}
-      {hint(noClip ? openClipHint + 'en exporter l’audio.' : "Exporte l'audio de la sélection. MP3 compact, WAV lossless.")}
+      {hint(noClip ? pickClipHint + 'en exporter l’audio.' : "Exporte l'audio de la sélection. MP3 compact, WAV lossless.")}
     </>)
   } else {
     sourcePanel = (<>
-      <Btn variant="primary" size="lg" full icon={ICONS.film} onClick={captureFrame} disabled={noClip || !videoReady}>Capturer ce frame</Btn>
+      <Btn variant="primary" size="lg" full icon={ICONS.film} onClick={captureFrame} disabled={noClip || !videoReady}
+        title={noClip ? pickClipTitle : !videoReady ? 'Chargement de la vidéo…' : 'Capturer l’image affichée pour en faire un meme'}>Capturer ce frame</Btn>
       {errorBox}
       {hint(noClip
-        ? 'Glissez votre propre image — ou ouvrez un clip depuis la bibliothèque pour en capturer un frame.'
+        ? 'Glissez votre propre image — ou choisissez un clip pour en capturer un frame.'
         : 'Naviguez puis capturez le frame souhaité — ou glissez votre propre image.')}
       {dropZone}
     </>)
@@ -711,13 +884,15 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
       <ScreenHeader
         kicker="ATELIER"
         title="Meme · GIF · Audio"
-        sub={clip ? `clip · ${clip.name}` : 'aucun clip ouvert'}
-        right={(onBack || editing) ? (
-          <div style={{ display: 'flex', gap: 8 }}>
+        sub={clip ? `source · ${clip.name || `Clip ${clip.clip_id.slice(0, 6)}`} · ${fmtDur(Math.max(0, (clip.end ?? 0) - (clip.start ?? 0)))}` : 'aucun clip ouvert'}
+        right={
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             {onBack && <Btn variant="outline" icon={ICONS.back} onClick={onBack}>Mes clips</Btn>}
-            {editing && <Btn variant="outline" onClick={resetMeme} icon={ICONS.chevron} style={{ transform: 'none' }}>Sources</Btn>}
+            {editing
+              ? <Btn variant="outline" onClick={resetMeme} icon={ICONS.chevron} style={{ transform: 'none' }}>Sources</Btn>
+              : <>{clipSelect}{uploadBtn}</>}
           </div>
-        ) : null}
+        }
       />
       {!editing && (
         <div style={{ padding: '0 32px 14px', flexShrink: 0 }}>
@@ -794,9 +969,9 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
                           fontFamily: (FONTS.find(f => f.id === t.fontId) || FONTS[0]).css,
                         }}
                       />
-                      <Btn size="sm" icon={ICONS.chevron} title="Monter" disabled={i === 0}
+                      <Btn size="sm" icon={ICONS.chevron} title={i === 0 ? 'Déjà en première position' : 'Monter'} disabled={i === 0}
                         onClick={e => { e.stopPropagation(); reorderLayer(t.id, -1) }} style={{ ...rowBtn, transform: 'rotate(180deg)' }} />
-                      <Btn size="sm" icon={ICONS.chevron} title="Descendre" disabled={i === texts.length - 1}
+                      <Btn size="sm" icon={ICONS.chevron} title={i === texts.length - 1 ? 'Déjà en dernière position' : 'Descendre'} disabled={i === texts.length - 1}
                         onClick={e => { e.stopPropagation(); reorderLayer(t.id, 1) }} style={rowBtn} />
                       <Btn size="sm" icon={ICONS.layers} title="Dupliquer"
                         onClick={e => { e.stopPropagation(); duplicateLayer(t.id) }} style={rowBtn} />
@@ -853,15 +1028,18 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
 
               {errorBox}
 
-              <Btn variant="primary" size="lg" full icon={ICONS.sparkle} onClick={generate} disabled={loading || !imageUrl}>
+              <Btn variant="primary" size="lg" full icon={ICONS.sparkle} onClick={generate} disabled={loading || !imageUrl}
+                title={loading ? 'Génération en cours…' : !imageUrl ? "Choisissez une image d'abord" : undefined}>
                 {loading ? 'Génération…' : resultUrl ? 'Régénérer' : 'Générer'}
               </Btn>
             </div>
           </div>
         )}
 
-        <input ref={fileInputRef} type="file" accept=".png,.jpg,.jpeg,.webp,.gif"
-          onChange={e => handleFile(e.target.files?.[0])} style={{ display: 'none' }} />
+        <input ref={fileInputRef} type="file" accept=".png,.jpg,.jpeg,.webp,.gif,video/*"
+          onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; handleFile(f) }} style={{ display: 'none' }} />
+        <input ref={videoInputRef} type="file" accept="video/*"
+          onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) handleVideoFile(f) }} style={{ display: 'none' }} />
       </div>
     </div>
   )
