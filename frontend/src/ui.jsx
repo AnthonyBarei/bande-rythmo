@@ -219,7 +219,7 @@ export function Popover({ trigger, children, align = 'left', width = 240, placem
         <div style={{
           position: 'absolute', [placement === 'top' ? 'bottom' : 'top']: 'calc(100% + 6px)', [align]: 0, zIndex: 'var(--z-dropdown)', width,
           background: T.surface, border: `1px solid ${T.border2}`, borderRadius: T.r.card,
-          boxShadow: T.shadowL, padding: 6, overflow: 'hidden',
+          boxShadow: T.shadowL, padding: 6, maxHeight: '60vh', overflowY: 'auto',
         }}>
           {typeof children === 'function' ? children(() => setOpen(false)) : children}
         </div>

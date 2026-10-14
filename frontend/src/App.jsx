@@ -88,6 +88,8 @@ function AppInner() {
   const [activeClip, setActiveClip] = useState(null)
   const [memeClip, setMemeClip] = useState(null)
   const [memeInitialTab, setMemeInitialTab] = useState(null)
+  // Long video handed over by the Atelier: once cut, return there with the first clip.
+  const returnToAtelierRef = useRef(false)
   const [dubExportOpen, setDubExportOpen] = useState(false)
   const [exportSlot, setExportSlot] = useState(null)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
@@ -152,12 +154,29 @@ function AppInner() {
   }, [])
 
   function handleClipsCreated(newClips) {
+    addClips(newClips)
+    if (returnToAtelierRef.current && newClips.length) {
+      returnToAtelierRef.current = false
+      setMemeClip(newClips[0])
+      setMemeInitialTab(null)
+      setSection('memes')
+      return
+    }
+    // A batch job may finish after the user moved on — don't yank them away.
+    setSection(s => s === 'import' ? 'clips' : s)
+  }
+
+  function openInImporter(file) {
+    returnToAtelierRef.current = true
+    setVideo({ file, url: URL.createObjectURL(file), filename: file.name, sourcePath: null, sourceId: null })
+    setSection('import')
+  }
+
+  function addClips(newClips) {
     setClips(prev => {
       const ids = new Set(prev.map(c => c.clip_id))
       return [...newClips.filter(c => !ids.has(c.clip_id)), ...prev]
     })
-    // A batch job may finish after the user moved on — don't yank them away.
-    setSection(s => s === 'import' ? 'clips' : s)
   }
 
   function handleDub(clip) {
@@ -332,7 +351,8 @@ function AppInner() {
           <StudioScreen key={activeClip.clip_id} clip={activeClip} onBack={() => navigate('dub')} />
         )}
         {section === 'memes' && (
-          <MemeGenerator clip={memeClip} initialTab={memeInitialTab} onBack={memeClip ? () => setSection('clips') : null} />
+          <MemeGenerator clip={memeClip} initialTab={memeInitialTab} onBack={memeClip ? () => setSection('clips') : null}
+            clips={clips} onSelectClip={setMemeClip} onClipsCreated={addClips} onOpenInImporter={openInImporter} />
         )}
         {section === 'settings' && <Preferences />}
         </main>
