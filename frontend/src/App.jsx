@@ -7,7 +7,7 @@ import MemeGenerator from './components/MemeGenerator'
 import Preferences from './components/Preferences'
 import { T, Icon, ICONS, Btn, Kbd, Avatar } from './ui'
 import { useSettings } from './SettingsContext'
-import { ProgressProvider } from './ProgressContext'
+import { ProgressProvider, ProgressToasts } from './ProgressContext'
 import { ToastProvider, useToast } from './ToastContext'
 import ShortcutsOverlay from './components/ShortcutsOverlay'
 import CommandPalette from './components/CommandPalette'
@@ -357,6 +357,8 @@ function AppInner() {
         {section === 'settings' && <Preferences />}
         </main>
       </div>
+      <ProgressToasts route={exportScreen ? 'export' : section} queueClipId={exportScreen ? activeClip.clip_id : null}
+        onOpenActivity={() => navigate('activity')} />
       <ShortcutsOverlay open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
       <CommandPalette
         open={cmdOpen}

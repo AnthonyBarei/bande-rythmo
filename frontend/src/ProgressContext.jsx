@@ -1,6 +1,7 @@
-import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
+import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Icon, ICONS } from './Icons'
 import { filenameFromDisposition, saveBlob } from './download'
+import { toastsFor } from './utils/toastScope'
 
 /* Progress surface — one place for long ops (Whisper, MP4 burn, Plex remux,
    GIF export, batch clip cut).
@@ -20,6 +21,8 @@ import { filenameFromDisposition, saveBlob } from './download'
        downloadOnDone: false,     // true → trigger file download from /result
        downloadFilename: '…',
        retry: async () => 'new-job-id',
+       clipId: '…',               // optional — Activité shows the clip name
+       queue: 'export',           // optional — the screen that lists this job (no toast there)
      })
      handle.cancel()              // user-initiated cancel
 */
@@ -211,6 +214,7 @@ export function ProgressProvider({ children }) {
       kind: opts.kind || 'job',
       title: opts.title || 'Tâche',
       clipId: opts.clipId || null,
+      queue: opts.queue || null,
       stage: opts.stage || 'Démarrage…',
       pct: 0, eta: null,
       status: 'running', error: null,
@@ -291,23 +295,57 @@ export function ProgressProvider({ children }) {
 
   const value = { start, jobs, history, forget, cancelByKey, dismiss, retry }
 
-  return (
-    <ProgressCtx.Provider value={value}>
-      {children}
-      <ProgressToasts jobs={jobs} onCancel={cancelByKey} onDismiss={dismiss} onRetry={retry} />
-    </ProgressCtx.Provider>
-  )
+  return <ProgressCtx.Provider value={value}>{children}</ProgressCtx.Provider>
 }
 
-function ProgressToasts({ jobs, onCancel, onDismiss, onRetry }) {
-  if (!jobs.length) return null
+const TOAST_EDGE = 20
+const TOAST_W = 280
+const TOAST_CLEARANCE = 12
+// Height the stack takes from the bottom edge (0px when hidden) — scroll
+// containers add it to their bottom padding so their last row stays reachable.
+const SAFE_VAR = '--toast-safe-bottom'
+
+/* Rendered by App, which knows the open screen: hidden on Activité, filtered
+   to jobs outside the queue on Exporter, newest two + "+N" everywhere. */
+export function ProgressToasts({ route, queueClipId = null, onOpenActivity }) {
+  const { jobs, cancelByKey, dismiss, retry } = useProgress()
+  const { shown, hidden } = toastsFor(jobs, { route, queueClipId })
+  const stackRef = useRef(null)
+  const visible = shown.length > 0
+
+  useLayoutEffect(() => {
+    const root = document.documentElement
+    const el = stackRef.current
+    if (!visible || !el) {
+      root.style.setProperty(SAFE_VAR, '0px')
+      return
+    }
+    const sync = () => root.style.setProperty(SAFE_VAR, `${Math.ceil(el.offsetHeight) + TOAST_EDGE + TOAST_CLEARANCE}px`)
+    sync()
+    const ro = new ResizeObserver(sync)
+    ro.observe(el)
+    return () => {
+      ro.disconnect()
+      root.style.setProperty(SAFE_VAR, '0px')
+    }
+  }, [visible])
+
+  if (!visible) return null
   return (
-    <div style={{
-      position: 'fixed', right: 14, bottom: 14, zIndex: 'var(--z-toast)',
-      display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 340,
+    <div ref={stackRef} style={{
+      position: 'fixed', right: TOAST_EDGE, bottom: TOAST_EDGE, width: TOAST_W, zIndex: 'var(--z-toast)',
+      display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 8,
     }}>
-      {jobs.map(j => (
-        <ProgressCard key={j.key} job={j} onCancel={onCancel} onDismiss={onDismiss} onRetry={onRetry} />
+      {hidden > 0 && (
+        <button onClick={onOpenActivity} title={`${hidden} autre${hidden > 1 ? 's' : ''} tâche${hidden > 1 ? 's' : ''} — voir dans Activité`}
+          style={{
+            alignSelf: 'flex-end', background: 'var(--surface2)', border: '1px solid var(--border2)', color: 'var(--text2)',
+            borderRadius: 99, padding: '4px 10px', fontSize: 11, fontWeight: 600, fontFamily: 'var(--font-mono)', cursor: 'pointer',
+            boxShadow: '0 4px 14px rgba(0,0,0,0.35)',
+          }}>+{hidden}</button>
+      )}
+      {shown.map(j => (
+        <ProgressCard key={j.key} job={j} onCancel={cancelByKey} onDismiss={dismiss} onRetry={retry} />
       ))}
     </div>
   )
@@ -335,12 +373,11 @@ function ProgressCard({ job, onCancel, onDismiss, onRetry }) {
       boxShadow: '0 4px 14px rgba(0,0,0,0.35)',
       opacity: job.dismissed ? 0 : 1,
       transition: 'opacity 0.2s',
-      minWidth: 280,
       fontSize: 12.5,
       color: 'var(--text)',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-        <span style={{ fontWeight: 600, flex: 1 }}>{job.title}</span>
+        <span style={{ fontWeight: 600, flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{job.title}</span>
         {isRun && (
           <button
             onClick={() => onCancel(job.key)}
@@ -368,7 +405,7 @@ function ProgressCard({ job, onCancel, onDismiss, onRetry }) {
         )}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-        <span style={{ fontSize: 11, color: 'var(--text3)', flex: 1 }}>
+        <span style={{ fontSize: 11, color: 'var(--text3)', flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {isErr ? (job.error || 'Erreur') : isCanc ? 'Annulé' : job.stage || '…'}
         </span>
         {isRun && (

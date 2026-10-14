@@ -3,6 +3,8 @@ import { Btn, Chip, Dot, Icon, ICONS, ProgressBar, ScreenHeader, T, alpha } from
 import { useProgress } from '../ProgressContext'
 import { useToast } from '../ToastContext'
 import { downloadUrl } from '../download'
+import { primaryRowKey } from '../utils/primaryRow'
+import { useNow } from '../utils/useNow'
 
 // Activity center — reference screen-misc.jsx Activity · RunRow · DoneRow.
 // Running jobs (progress + cancel), failures (retry), finished jobs of the
@@ -48,11 +50,16 @@ const DONE_CAP = 10
 
 const exportTime = e => Date.parse(e.created_at) || 0
 
+// A session export job is already listed by its file row — that row competes
+// for the primary button, not the job. Cancelled jobs never do.
+const competesForPrimary = r => r.type === 'export' || (r.j.status === 'done' && !String(r.j.kind || '').startsWith('export'))
+
 export default function ActivityCenter({ onOpenClip }) {
   const { jobs, history, forget, cancelByKey, dismiss, retry } = useProgress()
   const [exports, setExports] = useState([])
   const [clips, setClips] = useState({})
   const [showAll, setShowAll] = useState(false)
+  const now = useNow()
 
   useEffect(() => {
     let live = true
@@ -79,21 +86,16 @@ export default function ActivityCenter({ onOpenClip }) {
   const finished = history
 
   // Newest first: this session's finished jobs, then the persisted export history.
-  // F7.1 / FIXES_R3 §18: only the newest row per file name keeps the primary
-  // Télécharger — computed over the whole list, so it holds once expanded too.
   const doneRows = useMemo(() => {
     const sorted = [...exports].sort((a, b) => exportTime(b) - exportTime(a) || (b.id ?? 0) - (a.id ?? 0))
-    const seen = new Set()
     return [
-      ...finished.map(j => ({ type: 'job', key: j.key, j })),
-      ...sorted.map(e => {
-        const fileKey = (e.filename || '').toLowerCase()
-        const latest = !seen.has(fileKey)
-        seen.add(fileKey)
-        return { type: 'export', key: `export-${e.id}`, e, latest }
-      }),
+      ...finished.map(j => ({ type: 'job', key: j.key, j, at: j.finishedAt })),
+      ...sorted.map(e => ({ type: 'export', key: `export-${e.id}`, e, at: e.created_at })),
     ]
   }, [finished, exports])
+
+  // FIXES_R4 §12: one primary row at most — the newest, if it finished < 10 min ago.
+  const primaryKey = primaryRowKey(doneRows.filter(competesForPrimary), now)
 
   const doneCount = doneRows.length
   const hiddenCount = Math.max(0, doneCount - DONE_CAP)
@@ -135,8 +137,8 @@ export default function ActivityCenter({ onOpenClip }) {
           <GroupLabel color={T.success}>TERMINÉ · {doneCount}</GroupLabel>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {visibleDone.map(r => r.type === 'job'
-              ? <JobDoneRow key={r.key} j={r.j} clip={clips[r.j.clipId]} onOpenClip={onOpenClip} onDismiss={() => forget(r.j.key)} />
-              : <ExportRow key={r.key} e={r.e} clip={clips[r.e.clip_id]?.name} latest={r.latest} />)}
+              ? <JobDoneRow key={r.key} j={r.j} clip={clips[r.j.clipId]} primary={r.key === primaryKey} onOpenClip={onOpenClip} onDismiss={() => forget(r.j.key)} />
+              : <ExportRow key={r.key} e={r.e} clip={clips[r.e.clip_id]?.name} primary={r.key === primaryKey} />)}
           </div>
           {hiddenCount > 0 && (
             <div style={{ marginTop: 10 }}>
@@ -201,19 +203,19 @@ function DoneRow({ title, clip, file, when, cancelled, action }) {
 }
 
 // Session job without a file: open its clip when known (DoneRow action 'open'), else dismiss.
-function JobDoneRow({ j, clip, onOpenClip, onDismiss }) {
+function JobDoneRow({ j, clip, primary, onOpenClip, onDismiss }) {
   const cancelled = j.status === 'cancelled'
   const canOpen = !cancelled && clip && onOpenClip
   return (
     <DoneRow title={j.title} clip={clip?.name} cancelled={cancelled}
       file={cancelled ? 'Annulé' : (j.stage || 'Terminé')}
       action={canOpen
-        ? <Btn size="sm" variant="outline" icon={ICONS.edit} onClick={() => onOpenClip(clip)}>Ouvrir le clip</Btn>
+        ? <Btn size="sm" variant={primary ? 'primary' : 'outline'} icon={ICONS.edit} onClick={() => onOpenClip(clip)}>Ouvrir le clip</Btn>
         : <Btn size="sm" variant="outline" icon={ICONS.close} onClick={onDismiss}>Retirer</Btn>} />
   )
 }
 
-function ExportRow({ e, clip, latest }) {
+function ExportRow({ e, clip, primary }) {
   const toast = useToast()
   async function dl() {
     try {
@@ -227,6 +229,6 @@ function ExportRow({ e, clip, latest }) {
     <DoneRow title={formatLabel(e.format)} clip={clip}
       file={[e.filename, size, e.quality].filter(Boolean).join(' · ')}
       when={fmtWhen(e.created_at)}
-      action={<Btn size="sm" variant={latest ? 'primary' : 'outline'} icon={ICONS.download} onClick={dl}>Télécharger</Btn>} />
+      action={<Btn size="sm" variant={primary ? 'primary' : 'outline'} icon={ICONS.download} onClick={dl}>Télécharger</Btn>} />
   )
 }

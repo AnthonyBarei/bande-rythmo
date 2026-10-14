@@ -41,15 +41,16 @@ export default function ShortcutsOverlay({ open, onClose }) {
   return createPortal(
     <div role="dialog" aria-modal="true" aria-label="Raccourcis clavier" onClick={onClose}
       style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', backdropFilter: 'blur(3px)', zIndex: 'var(--z-modal)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div onClick={e => e.stopPropagation()} style={{ width: 'min(860px,92vw)', maxHeight: '88vh', overflow: 'auto', background: T.surface, border: `1px solid ${T.border2}`, borderRadius: T.r.card, boxShadow: T.shadowL, padding: 24 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: 'min(860px,92vw)', maxHeight: 'calc(100vh - 80px)', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: T.surface, border: `1px solid ${T.border2}`, borderRadius: T.r.card, boxShadow: T.shadowL }}>
+        {/* Header stays put; only the rows scroll (FIXES_R4 §13). */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '24px 24px 18px', flexShrink: 0 }}>
           <Icon d={ICONS.keyboard} size={20} stroke={T.accent} />
           <span style={{ fontSize: T.fs.lg, fontWeight: 600 }}>Raccourcis clavier</span>
           <span style={{ fontSize: T.fs.xs, color: T.text3 }}>Échap pour fermer</span>
           <div style={{ flex: 1 }} />
           <Btn size="sm" variant="outline" onClick={onClose}>Fermer</Btn>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 18 }}>
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '0 24px 24px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 18, alignContent: 'start' }}>
           {GROUPS.map(g => (
             <div key={g.title}>
               <div style={{ fontSize: 10.5, color: T.text3, letterSpacing: 1.2, fontWeight: 700, marginBottom: 9, textTransform: 'uppercase' }}>{g.title}</div>

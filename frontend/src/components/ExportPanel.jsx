@@ -6,6 +6,9 @@ import { useSettings } from '../SettingsContext'
 import { fmtClock } from '../utils/timecode'
 import { downloadUrl, saveBlob } from '../download'
 import { useExportScreen } from './exportScreen'
+import { primaryRowKey } from '../utils/primaryRow'
+import { EXPORT_QUEUE, inExportQueue } from '../utils/toastScope'
+import { useNow } from '../utils/useNow'
 
 // Export screen — port of redesign screen-record-export.jsx → Export,
 // QueueRow, RangeField, ExportOptions.
@@ -49,8 +52,8 @@ const QUALITY_HINT = {
 
 const FONT_LABELS = { cursive: 'Manuscrite', atkinson: 'Atkinson', lisible: 'Lisible', inter: 'Inter', jetbrains: 'JetBrains' }
 
-// Progress jobs started from this screen, by job key → { clipId, fmt, file }.
-// Module-level so the queue survives closing/reopening the screen.
+// Progress jobs started from this screen, by job key → { fmt, file } (the job
+// itself carries clipId + queue). Module-level so the queue survives closing/reopening the screen.
 const JOB_META = new Map()
 
 // Finished files listed in the queue before "Voir tout (n)".
@@ -115,6 +118,7 @@ function ExportScreen({ segmentId, subtitles, boucles = [], pxPerSec = 180, brOf
   })
   const progress = useProgress()
   const mix = useMix(segmentId)
+  const now = useNow()
 
   useEffect(() => {
     try { localStorage.setItem('export-auto-dl', autoDownload ? '1' : '0') } catch { /* storage unavailable — keep in-memory value */ }
@@ -225,6 +229,8 @@ function ExportScreen({ segmentId, subtitles, boucles = [], pxPerSec = 180, brOf
       kind: `export-${format}`,
       title: job.title,
       jobId,
+      clipId: segmentId,
+      queue: EXPORT_QUEUE,
       retry: fireJob,
       downloadOnDone: autoDownload,
       downloadFilename: job.file,
@@ -232,7 +238,7 @@ function ExportScreen({ segmentId, subtitles, boucles = [], pxPerSec = 180, brOf
       onError: (err) => { setError('Erreur export : ' + err.message); setLoading(null) },
       onCancel: () => { setError('Export annulé.'); setLoading(null) },
     })
-    JOB_META.set(handle.key, { clipId: segmentId, fmt: format, file: job.file })
+    JOB_META.set(handle.key, { fmt: format, file: job.file })
   }
 
   async function handleExport(format) {
@@ -280,7 +286,7 @@ function ExportScreen({ segmentId, subtitles, boucles = [], pxPerSec = 180, brOf
     : sel !== 'mp4-dubbed' ? 'Ce format nécessite des répliques'
     : mix.busy ? 'Mixage en cours…' : 'Sélectionnez au moins une prise'
 
-  const jobs = (progress.jobs || []).filter(j => JOB_META.get(j.key)?.clipId === segmentId)
+  const jobs = (progress.jobs || []).filter(j => inExportQueue(j, segmentId))
   const runningCount = jobs.filter(j => j.status === 'running').length
     + (loading && !JOB_FORMATS[loading] ? 1 : 0) + (mix.busy ? 1 : 0)
 
@@ -291,6 +297,9 @@ function ExportScreen({ segmentId, subtitles, boucles = [], pxPerSec = 180, brOf
       : (lastExport && !loading)
         ? { c: T.success, text: `Export ${fmtOf(lastExport).ext} ${autoDownload ? 'téléchargé' : 'terminé — disponible dans la liste'}` }
         : null
+
+  // FIXES_R4 §12: only the newest file, if < 10 min old, keeps a primary Télécharger.
+  const primaryId = primaryRowKey(history.map(h => ({ key: h.id, at: h.created_at })), now)
 
   const nSubs = subtitles.length
   const sub = [clipName, `${nSubs} réplique${nSubs !== 1 ? 's' : ''}`].filter(Boolean).join(' · ')
@@ -376,7 +385,7 @@ function ExportScreen({ segmentId, subtitles, boucles = [], pxPerSec = 180, brOf
               <Btn size="sm" icon={ICONS.loop} title="Rafraîchir la liste" onClick={refreshHistory} />
               <Btn size="sm" variant="outline" icon={ICONS.download} disabled={!history.length} title={history.length ? undefined : 'Aucun export à télécharger'} onClick={downloadAll}>Tout télécharger</Btn>
             </div>
-            <div style={{ flex: 1, overflow: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ flex: 1, overflow: 'auto', padding: 14, paddingBottom: 'calc(14px + var(--toast-safe-bottom, 0px))', display: 'flex', flexDirection: 'column', gap: 8 }}>
               {jobs.map(j => (
                 <JobRow key={j.key} job={j} meta={JOB_META.get(j.key)}
                   onCancel={() => progress.cancelByKey(j.key)}
@@ -392,7 +401,7 @@ function ExportScreen({ segmentId, subtitles, boucles = [], pxPerSec = 180, brOf
               {(showAll ? history : history.slice(0, QUEUE_CAP)).map(h => {
                 const f = fmtOf(h.format)
                 return (
-                  <QueueRow key={h.id}
+                  <QueueRow key={h.id} primary={h.id === primaryId}
                     q={{ ext: f.ext, c: f.c, file: h.filename, status: 'ready', size: fmtBytes(h.size_bytes), when: fmtTime(h.created_at), quality: h.quality }}
                     onDownload={() => redownload(h.id, h.filename)}
                     onDelete={() => removeExport(h.id)} />
@@ -422,7 +431,7 @@ function ExportScreen({ segmentId, subtitles, boucles = [], pxPerSec = 180, brOf
   )
 }
 
-function QueueRow({ q, onCancel, onDownload, onDelete, actions }) {
+function QueueRow({ q, onCancel, onDownload, onDelete, actions, primary = false }) {
   const rend = q.status === 'render'
   const failed = q.status === 'error'
   const hasPct = q.pct != null
@@ -451,7 +460,7 @@ function QueueRow({ q, onCancel, onDownload, onDelete, actions }) {
         </>
       ) : (
         <>
-          <Btn size="sm" variant="primary" icon={ICONS.download} onClick={onDownload}>Télécharger</Btn>
+          <Btn size="sm" variant={primary ? 'primary' : 'outline'} icon={ICONS.download} onClick={onDownload}>Télécharger</Btn>
           <Btn size="sm" icon={ICONS.trash} title="Supprimer" onClick={onDelete} />
         </>
       ))}
