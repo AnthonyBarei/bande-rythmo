@@ -2,6 +2,8 @@ import React, { useEffect, useState, useMemo } from 'react'
 import { Icon, ICONS } from '../Icons'
 import { Btn, Chip, Dot, ProgressBar, ScreenHeader } from '../ui'
 import { useProgress } from '../ProgressContext'
+import { useToast } from '../ToastContext'
+import { downloadUrl } from '../download'
 
 // Activity center (redesign screen-misc Activity) — one place for all jobs:
 // running (progress + cancel), failed (retry), done (dismiss). Plus the
@@ -195,11 +197,13 @@ function DoneJobRow({ j, onDismiss }) {
 }
 
 function ExportRow({ e }) {
-  function dl() {
-    const a = document.createElement('a')
-    a.href = `/api/export/download/${e.id}`
-    a.download = e.filename || 'export'
-    a.click()
+  const toast = useToast()
+  async function dl() {
+    try {
+      await downloadUrl(`/api/export/download/${e.id}`, e.filename)
+    } catch (err) {
+      toast.error('Téléchargement impossible : ' + err.message)
+    }
   }
   return (
     <div style={{ ...rowBase, padding: '11px 16px' }}>

@@ -24,11 +24,13 @@ function hashHue(str) {
 }
 
 const TRACK_HEX = ['#f5c518', '#7ec0ff', '#f08aaf', '#7ed4a8']
+const NO_HOVER = typeof window !== 'undefined' && window.matchMedia?.('(hover: none)').matches
 
 export default function ClipCard({ clip, onDub, onMeme, onDelete, onRename, onStatusChange, onAssignProject }) {
   const [editingName, setEditingName] = useState(false)
   const [nameInput, setNameInput] = useState(clip.name)
   const [hover, setHover] = useState(false)
+  const [focusWithin, setFocusWithin] = useState(false)
   const [watching, setWatching] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const renameDoneRef = useRef(false)
@@ -78,6 +80,8 @@ export default function ClipCard({ clip, onDub, onMeme, onDelete, onRename, onSt
     <div
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => { setHover(false); setConfirmDelete(false) }}
+      onFocus={() => setFocusWithin(true)}
+      onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget)) setFocusWithin(false) }}
       style={{
         background: 'var(--surface)',
         border: `1px solid ${hover ? 'var(--border2)' : 'var(--border)'}`,
@@ -208,8 +212,8 @@ export default function ClipCard({ clip, onDub, onMeme, onDelete, onRename, onSt
         </div>
       </div>
 
-      {/* Action row — reveals on hover (prototype) */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto auto', borderTop: '1px solid var(--border)', opacity: hover ? 1 : 0, maxHeight: hover ? 44 : 0, overflow: 'hidden', transition: 'opacity 0.15s, max-height 0.15s' }}>
+      {/* Action row — always in layout (no reflow, reachable by touch/keyboard), highlighted on hover/focus */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto auto', borderTop: '1px solid var(--border)', opacity: hover || focusWithin || NO_HOVER ? 1 : 0.6, transition: 'opacity 0.15s' }}>
         <ActionBtn onClick={e => { e.stopPropagation(); onDub(clip) }} accent title="Doublage">
           Doubler
         </ActionBtn>

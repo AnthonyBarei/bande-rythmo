@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
+import { filenameFromDisposition, saveBlob } from './download'
 
 /* Progress surface — one place for long ops (Whisper, MP4 burn, Plex remux,
    GIF export, batch clip cut).
@@ -30,16 +31,6 @@ const POLL_MS = 800
 function wsUrl(jobId) {
   const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
   return `${proto}//${window.location.host}/api/jobs/${jobId}/ws`
-}
-
-function filenameFromDisposition(cd) {
-  if (!cd) return null
-  const star = /filename\*\s*=\s*utf-8''([^;]+)/i.exec(cd)
-  if (star) {
-    try { return decodeURIComponent(star[1].trim()) } catch { /* malformed → plain filename */ }
-  }
-  const plain = /filename\s*=\s*"?([^";]+)"?/i.exec(cd)
-  return plain ? plain[1].trim() : null
 }
 
 function fmtEta(s) {
@@ -113,14 +104,7 @@ export function ProgressProvider({ children }) {
           h.onDone?.(await rr.json())
         } else if (h.downloadOnDone) {
           const blob = await rr.blob()
-          const url = URL.createObjectURL(blob)
-          const a = document.createElement('a')
-          a.href = url
-          a.download = filenameFromDisposition(rr.headers.get('content-disposition')) || h.downloadFilename || 'export'
-          document.body.appendChild(a)
-          a.click()
-          a.remove()
-          setTimeout(() => URL.revokeObjectURL(url), 1000)
+          saveBlob(blob, filenameFromDisposition(rr.headers.get('content-disposition')) || h.downloadFilename)
           h.onDone?.(null)
         } else {
           h.onDone?.(await rr.blob())

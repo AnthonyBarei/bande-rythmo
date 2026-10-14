@@ -17,6 +17,13 @@ const SORTS = [
   { key: 'duration', label: 'Durée' },
 ]
 
+function fmtTotal(sec) {
+  const m = Math.round(sec / 60)
+  if (m < 1) return `${Math.round(sec)} s`
+  if (m < 60) return `${m} min`
+  return `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}`
+}
+
 export default function ClipsLibrary({ clips, onDub, onMeme, onDelete, onRename, onStatusChange, onNewClip, onSetProject }) {
   const [toast, setToast] = useState(null)
   const [filter, setFilter] = useState('all')
@@ -80,7 +87,7 @@ export default function ClipsLibrary({ clips, onDub, onMeme, onDelete, onRename,
       <ScreenHeader
         kicker="BIBLIOTHÈQUE"
         title="Mes clips"
-        sub={`${clips.length} clip${clips.length !== 1 ? 's' : ''} · ${Math.round(totalDur)}s`}
+        sub={`${clips.length} clip${clips.length !== 1 ? 's' : ''} · ${fmtTotal(totalDur)}`}
         right={(
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '0 14px', height: 40, minWidth: 240, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 99 }}>

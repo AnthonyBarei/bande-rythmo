@@ -3,6 +3,7 @@ import { Icon, ICONS } from '../Icons'
 import { useProgress } from '../ProgressContext'
 import { useSettings } from '../SettingsContext'
 import { fmtClock } from '../utils/timecode'
+import { downloadUrl } from '../download'
 
 const FORMATS = [
   { id: 'srt',         label: 'SRT',        icon: ICONS.note,  desc: 'Sous-titres standard',                        color: '#4488ff', needsSubs: true },
@@ -67,11 +68,12 @@ export default function ExportPanel({ segmentId, subtitles, boucles = [], pxPerS
     return () => { live = false }
   }, [])
 
-  function redownload(id, filename) {
-    const a = document.createElement('a')
-    a.href = `/api/export/download/${id}`
-    a.download = filename || 'export'
-    a.click()
+  async function redownload(id, filename) {
+    try {
+      await downloadUrl(`/api/export/download/${id}`, filename)
+    } catch (e) {
+      setError('Téléchargement impossible : ' + e.message)
+    }
   }
   async function removeExport(id) {
     if (!confirm('Supprimer cet export ?')) return
