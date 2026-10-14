@@ -291,7 +291,7 @@ function AppInner() {
         )}
         {section === 'activity' && <ActivityCenter onOpenClip={handleDub} />}
         {section === 'dub' && activeClip && (
-          <ExportScreenContext.Provider value={exportScreen ? { slot: exportSlot, onClose: closeExport, clip: activeClip } : null}>
+          <ExportScreenContext.Provider value={exportScreen ? { slot: exportSlot, onClose: closeExport, clip: activeClip, onActivity: () => navigate('activity') } : null}>
             <div style={exportScreen
               ? { position: 'absolute', inset: 0, visibility: 'hidden', display: 'flex', flexDirection: 'column' }
               : { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>

@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 import os
 import shutil
 from datetime import datetime
@@ -13,6 +14,13 @@ log = logging.getLogger("br.clips")
 # Clip ids become file names (segments/{id}.mp4) — never allow path parts.
 SAFE_ID_PATTERN = r"^[A-Za-z0-9_-]{1,64}$"
 SafeId = Annotated[str, StringConstraints(pattern=SAFE_ID_PATTERN)]
+
+
+def _redact_token(path):
+    """Plex stream URLs carry X-Plex-Token — never send it to the browser."""
+    if not path or "X-Plex-Token" not in path:
+        return path
+    return re.sub(r"X-Plex-Token=[^&]+", "X-Plex-Token=***", path)
 
 
 def _parse_words(raw):
@@ -40,7 +48,7 @@ def _to_dict(clip: Clip) -> dict:
         "clip_id": clip.clip_id,
         "name": clip.name,
         "source_filename": clip.source_filename,
-        "source_path": clip.source_path,
+        "source_path": _redact_token(clip.source_path),
         "start": clip.start,
         "end": clip.end,
         "segment_path": clip.segment_path,
