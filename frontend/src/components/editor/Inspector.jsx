@@ -19,6 +19,7 @@ const TABS = [
 const hexOf = (charMap, char) => TRACK_COLORS[(charMap[char || ''] ?? 0) % TRACK_COLORS.length].hex
 
 // Active réplique header — reference Inspector › "active réplique header".
+// `target` is null only when the clip has zero répliques (empty state).
 function TargetHeader({ target, subIdx, charMap, charList, clipFps, showRecorder, onToggleRecorder, onSetCharacter, onNewCharacter }) {
   const hex = target ? hexOf(charMap, target.character) : T.text4
   return (
@@ -36,7 +37,7 @@ function TargetHeader({ target, subIdx, charMap, charList, clipFps, showRecorder
             <div style={{ fontSize: 10.5, color: T.text3, fontFamily: T.fontMono }}>
               {target
                 ? `${fmtTC(target.start, clipFps)} → ${fmtTC(target.end, clipFps)} · ${(target.end - target.start).toFixed(1)}s`
-                : 'Sélectionnez ou lancez la lecture'}
+                : 'Transcrivez ou importez des sous-titres'}
             </div>
           </div>
         </button>
@@ -100,6 +101,7 @@ export default function Inspector({
 
       <div style={{ padding: '9px 16px', borderTop: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', gap: 8, fontSize: 10, color: T.text3, flexShrink: 0 }}>
         <Kbd>⇧</Kbd><Kbd>↵</Kbd><span style={{ color: T.text4 }}>nouvelle réplique</span>
+        {rightTab === 'voix' && <><Kbd>R</Kbd><span style={{ color: T.text4 }}>enregistrer la réplique</span></>}
         <div style={{ flex: 1 }} /><Kbd>?</Kbd><span style={{ color: T.text4 }}>aide</span>
       </div>
     </div>

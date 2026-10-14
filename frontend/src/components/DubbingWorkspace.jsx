@@ -23,7 +23,6 @@ import { mergeTranslations } from '../utils/mergeTranslations'
 const CURSOR_X_RATIO = 0.32
 const H_TRACK = 76
 const BR_CONTROLS_H = 50
-const FONT_BR_BASE = 34
 const FONT_BR = 'bold 22px "JetBrains Mono", "Courier New", monospace'
 const FONT_LABEL = 'bold 10px "IBM Plex Sans", sans-serif'
 
@@ -55,6 +54,15 @@ const brFontStack = id => {
   if (id && id.startsWith('u-')) return `'bru-${id}', 'Atkinson Hyperlegible', sans-serif`
   return (BR_FONTS.find(f => f.id === id) || BR_FONTS[0]).stack
 }
+// Band text font — reference BandCanvas: weight 600, 26px for the Caveat
+// manuscrite, 20px for other faces, 14px italic for (réactions); × Style scale.
+const brCanvasFont = (id, scale, isReact) => {
+  const px = isReact ? 14 : (id === 'cursive' ? 26 : 20)
+  return `${isReact ? 'italic ' : ''}600 ${Math.max(10, Math.round(px * scale))}px ${brFontStack(id)}`
+}
+// Canvas can't read CSS variables — --text4 token (not user-swappable).
+const TEXT4 = '#565660'
+const DEFAULT_ACCENT = '#F5C518'
 
 // SMPTE HH:MM:SS:FF — replaces decimal `fmt` everywhere a frame-accurate
 // readout is wanted (cursor, grid majors, list timecodes). Negative time is
@@ -259,6 +267,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   const playingRef = useRef(false)
   const fontScaleRef = useRef(1.0)
   const brFontRef = useRef('atkinson')
+  const accentRef = useRef(DEFAULT_ACCENT)
   const wordByWordRef = useRef(true)
   const detectionRef = useRef(detection)
   const detectionAutoRef = useRef(detectionAuto)
@@ -270,11 +279,13 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   // Between updates, we interpolate using wall clock so the canvas scrolls at 60fps.
   const interpTimeRef = useRef({ videoTime: 0, wallMs: 0, active: false })
   const selectedIdxRef = useRef(selectedIdx)
+  const lastSelectedIdxRef = useRef(selectedIdx)
   const onToggleExportRef = useRef(onToggleExport)
   const recorderRef = useRef(null)
   const [recordRequest, setRecordRequest] = useState(0)
   subtitlesRef.current = subtitles
   selectedIdxRef.current = selectedIdx
+  if (selectedIdx != null) lastSelectedIdxRef.current = selectedIdx
   onToggleExportRef.current = onToggleExport
   brOffsetRef.current = brOffset
   pxPerSecRef.current = pxPerSec
@@ -283,6 +294,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   playingRef.current = playing
   fontScaleRef.current = fontScale
   brFontRef.current = brFont
+  accentRef.current = /^#[0-9a-f]{6}$/i.test(settings.accent || '') ? settings.accent : DEFAULT_ACCENT
   wordByWordRef.current = wordByWord
   detectionRef.current = detection
   detectionAutoRef.current = detectionAuto
@@ -483,14 +495,10 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
     if (!subtitles.length || autoFitRef.current === clip.clip_id) return
     autoFitRef.current = clip.clip_id
     const ctx = document.createElement('canvas').getContext('2d')
-    const base = Math.max(13, Math.round(FONT_BR_BASE * fontScale))
     let need = 0
     for (const s of subtitles) {
       if (!s.text) continue
-      const isReact = s.text.startsWith('(')
-      ctx.font = isReact
-        ? `italic 600 ${base}px 'IBM Plex Sans', sans-serif`
-        : `700 ${base}px ${brFontStack(brFont)}`
+      ctx.font = brCanvasFont(brFont, fontScale, s.text.startsWith('('))
       const dur = Math.max(0.1, s.end - s.start)
       need = Math.max(need, ctx.measureText(s.text).width / dur)
     }
@@ -657,6 +665,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
       const style = rythmoStyleRef.current
       const isNeon = style === 'neon'
       const isMinimal = style === 'minimal'
+      const accent = accentRef.current
 
       // Background
       ctx.shadowBlur = 0
@@ -678,24 +687,21 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
         ctx.beginPath(); ctx.moveTo(0, track * trackH); ctx.lineTo(W, track * trackH); ctx.stroke()
       }
 
-      // Time grid — vertical 1s lines, major every 5s (skipped in minimal)
-      if (!isMinimal) {
+      // SMPTE grid — one 1px line per second, MM:SS:FF label at the band foot.
+      {
         const gStart = t - cursor_x / pxSec
         const gEnd = t + (W - cursor_x) / pxSec
         ctx.setLineDash([])
         ctx.lineWidth = 1
+        ctx.font = '9px "JetBrains Mono", monospace'
+        ctx.textBaseline = 'bottom'
         for (let tick = Math.ceil(gStart); tick <= Math.floor(gEnd); tick++) {
-          if (tick < 0) continue
           const gx = cursor_x + (tick - t) * pxSec
-          const major = tick % 5 === 0
-          ctx.strokeStyle = major ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.04)'
+          ctx.strokeStyle = tick < 0 ? 'rgba(255,255,255,.03)' : 'rgba(255,255,255,.05)'
           ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, H); ctx.stroke()
-          if (major) {
-            ctx.fillStyle = 'rgba(156,156,166,0.22)'
-            ctx.font = '10px "JetBrains Mono", monospace'
-            ctx.textBaseline = 'top'
-            // SMPTE HH:MM:SS:FF — pro convention reads in frames, not decimal.
-            ctx.fillText(fmtTC(tick, clipFpsRef.current), gx + 3, 3)
+          if (tick >= 0) {
+            ctx.fillStyle = TEXT4
+            ctx.fillText(fmtTC(tick, clipFpsRef.current).slice(3), gx + 3, H - 2)
           }
         }
       }
@@ -811,25 +817,20 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
         const _dimmed = _filterActive && !_cFilter.has(sub.character || '')
         if (_dimmed) ctx.globalAlpha = 0.15
 
-        // Block fill
+        // Block fill — reference BandCanvas: tinted fill + 2.5px left bar, no outline.
         if (isMinimal) {
-          ctx.fillStyle = withAlpha(color.hex, isActive ? 1 : 0.4)
+          ctx.fillStyle = color.hex + (isActive ? '88' : '44')
           ctx.fillRect(bx, yTop + trackH - 3, bw, 2)
         } else if (isNeon) {
-          ctx.strokeStyle = withAlpha(color.hex, 0.53)
-          ctx.lineWidth = 1.1
+          ctx.strokeStyle = color.hex + (isActive ? 'cc' : '66')
+          ctx.lineWidth = 1
           ctx.setLineDash([])
-          ctx.shadowColor = color.hex
-          ctx.shadowBlur = isActive ? 14 : 4
-          ctx.strokeRect(bx + 0.5, yTop + 4.5, bw - 1, trackH - 9)
+          if (isActive) { ctx.shadowColor = color.hex; ctx.shadowBlur = 8 }
+          ctx.strokeRect(leftX + 1, yTop + 4, rightX - leftX - 2, trackH - 8)
           ctx.shadowBlur = 0
         } else {
-          ctx.fillStyle = withAlpha(color.hex, isActive ? 0.28 : 0.14)
-          ctx.fillRect(bx, yTop + 3, bw, trackH - 6)
-          if (leftX > -1 && leftX < W) {
-            ctx.fillStyle = withAlpha(color.hex, isActive ? 1 : 0.67)
-            ctx.fillRect(leftX, yTop + 3, 2, trackH - 6)
-          }
+          ctx.fillStyle = color.hex + (isActive ? '22' : '12'); ctx.fillRect(leftX, yTop + 3, rightX - leftX, trackH - 6)
+          ctx.fillStyle = color.hex; ctx.fillRect(leftX, yTop + 3, 2.5, trackH - 6)
         }
 
         // Per-word text — each word fills its own time-block [start, end]:
@@ -837,15 +838,13 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
         // with a trailing gap). No / stale word data → whole text as one word.
         if (sub.text) {
           const isReact = sub.text.startsWith('(')
-          const BASE_FONT = Math.max(13, Math.round(FONT_BR_BASE * fontScaleRef.current))
-          ctx.font = isReact
-            ? `italic 600 ${BASE_FONT}px 'IBM Plex Sans', sans-serif`
-            : `700 ${BASE_FONT}px ${brFontStack(brFontRef.current)}`
-          // Expose the most recent resolved BR font on the canvas so hit-test
-          // helpers (hitTestLetter for click-letter détection) can measure
-          // glyphs in the same font without redoing the resolution.
-          if (canvas) canvas._brFontResolved = ctx.font
+          ctx.font = brCanvasFont(brFontRef.current, fontScaleRef.current, isReact)
+          // Expose the resolved BR font on the canvas so hit-test helpers
+          // (hitTestLetter for click-letter détection) measure glyphs in the
+          // same font without redoing the resolution.
+          if (canvas && !isReact) canvas._brFontResolved = ctx.font
           ctx.textBaseline = 'middle'
+          const yMid = yTop + trackH / 2 + (brFontRef.current === 'cursive' ? 2 : 0)
 
           const words = (wordByWordRef.current ? validWords(sub) : null)
             || [{ w: sub.text, start: sub.start, end: sub.end }]
@@ -874,11 +873,11 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
             ctx.beginPath()
             ctx.rect(wbx, yTop, wbw, trackH)
             ctx.clip()
-            ctx.translate(wLeft, yTop + trackH / 2)
+            ctx.translate(wLeft, yMid)
             ctx.scale(scaleX, 1)
             const baseFill = isReact
-              ? (wActive ? color.hex : withAlpha(color.hex, 0.67))
-              : (wActive ? '#fff' : 'rgba(255,255,255,0.42)')
+              ? color.hex + (wActive ? 'ff' : 'aa')
+              : (wActive ? '#fff' : 'rgba(255,255,255,.42)')
             const segs = wtext.split(/(\*)/)
             let curX = 0
             for (const seg of segs) {
@@ -1005,11 +1004,21 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
             ctx.setLineDash([])
           }
         }
-        // Note marker — small filled dot top-left of the block when sub has a note.
+        // Avatar dot — reference BandCanvas: 16px circle in the track colour
+        // with the character's initial, top-left of the block.
+        const hasAvatar = rightX - leftX > 26 && leftX > -20
+        const ax = Math.max(leftX, 0) + 7
+        const ay = yTop + 9
+        if (hasAvatar) {
+          ctx.beginPath(); ctx.arc(ax + 7, ay + 7, 8, 0, 7); ctx.fillStyle = isActive ? color.hex : color.hex + 'aa'; ctx.fill()
+          ctx.fillStyle = '#0b0b0d'; ctx.font = '700 9px "JetBrains Mono", monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+          ctx.fillText((sub.character || '?')[0].toUpperCase(), ax + 7, ay + 8); ctx.textAlign = 'left'
+        }
+        // Note marker — accent dot, badged on the avatar (else top-left of the block).
         if (sub.note && onScreenR > onScreenL) {
-          const nx = Math.min(onScreenL + 7, W - 4)
-          const ny = yTop + 7
-          ctx.fillStyle = '#f5c518'
+          const nx = hasAvatar ? ax + 14 : Math.min(onScreenL + 7, W - 4)
+          const ny = hasAvatar ? ay : yTop + 7
+          ctx.fillStyle = accent
           ctx.beginPath()
           ctx.arc(nx, ny, 3, 0, Math.PI * 2)
           ctx.fill()
@@ -1067,10 +1076,10 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
       // into negative time when the user seeks past 0.
       const calibs = [
         { time: -3.0, label: 'START', kind: 'start' },
-        { time: -2.0, label: 'BIP 1000 Hz', kind: 'bip' },
+        { time: -2.0, label: 'BIP', kind: 'bip' },
         { time:  0.0, label: 'PI', kind: 'pi' },
       ]
-      ctx.font = 'bold 9.5px "JetBrains Mono", monospace'
+      ctx.font = '700 8px "JetBrains Mono", monospace'
       ctx.textBaseline = 'top'
       for (const cal of calibs) {
         const cx = cursor_x + (cal.time - t) * pxSec
@@ -1091,7 +1100,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
         }
         ctx.setLineDash([])
         ctx.fillStyle = cal.kind === 'bip' ? '#7ec0ff' : '#fff'
-        ctx.fillText(`${cal.label} ${fmtTC(cal.time, clipFpsRef.current)}`, cx + 4, H - 14)
+        ctx.fillText(cal.label, cx + 3, 3)
       }
 
       // ── Scene cuts — dashed blue verticals (changement de plan, mirror plan_cut) ──
@@ -1117,7 +1126,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
           for (const [edge, time] of [['start', b.start], ['end', b.end]]) {
             const bx = cursor_x + (time - t) * pxSec
             if (bx < -20 || bx > W + 20) continue
-            ctx.strokeStyle = 'rgba(245,197,24,0.55)'
+            ctx.strokeStyle = withAlpha(accent, 0.55)
             ctx.lineWidth = 1.2
             ctx.setLineDash([6, 4])
             ctx.beginPath(); ctx.moveTo(bx, 0); ctx.lineTo(bx, H); ctx.stroke()
@@ -1125,9 +1134,9 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
             if (edge === 'start') {
               const cap = `B${b.number}`
               const cw = ctx.measureText(cap).width + 8
-              ctx.fillStyle = 'rgba(245,197,24,0.18)'
+              ctx.fillStyle = withAlpha(accent, 0.18)
               ctx.fillRect(bx, 0, cw, 13)
-              ctx.fillStyle = '#f5c518'
+              ctx.fillStyle = accent
               ctx.fillText(cap, bx + 4, 2)
             }
           }
@@ -1157,9 +1166,9 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
         const lx = cursor_x + (lr.start - t) * pxSec
         const rx = cursor_x + (lr.end - t) * pxSec
         if (rx > 0 && lx < W) {
-          ctx.fillStyle = 'rgba(245, 197, 24,0.10)'
+          ctx.fillStyle = withAlpha(accent, 0.10)
           ctx.fillRect(Math.max(0, lx), 0, Math.min(W, rx) - Math.max(0, lx), H)
-          ctx.strokeStyle = 'rgba(245, 197, 24,0.6)'
+          ctx.strokeStyle = withAlpha(accent, 0.6)
           ctx.lineWidth = 1
           ctx.setLineDash([4, 3])
           if (lx >= 0 && lx <= W) { ctx.beginPath(); ctx.moveTo(lx, 0); ctx.lineTo(lx, H); ctx.stroke() }
@@ -1174,34 +1183,17 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
 
       // Cursor line
       ctx.setLineDash([])
-      ctx.strokeStyle = '#f5c518'
+      ctx.strokeStyle = accent
       ctx.lineWidth = 2
       ctx.beginPath(); ctx.moveTo(cursor_x, 0); ctx.lineTo(cursor_x, H); ctx.stroke()
       // Cursor triangle (top)
-      ctx.fillStyle = '#f5c518'
+      ctx.fillStyle = accent
       ctx.beginPath()
       ctx.moveTo(cursor_x - 7, 0)
       ctx.lineTo(cursor_x + 7, 0)
-      ctx.lineTo(cursor_x, 10)
+      ctx.lineTo(cursor_x, 9)
       ctx.closePath()
       ctx.fill()
-      // SMPTE TC chip at the cursor foot — pro readout (HH:MM:SS:FF @ clip fps).
-      {
-        const tcLabel = fmtTC(t, clipFpsRef.current)
-        ctx.font = 'bold 10px "JetBrains Mono", monospace'
-        const tcW = ctx.measureText(tcLabel).width + 10
-        const tcH = 16
-        const tx = Math.max(2, Math.min(W - tcW - 2, cursor_x - tcW / 2))
-        const ty = H - tcH - 2
-        ctx.fillStyle = 'rgba(8,8,10,0.92)'
-        ctx.fillRect(tx, ty, tcW, tcH)
-        ctx.strokeStyle = '#f5c518'
-        ctx.lineWidth = 1
-        ctx.strokeRect(tx + 0.5, ty + 0.5, tcW - 1, tcH - 1)
-        ctx.fillStyle = '#f5c518'
-        ctx.textBaseline = 'middle'
-        ctx.fillText(tcLabel, tx + 5, ty + tcH / 2)
-      }
 
       // Hover scrub indicator
       const hov = hoverRef.current
@@ -2085,7 +2077,10 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   function seekToEnd() { const v = videoRef.current; if (v) v.currentTime = v.duration }
   function toggleProxy() { const v = videoRef.current; resumeTimeRef.current = v ? v.currentTime : 0; setUseProxy(p => !p) }
 
-  const inspectorTarget = activeSubtitle || (selectedIdx != null ? subtitles[selectedIdx] : null)
+  // Inspector header réplique: under the playhead → last selected → first.
+  const inspectorTarget = activeSubtitle
+    || (lastSelectedIdxRef.current != null ? subtitles[lastSelectedIdxRef.current] : null)
+    || subtitles[0] || null
   const inspectorIdx = inspectorTarget ? subtitles.indexOf(inspectorTarget) : -1
   function setTargetCharacter(char) {
     if (inspectorIdx < 0) return

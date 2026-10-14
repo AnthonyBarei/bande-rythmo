@@ -97,9 +97,7 @@ export default function BRTimeline({
     if (viewStart != null && viewEnd != null && viewEnd > viewStart) {
       const x0 = Math.max(0, tToX(viewStart))
       const x1 = Math.min(w, tToX(viewEnd))
-      ctx.fillStyle = 'rgba(255,255,255,0.05)'
-      ctx.fillRect(x0, 0, x1 - x0, h)
-      ctx.strokeStyle = 'rgba(255,255,255,0.18)'
+      ctx.strokeStyle = cssVar('--border3', '#3f3f4a')
       ctx.lineWidth = 1
       ctx.strokeRect(x0 + 0.5, 0.5, (x1 - x0) - 1, h - 1)
     }

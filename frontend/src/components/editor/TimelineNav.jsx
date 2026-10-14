@@ -7,7 +7,10 @@ import BRTimeline from '../BRTimeline'
 // the real clip data by BRTimeline.
 export default function TimelineNav({ bandNow, clipFps, boucles, loopRegion, ...timelineProps }) {
   const tc = t => fmtSMPTE(t, clipFps).slice(3)
+  // Boucle under the playhead, else the next one, else the first.
   const b = boucles.find(x => bandNow >= x.start && bandNow <= x.end)
+    || boucles.filter(x => x.start > bandNow).sort((p, q) => p.start - q.start)[0]
+    || boucles[0]
   const loopLabel = loopRegion
     ? `${tc(loopRegion.start)}–${tc(loopRegion.end)}`
     : b ? `B${b.number} ${tc(b.start)}–${tc(b.end)}` : null

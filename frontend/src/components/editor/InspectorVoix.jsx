@@ -1,9 +1,8 @@
 import React from 'react'
-import { T, alpha, Avatar, Btn, Icon, ICONS, Kbd } from '../../ui'
+import { T, alpha, Avatar, Btn, Icon, ICONS, SectionLabel } from '../../ui'
 import { TRACK_COLORS } from '../../config/tracks'
 
 const hexOf = (charMap, char) => TRACK_COLORS[(charMap[char || ''] ?? 0) % TRACK_COLORS.length].hex
-const sectionLabel = { fontSize: T.fs.micro, color: T.text3, letterSpacing: 1.2, fontWeight: 700, marginBottom: 9 }
 
 // App-only: the focused character's comédien, stats and upcoming queue.
 function FocusCharacter({
@@ -30,8 +29,8 @@ function FocusCharacter({
   ]
   return (
     <div style={{ marginTop: 18 }}>
-      <div style={sectionLabel}>FOCUS</div>
-      <div style={{ padding: 12, background: alpha(hex, '0e'), border: `1px solid ${alpha(hex, '33')}`, borderRadius: T.r.ctl }}>
+      <SectionLabel style={{ marginBottom: 9 }}>FOCUS</SectionLabel>
+      <div style={{ padding: 12, background: T.surface2, border: `1px solid ${T.border}`, borderRadius: T.r.ctl }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
           <Avatar name={focusChar} color={hex} size={34} ring />
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -47,26 +46,25 @@ function FocusCharacter({
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
           {stats.map(([k, v]) => (
-            <div key={k} style={{ padding: '7px 9px', background: T.surface2, borderRadius: 7 }}>
+            <div key={k} style={{ padding: '7px 9px', background: T.surface, borderRadius: 7 }}>
               <div style={{ fontSize: 10, color: T.text3, letterSpacing: 1, fontWeight: 700, textTransform: 'uppercase', marginBottom: 2 }}>{k}</div>
               <div style={{ fontSize: T.fs.base, fontWeight: 700, color: T.text, fontFamily: T.fontMono }}>{v}</div>
             </div>
           ))}
         </div>
       </div>
-      <div style={{ ...sectionLabel, marginTop: 14 }}>FILE D'ATTENTE</div>
+      <SectionLabel style={{ marginTop: 14, marginBottom: 9 }}>FILE D'ATTENTE</SectionLabel>
       {queue.length === 0 ? (
         <div style={{ fontSize: T.fs.xs, color: T.text3 }}>Aucune réplique à venir.</div>
       ) : queue.map(({ s, i }, qi) => (
         <div key={i} onClick={() => { onSeek(s.start); setSelectedIdx(i) }}
-          style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', marginBottom: 4, background: T.surface2, border: `1px solid ${recorded.has(i) ? alpha(hex, '44') : T.border}`, borderRadius: T.r.ctl, cursor: 'pointer' }}>
+          style={{ display: 'flex', alignItems: 'center', gap: 8, height: 32, boxSizing: 'border-box', padding: '0 10px', marginBottom: 4, background: T.surface2, border: `1px solid ${recorded.has(i) ? alpha(hex, '44') : T.border}`, borderRadius: T.r.ctl, cursor: 'pointer' }}>
           <span style={{ fontSize: 10, fontFamily: T.fontMono, color: T.text3, flexShrink: 0 }}>{String(i + 1).padStart(2, '0')}</span>
           {qi === 0 && <span style={{ fontSize: 9.5, fontWeight: 700, color: hex, letterSpacing: 1 }}>SUIVANT</span>}
-          <span style={{ flex: 1, minWidth: 0, fontSize: T.fs.xs, color: T.text2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.text || '∅'}</span>
+          <span style={{ flex: 1, minWidth: 0, fontSize: T.fs.sm, color: T.text2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.text || '∅'}</span>
           {recorded.has(i) && <Icon d={ICONS.check} size={12} stroke={hex} />}
         </div>
       ))}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, fontSize: 10, color: T.text4 }}><Kbd>R</Kbd> enregistrer la réplique</div>
     </div>
   )
 }
