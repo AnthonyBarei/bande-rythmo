@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { Icon, ICONS } from '../Icons'
-import { Avatar } from '../ui'
+import { Avatar, Btn } from '../ui'
+import { TRACK_HEXES } from '../config/tracks'
 
 const fmt = t => {
   const r = Math.round(t)
@@ -23,7 +24,6 @@ function hashHue(str) {
   return Math.abs(h) % 360
 }
 
-const TRACK_HEX = ['#f5c518', '#7ec0ff', '#f08aaf', '#7ed4a8']
 const NO_HOVER = typeof window !== 'undefined' && window.matchMedia?.('(hover: none)').matches
 
 export default function ClipCard({ clip, onDub, onMeme, onDelete, onRename, onStatusChange, onAssignProject }) {
@@ -116,7 +116,7 @@ export default function ClipCard({ clip, onDub, onMeme, onDelete, onRename, onSt
             position: 'absolute', top: 8, left: 8,
             display: 'inline-flex', alignItems: 'center', gap: 5,
             background: status.bg, color: status.fg,
-            fontSize: 9.5, fontWeight: 700, letterSpacing: 1.2,
+            fontSize: 11, fontWeight: 700, letterSpacing: 1.2,
             textTransform: 'uppercase', padding: '4px 8px',
             borderRadius: 4, border: '1px solid rgba(255,255,255,0.10)',
             cursor: 'pointer',
@@ -126,13 +126,13 @@ export default function ClipCard({ clip, onDub, onMeme, onDelete, onRename, onSt
           onMouseLeave={e => { e.currentTarget.style.background = status.bg }}
         >
           {status.label}
-          <span style={{ fontSize: 8, opacity: 0.8 }}>▸</span>
+          <Icon d={ICONS.chevron} size={11} style={{ opacity: 0.8, transform: 'rotate(-90deg)' }} />
         </button>
         {/* Duration pill */}
         <div style={{
           position: 'absolute', bottom: 8, right: 8,
           background: 'rgba(0,0,0,0.7)', color: '#fff',
-          fontSize: 10, fontWeight: 600, padding: '2px 6px', borderRadius: 4,
+          fontSize: 11, fontWeight: 600, padding: '2px 6px', borderRadius: 4,
           fontFamily: 'var(--font-mono)',
         }}>
           {fmt(duration)}
@@ -181,7 +181,7 @@ export default function ClipCard({ clip, onDub, onMeme, onDelete, onRename, onSt
             {clip.name}
           </div>
         )}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 10.5, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>
           <span>{hasSubtitles ? `${clip.subtitles.length} répl.` : 'aucune réplique'}</span>
           {onAssignProject && (
             <button
@@ -191,8 +191,8 @@ export default function ClipCard({ clip, onDub, onMeme, onDelete, onRename, onSt
                 display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 6px',
                 background: clip.project ? 'var(--accent-soft)' : 'transparent',
                 color: clip.project ? 'var(--accent)' : 'var(--text4)',
-                border: `1px solid ${clip.project ? 'rgba(245,197,24,0.35)' : 'var(--border)'}`,
-                borderRadius: 99, fontSize: 9.5, cursor: 'pointer', fontFamily: 'var(--font-ui)',
+                border: `1px solid ${clip.project ? 'var(--accent-ring)' : 'var(--border)'}`,
+                borderRadius: 99, fontSize: 11, cursor: 'pointer', fontFamily: 'var(--font-ui)',
                 maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
               }}>
               {clip.project
@@ -204,7 +204,7 @@ export default function ClipCard({ clip, onDub, onMeme, onDelete, onRename, onSt
             <div style={{ display: 'flex', alignItems: 'center' }}>
               {chars.slice(0, 4).map((c, i) => (
                 <div key={c} title={c} style={{ marginLeft: i === 0 ? 0 : -6 }}>
-                  <Avatar name={c} color={TRACK_HEX[i % TRACK_HEX.length]} size={22} />
+                  <Avatar name={c} color={TRACK_HEXES[i % TRACK_HEXES.length]} size={22} />
                 </div>
               ))}
             </div>
@@ -243,7 +243,7 @@ export default function ClipCard({ clip, onDub, onMeme, onDelete, onRename, onSt
           onClick={e => { e.stopPropagation(); if (e.target === e.currentTarget) setWatching(false) }}
           style={{
             position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 'var(--z-modal)',
           }}
         >
           <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden', maxWidth: '90vw', width: 800 }}>
@@ -251,7 +251,7 @@ export default function ClipCard({ clip, onDub, onMeme, onDelete, onRename, onSt
               <span style={{ fontSize: 13, fontWeight: 600 }}>{clip.name}</span>
               <span style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>{fmt(duration)}</span>
               <div style={{ flex: 1 }} />
-              <button onClick={() => setWatching(false)} style={{ color: 'var(--text2)', background: 'none', fontSize: 16, padding: '2px 8px', borderRadius: 3, border: '1px solid var(--border2)' }}>✕</button>
+              <Btn size="sm" icon={ICONS.close} onClick={() => setWatching(false)} title="Fermer" />
             </div>
             <video src={segmentUrl} controls autoPlay style={{ display: 'block', width: '100%', background: '#000' }} />
           </div>
@@ -277,7 +277,7 @@ function ActionBtn({ children, onClick, accent, danger, title, disabled, mono, l
           ? (danger ? 'var(--danger-soft)' : accent ? 'var(--accent-soft)' : 'var(--hover)')
           : 'transparent',
         color: disabled ? 'var(--text3)' : danger ? 'var(--danger)' : accent ? 'var(--accent)' : 'var(--text2)',
-        fontSize: mono ? 10 : 11.5,
+        fontSize: mono ? 11 : 11.5,
         fontWeight: accent ? 600 : mono ? 700 : 400,
         fontFamily: mono ? 'var(--font-mono)' : 'var(--font-ui)',
         borderRight: last ? 'none' : '1px solid var(--border)',

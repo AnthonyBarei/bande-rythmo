@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react'
 import { TRACK_COLORS } from '../config/tracks'
 import { fmtClockPrecise, parseTC } from '../utils/timecode'
 import { isActiveAt, activeIndexAt } from '../utils/band'
+import { Icon, ICONS, Btn, SectionLabel } from '../ui'
 
 const NOTATION_TAGS = [
   { label: '(HH)', title: 'Inspiration',  color: '#7ec0ff' },
@@ -39,7 +40,7 @@ function TCInput({ value, onCommit, color = 'var(--text2)' }) {
           if (e.key === 'Enter') { e.preventDefault(); commit() }
           if (e.key === 'Escape') { e.preventDefault(); setEditing(false) }
         }}
-        style={{ width: 72, fontFamily: 'var(--font-mono)', fontSize: 11, background: '#0a0a0a', color, border: '1px solid #f5c518', borderRadius: 2, padding: '2px 4px', outline: 'none' }}
+        style={{ width: 72, fontFamily: 'var(--font-mono)', fontSize: 11, background: 'var(--bg)', color, border: '1px solid var(--accent)', borderRadius: 2, padding: '2px 4px', outline: 'none' }}
       />
     )
   }
@@ -49,7 +50,7 @@ function TCInput({ value, onCommit, color = 'var(--text2)' }) {
       border: '1px solid transparent', borderRadius: 2, padding: '2px 4px', textAlign: 'left', cursor: 'text',
       transition: 'border-color 0.12s',
     }}
-    onMouseEnter={e => { e.currentTarget.style.borderColor = '#333' }}
+    onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--border2)' }}
     onMouseLeave={e => { e.currentTarget.style.borderColor = 'transparent' }}
     >{fmtTC(value)}</button>
   )
@@ -60,12 +61,12 @@ function CharOption({ name, idx, active, onClick }) {
   return (
     <button onClick={onClick} style={{
       display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '6px 10px',
-      background: active ? 'rgba(245, 197, 24,0.08)' : 'transparent',
+      background: active ? 'var(--accent-dim)' : 'transparent',
       border: 'none', fontSize: 12, textAlign: 'left', cursor: 'pointer', color: 'var(--text)',
     }}>
       <span style={{ width: 8, height: 8, borderRadius: '50%', background: c.label, flexShrink: 0 }} />
       <span style={{ flex: 1 }}>{name || '(défaut)'}</span>
-      {active && <span style={{ color: '#f5c518', fontSize: 10 }}>✓</span>}
+      {active && <Icon d={ICONS.check} size={12} stroke="var(--accent)" />}
     </button>
   )
 }
@@ -90,7 +91,7 @@ function CharSelect({ value, charMap, charList, onSelect, onCreate, compact = fa
         <button onClick={e => { e.stopPropagation(); setOpen(o => !o) }} title={value || '(défaut)'} style={{
           display: 'flex', alignItems: 'center', padding: '2px 7px', borderRadius: 99,
           background: c.label + '1e', border: `1px solid ${c.label}44`,
-          cursor: 'pointer', fontSize: 9, fontWeight: 700, color: c.label,
+          cursor: 'pointer', fontSize: 11, fontWeight: 700, color: c.label,
           letterSpacing: 0.4, textTransform: 'uppercase', maxWidth: 78,
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
         }}>
@@ -98,18 +99,18 @@ function CharSelect({ value, charMap, charList, onSelect, onCreate, compact = fa
         </button>
         {open && (
           <div style={{
-            position: 'absolute', top: 'calc(100% + 3px)', left: 0, minWidth: 160, zIndex: 30,
-            background: '#111', border: '1px solid #2a2a2a', borderRadius: 6,
+            position: 'absolute', top: 'calc(100% + 3px)', left: 0, minWidth: 160, zIndex: 'var(--z-dropdown)',
+            background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: 6,
             boxShadow: '0 8px 24px rgba(0,0,0,0.7)', padding: '4px 0',
           }}>
             {charList.map(ch => (
               <CharOption key={ch || '_def'} name={ch} idx={charMap[ch] ?? 0} active={ch === (value || '')}
                 onClick={() => { onSelect(ch); setOpen(false) }} />
             ))}
-            <div style={{ borderTop: '1px solid #1e1e1e', margin: '4px 0' }} />
+            <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0' }} />
             <button onClick={() => { onCreate(); setOpen(false) }} style={{
               display: 'block', width: '100%', padding: '6px 10px', fontSize: 11,
-              color: '#f5c518', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer',
+              color: 'var(--accent)', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer',
             }}>+ Nouveau personnage…</button>
           </div>
         )}
@@ -127,22 +128,22 @@ function CharSelect({ value, charMap, charList, onSelect, onCreate, compact = fa
       }}>
         <span style={{ width: 7, height: 7, borderRadius: '50%', background: c.label, flexShrink: 0 }} />
         <span style={{ flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 72 }}>{value || '(défaut)'}</span>
-        <span style={{ fontSize: 8, color: 'var(--text3)', flexShrink: 0 }}>▾</span>
+        <Icon d={ICONS.chevron} size={11} stroke="var(--text3)" style={{ flexShrink: 0 }} />
       </button>
       {open && (
         <div style={{
-          position: 'absolute', top: 'calc(100% + 3px)', left: 0, minWidth: 160, zIndex: 30,
-          background: '#111', border: '1px solid #2a2a2a', borderRadius: 6,
+          position: 'absolute', top: 'calc(100% + 3px)', left: 0, minWidth: 160, zIndex: 'var(--z-dropdown)',
+          background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: 6,
           boxShadow: '0 8px 24px rgba(0,0,0,0.7)', padding: '4px 0',
         }}>
           {charList.map(ch => (
             <CharOption key={ch || '_def'} name={ch} idx={charMap[ch] ?? 0} active={ch === (value || '')}
               onClick={() => { onSelect(ch); setOpen(false) }} />
           ))}
-          <div style={{ borderTop: '1px solid #1e1e1e', margin: '4px 0' }} />
+          <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0' }} />
           <button onClick={() => { onCreate(); setOpen(false) }} style={{
             display: 'block', width: '100%', padding: '6px 10px', fontSize: 11,
-            color: '#f5c518', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer',
+            color: 'var(--accent)', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer',
           }}>+ Nouveau personnage…</button>
         </div>
       )}
@@ -156,7 +157,7 @@ const Ic = ({ d, size = 14 }) => (
   </svg>
 )
 
-const ICONS = {
+const ROW_ICONS = {
   eye:    <><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></>,
   eyeOff: <><path d="M9.9 4.24A9.1 9.1 0 0 1 12 4c6.4 0 10 7 10 7a16.8 16.8 0 0 1-3.06 3.88M6.6 6.6A16.9 16.9 0 0 0 2 12s3.6 7 10 7a9.1 9.1 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/><line x1="3" y1="3" x2="21" y2="21"/></>,
   note:   <><path d="M21 14a2 2 0 0 1-2 2H8l-4 4V5a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2z"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="12.5" x2="13" y2="12.5"/></>,
@@ -216,7 +217,7 @@ function SubtitleRow({ sub, idx, active, selected, compact, charMap, charList, o
   const icBtn = (title, color, onClick, children) => (
     <button title={title} onClick={e => { e.stopPropagation(); onClick() }} style={{
       background: 'transparent', border: '1px solid transparent', color,
-      width: 28, height: 28, borderRadius: 6,
+      width: 32, height: 32, borderRadius: 6,
       cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
       opacity: 0.55, transition: 'opacity 0.12s, background 0.12s, border-color 0.12s',
     }}
@@ -249,7 +250,7 @@ function SubtitleRow({ sub, idx, active, selected, compact, charMap, charList, o
           width: 22, height: 22, flexShrink: 0, borderRadius: 4, marginTop: 1,
           background: c.label + '22', color: c.label,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700,
+          fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 700,
         }}>{idx + 1}</div>
 
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -262,12 +263,12 @@ function SubtitleRow({ sub, idx, active, selected, compact, charMap, charList, o
             />
             <TCInput value={sub.start} color="var(--text3)"
               onCommit={t => onChange({ ...sub, start: Math.min(t, sub.end - 0.1) })} />
-            <span style={{ color: 'var(--text4)', fontSize: 10 }}>→</span>
+            <span style={{ color: 'var(--text4)', fontSize: 11 }}>→</span>
             <TCInput value={sub.end} color="var(--text3)"
               onCommit={t => onChange({ ...sub, end: Math.max(t, sub.start + 0.1) })} />
             <div style={{ flex: 1 }} />
             <span title={`${cps.toFixed(1)} c/s`} style={{
-              fontSize: 10, fontFamily: 'var(--font-mono)',
+              fontSize: 11, fontFamily: 'var(--font-mono)',
               color: cpsHigh ? 'var(--danger)' : 'var(--text4)',
               fontWeight: cpsHigh ? 700 : 400,
             }}>{dur.toFixed(1)}s</span>
@@ -290,11 +291,11 @@ function SubtitleRow({ sub, idx, active, selected, compact, charMap, charList, o
             <button onClick={e => { e.stopPropagation(); setShowNotations(n => !n) }}
               title="Notations de doublage"
               style={{
-                width: 22, height: 22, flexShrink: 0, borderRadius: 6, cursor: 'pointer', fontSize: 12,
+                width: 32, height: 32, margin: '-5px 0', flexShrink: 0, borderRadius: 6, cursor: 'pointer', fontSize: 12,
                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                 background: showNotations ? 'var(--accent-soft)' : 'transparent',
                 color: showNotations ? 'var(--accent)' : 'var(--text4)',
-                border: `1px solid ${showNotations ? 'rgba(245,197,24,0.4)' : 'transparent'}`,
+                border: `1px solid ${showNotations ? 'var(--accent-ring)' : 'transparent'}`,
                 transition: 'background 0.12s, color 0.12s, border-color 0.12s',
               }}
               onMouseEnter={e => { if (!showNotations) { e.currentTarget.style.background = 'var(--surface2)'; e.currentTarget.style.borderColor = 'var(--border2)' } }}
@@ -307,7 +308,7 @@ function SubtitleRow({ sub, idx, active, selected, compact, charMap, charList, o
           {/* Note line — free-text annotation, shown when toggled or present */}
           {(showNote || sub.note) && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Ic d={ICONS.note} size={11} />
+              <Ic d={ROW_ICONS.note} size={11} />
               <input
                 value={sub.note || ''}
                 autoFocus={showNote && !sub.note}
@@ -317,15 +318,14 @@ function SubtitleRow({ sub, idx, active, selected, compact, charMap, charList, o
                 placeholder="Note — intention, intonation, didascalie…"
                 style={{
                   flex: 1, fontFamily: 'var(--font-ui)', fontSize: 11.5, fontStyle: 'italic',
-                  padding: '2px 6px', background: 'rgba(245,197,24,0.06)',
-                  border: '1px solid rgba(245,197,24,0.25)', borderRadius: 4,
+                  padding: '2px 6px', background: 'var(--accent-dim)',
+                  border: '1px solid var(--accent-ring)', borderRadius: 4,
                   color: 'var(--accent)', outline: 'none', minWidth: 0,
                 }}
               />
               {sub.note && (
-                <button onClick={e => { e.stopPropagation(); onChange({ ...sub, note: '' }); setShowNote(false) }}
-                  title="Effacer la note"
-                  style={{ background: 'none', border: 'none', color: 'var(--text4)', cursor: 'pointer', fontSize: 12, flexShrink: 0 }}>✕</button>
+                <Btn size="sm" icon={ICONS.close} title="Effacer la note"
+                  onClick={e => { e.stopPropagation(); onChange({ ...sub, note: '' }); setShowNote(false) }} />
               )}
             </div>
           )}
@@ -333,10 +333,10 @@ function SubtitleRow({ sub, idx, active, selected, compact, charMap, charList, o
 
         {/* Actions — reveal on row hover (prototype: clean rows) */}
         <div className="row-actions" style={{ position: 'absolute', top: 6, right: 8, display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0, background: (selected || active) ? c.label + '22' : 'var(--surface)', borderRadius: 7, padding: 1, boxShadow: '0 1px 4px rgba(0,0,0,0.25)' }}>
-          {icBtn('Aller au timecode', 'var(--info)', () => onSeek?.(sub.start), <Ic d={ICONS.goto} size={13} />)}
-          {icBtn(sub.note ? `Note : ${sub.note}` : 'Ajouter une note', sub.note ? 'var(--accent)' : 'var(--text4)', () => setShowNote(v => !v), <Ic d={ICONS.note} size={13} />)}
-          {icBtn(sub.hidden ? 'Masqué' : 'Visible', sub.hidden ? 'var(--text4)' : 'var(--success)', () => onChange({ ...sub, hidden: !sub.hidden }), <Ic d={sub.hidden ? ICONS.eyeOff : ICONS.eye} size={13} />)}
-          {icBtn('Supprimer', 'var(--danger)', onDelete, <Ic d={ICONS.trash} size={13} />)}
+          {icBtn('Aller au timecode', 'var(--info)', () => onSeek?.(sub.start), <Ic d={ROW_ICONS.goto} size={13} />)}
+          {icBtn(sub.note ? `Note : ${sub.note}` : 'Ajouter une note', sub.note ? 'var(--accent)' : 'var(--text4)', () => setShowNote(v => !v), <Ic d={ROW_ICONS.note} size={13} />)}
+          {icBtn(sub.hidden ? 'Masqué' : 'Visible', sub.hidden ? 'var(--text4)' : 'var(--success)', () => onChange({ ...sub, hidden: !sub.hidden }), <Ic d={sub.hidden ? ROW_ICONS.eyeOff : ROW_ICONS.eye} size={13} />)}
+          {icBtn('Supprimer', 'var(--danger)', onDelete, <Ic d={ROW_ICONS.trash} size={13} />)}
         </div>
       </div>
     )
@@ -349,8 +349,8 @@ function SubtitleRow({ sub, idx, active, selected, compact, charMap, charList, o
       onClick={handleRowClick}
       style={{
         display: 'flex', alignItems: 'center', gap: 0,
-        background: selected ? 'rgba(245, 197, 24,0.07)' : (active ? 'rgba(255,255,255,0.02)' : 'transparent'),
-        borderBottom: '1px solid #141414',
+        background: selected ? 'var(--accent-dim)' : (active ? 'rgba(255,255,255,0.02)' : 'transparent'),
+        borderBottom: '1px solid var(--border)',
         borderLeft: `3px solid ${selected ? c.label : (active ? c.label + '88' : 'transparent')}`,
         cursor: 'pointer', userSelect: 'none', minHeight: 42,
         transition: 'background 0.1s',
@@ -360,21 +360,21 @@ function SubtitleRow({ sub, idx, active, selected, compact, charMap, charList, o
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 8px', flexShrink: 0 }}>
         <input type="checkbox" checked={!!selected} readOnly
           onClick={e => { e.stopPropagation(); onSelect() }}
-          style={{ accentColor: '#f5c518', width: 13, height: 13, margin: 0, cursor: 'pointer' }} />
-        <span style={{ fontSize: 9, color: '#444', minWidth: 16, textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{idx + 1}</span>
+          style={{ accentColor: 'var(--accent)', width: 13, height: 13, margin: 0, cursor: 'pointer' }} />
+        <span style={{ fontSize: 11, color: 'var(--text4)', minWidth: 16, textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{idx + 1}</span>
       </div>
 
       {/* Timecodes */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '0 6px', flexShrink: 0, borderLeft: '1px solid #1a1a1a', borderRight: '1px solid #1a1a1a' }}>
-        <TCInput value={sub.start} color="#f5c518"
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '0 6px', flexShrink: 0, borderLeft: '1px solid var(--border)', borderRight: '1px solid var(--border)' }}>
+        <TCInput value={sub.start} color="var(--accent)"
           onCommit={t => onChange({ ...sub, start: Math.min(t, sub.end - 0.1) })} />
-        <span style={{ color: '#333', fontSize: 10 }}>→</span>
-        <TCInput value={sub.end} color="#f5c518"
+        <span style={{ color: 'var(--text4)', fontSize: 11 }}>→</span>
+        <TCInput value={sub.end} color="var(--accent)"
           onCommit={t => onChange({ ...sub, end: Math.max(t, sub.start + 0.1) })} />
       </div>
 
       {/* Character */}
-      <div style={{ padding: '0 8px', flexShrink: 0, borderRight: '1px solid #1a1a1a' }}>
+      <div style={{ padding: '0 8px', flexShrink: 0, borderRight: '1px solid var(--border)' }}>
         <CharSelect value={sub.character || ''} charMap={charMap} charList={charList}
           onSelect={v => onChange({ ...sub, character: v })}
           onCreate={onNewCharacter}
@@ -382,7 +382,7 @@ function SubtitleRow({ sub, idx, active, selected, compact, charMap, charList, o
       </div>
 
       {/* Text + notation */}
-      <div ref={notationRef} style={{ flex: 1, padding: '0 4px 0 8px', borderRight: '1px solid #1a1a1a', position: 'relative', display: 'flex', alignItems: 'center', gap: 2 }}>
+      <div ref={notationRef} style={{ flex: 1, padding: '0 4px 0 8px', borderRight: '1px solid var(--border)', position: 'relative', display: 'flex', alignItems: 'center', gap: 2 }}>
         <input
           ref={textInputRef}
           value={sub.text}
@@ -397,7 +397,7 @@ function SubtitleRow({ sub, idx, active, selected, compact, charMap, charList, o
         />
         <button onClick={e => { e.stopPropagation(); setShowNotations(n => !n) }}
           title="Notations de doublage (HH, rires, …)"
-          style={{ background: 'none', border: 'none', color: showNotations ? '#f5c518' : '#333', padding: '2px 4px', cursor: 'pointer', fontSize: 13, flexShrink: 0, borderRadius: 2, transition: 'color 0.1s' }}>
+          style={{ background: 'none', border: 'none', color: showNotations ? 'var(--accent)' : 'var(--text4)', padding: '2px 4px', minWidth: 32, minHeight: 32, cursor: 'pointer', fontSize: 13, flexShrink: 0, borderRadius: 2, transition: 'color 0.1s' }}>
           ≈
         </button>
         {showNotations && <NotationPopover tags={NOTATION_TAGS} onInsert={insertNotation} />}
@@ -406,14 +406,14 @@ function SubtitleRow({ sub, idx, active, selected, compact, charMap, charList, o
       {/* Stats + actions */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 2, padding: '0 8px', flexShrink: 0 }}>
         <span style={{
-          fontSize: 9, color: cpsHigh ? '#e54545' : '#444',
+          fontSize: 11, color: cpsHigh ? 'var(--danger)' : 'var(--text4)',
           fontFamily: 'var(--font-mono)', fontWeight: cpsHigh ? 700 : 400,
           marginRight: 4, minWidth: 32,
         }} title={`${cps.toFixed(1)} c/s`}>{dur.toFixed(2)}s</span>
-        {icBtn('Aller au timecode', '#7ec0ff', () => onSeek?.(sub.start), <Ic d={ICONS.goto} />)}
-        {icBtn(sub.hidden ? 'Masqué' : 'Visible', sub.hidden ? '#444' : '#6eb', () => onChange({ ...sub, hidden: !sub.hidden }), <Ic d={sub.hidden ? ICONS.eyeOff : ICONS.eye} />)}
-        {icBtn(sub.note ? `Note : ${sub.note}` : 'Ajouter une note', sub.note ? '#f5c518' : '#333', () => setShowNote(v => !v), <Ic d={ICONS.note} />)}
-        {icBtn('Supprimer', '#7a3535', onDelete, <Ic d={ICONS.trash} />)}
+        {icBtn('Aller au timecode', 'var(--info)', () => onSeek?.(sub.start), <Ic d={ROW_ICONS.goto} />)}
+        {icBtn(sub.hidden ? 'Masqué' : 'Visible', sub.hidden ? 'var(--text4)' : 'var(--success)', () => onChange({ ...sub, hidden: !sub.hidden }), <Ic d={sub.hidden ? ROW_ICONS.eyeOff : ROW_ICONS.eye} />)}
+        {icBtn(sub.note ? `Note : ${sub.note}` : 'Ajouter une note', sub.note ? 'var(--accent)' : 'var(--text4)', () => setShowNote(v => !v), <Ic d={ROW_ICONS.note} />)}
+        {icBtn('Supprimer', 'var(--danger)', onDelete, <Ic d={ROW_ICONS.trash} />)}
       </div>
     </div>
   )
@@ -422,20 +422,20 @@ function SubtitleRow({ sub, idx, active, selected, compact, charMap, charList, o
 function NotationPopover({ tags, onInsert }) {
   return (
     <div style={{
-      position: 'absolute', top: 'calc(100% + 2px)', left: 0, zIndex: 30,
-      background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: 6,
+      position: 'absolute', top: 'calc(100% + 2px)', left: 0, zIndex: 'var(--z-dropdown)',
+      background: 'var(--bg)', border: '1px solid var(--border2)', borderRadius: 6,
       padding: '8px 10px', display: 'flex', flexWrap: 'wrap', gap: 4, minWidth: 280,
       boxShadow: '0 6px 20px rgba(0,0,0,0.8)',
     }}>
-      <div style={{ width: '100%', fontSize: 9, color: '#555', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 2 }}>
+      <SectionLabel style={{ width: '100%', textTransform: 'uppercase', marginBottom: 2 }}>
         Notations — insère au curseur
-      </div>
+      </SectionLabel>
       {tags.map(n => (
         <button key={n.label}
           onMouseDown={e => { e.preventDefault(); e.stopPropagation(); onInsert(n.label) }}
           title={n.title}
           style={{
-            fontSize: 10, padding: '4px 8px',
+            fontSize: 11, padding: '4px 8px', minHeight: 32,
             background: 'rgba(255,255,255,0.04)', border: `1px solid ${n.color}44`,
             color: n.color, borderRadius: 4, cursor: 'pointer', fontFamily: 'var(--font-mono)',
             transition: 'background 0.1s, border-color 0.1s',
@@ -448,12 +448,6 @@ function NotationPopover({ tags, onInsert }) {
       ))}
     </div>
   )
-}
-
-const toolBtn = {
-  padding: '4px 10px', background: 'var(--surface3)', color: 'var(--text2)',
-  border: '1px solid var(--border2)', borderRadius: 4, fontSize: 11, cursor: 'pointer',
-  display: 'inline-flex', alignItems: 'center', gap: 4,
 }
 
 export default function SubtitleEditor({ subtitles, onChange, currentTime = 0, onSeek, selectedIdx, setSelectedIdx, compact = false, onDelete, charFilter, clipId }) {
@@ -545,16 +539,16 @@ export default function SubtitleEditor({ subtitles, onChange, currentTime = 0, o
       {(!compact || clipId) && (
         <div style={{ display: 'flex', gap: 4, padding: '6px 10px', flexWrap: 'wrap', alignItems: 'center', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)' }}>
           {!compact && <>
-            <button onClick={addNew} style={{ ...toolBtn, color: 'var(--accent)', borderColor: 'rgba(245,197,24,0.35)', background: 'rgba(245,197,24,0.06)' }}>
+            <Btn size="sm" active onClick={addNew} style={{ border: '1px solid var(--accent-ring)' }}>
               + Réplique
-            </button>
-            <button onClick={sortByTime} style={toolBtn}>⇅ Trier</button>
+            </Btn>
+            <Btn size="sm" variant="solid" onClick={sortByTime}>⇅ Trier</Btn>
             <div style={{ width: 1, height: 16, background: 'var(--border2)', margin: '0 2px' }} />
-            <span style={{ fontSize: 10, color: 'var(--text3)' }}>Décaler</span>
-            <button onClick={() => shiftAll(-1)} style={toolBtn}>−1s</button>
-            <button onClick={() => shiftAll(0.1)} style={toolBtn}>+.1</button>
-            <button onClick={() => shiftAll(-0.1)} style={toolBtn}>−.1</button>
-            <button onClick={() => shiftAll(1)} style={toolBtn}>+1s</button>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>Décaler</span>
+            <Btn size="sm" variant="solid" onClick={() => shiftAll(-1)}>−1s</Btn>
+            <Btn size="sm" variant="solid" onClick={() => shiftAll(0.1)}>+.1</Btn>
+            <Btn size="sm" variant="solid" onClick={() => shiftAll(-0.1)}>−.1</Btn>
+            <Btn size="sm" variant="solid" onClick={() => shiftAll(1)}>+1s</Btn>
           </>}
           <div style={{ flex: 1 }} />
           {clipId && (
@@ -566,22 +560,22 @@ export default function SubtitleEditor({ subtitles, onChange, currentTime = 0, o
                 style={{ display: 'none' }}
                 onChange={handleImportFile}
               />
-              <button
+              <Btn size="sm" variant="solid"
                 onClick={() => importInputRef.current?.click()}
                 disabled={importing}
-                title="Importer sous-titres (SRT / ASS / VTT) — remplace les répliques existantes"
-                style={{ ...toolBtn, color: 'var(--text2)', opacity: importing ? 0.5 : 1 }}>
+                title="Importer sous-titres (SRT / ASS / VTT) — remplace les répliques existantes">
                 {importing ? '…' : '⇑ Import'}
-              </button>
+              </Btn>
             </>
           )}
           {importError && (
-            <span style={{ fontSize: 10, color: 'var(--danger)', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--danger)', maxWidth: 180 }}
               title={importError}>
-              ✕ {importError}
+              <Icon d={ICONS.warn} size={12} stroke="var(--danger)" style={{ flexShrink: 0 }} />
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{importError}</span>
             </span>
           )}
-          <span style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>
+          <span style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>
             {subtitles.length} répl.
           </span>
         </div>

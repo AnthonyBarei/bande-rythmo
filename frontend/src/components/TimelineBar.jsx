@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react'
+import { Btn, Icon, ICONS, SectionLabel } from '../ui'
 
 const EDGE = 8
 const MIN_DUR = 0.2
@@ -200,20 +201,20 @@ export default function TimelineBar({
     <div style={{ background: 'var(--surface)', borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)' }}>
       {/* (a) Zoom control bar */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, height: 36, padding: '0 12px', borderBottom: '1px solid var(--border)' }}>
-        <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: 1, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>TIMELINE</span>
-        <span style={{ fontSize: 10.5, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>
+        <SectionLabel>TIMELINE</SectionLabel>
+        <span style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>
           {fmtClock(vs)} – {fmtClock(vs + viewDur)} sur {fmtClock(duration)}
         </span>
         <div style={{ flex: 1 }} />
-        <button onClick={() => zoomTo(zoom - 0.5)} style={zBtn}>−</button>
+        <Btn variant="solid" size="sm" onClick={() => zoomTo(zoom - 0.5)} style={{ padding: 0, fontSize: 14 }}>−</Btn>
         <input
           type="range" min={MIN_ZOOM} max={MAX_ZOOM} step={0.5} value={zoom}
           onChange={e => zoomTo(Number(e.target.value))}
           style={{ width: 120, color: 'var(--accent)' }}
         />
-        <button onClick={() => zoomTo(zoom + 0.5)} style={zBtn}>+</button>
+        <Btn variant="solid" size="sm" onClick={() => zoomTo(zoom + 0.5)} style={{ padding: 0, fontSize: 14 }}>+</Btn>
         <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--accent)', minWidth: 34 }}>{zoom.toFixed(1)}×</span>
-        <button onClick={() => { setZoom(1); setViewStart(0) }} style={{ ...zBtn, width: 'auto', padding: '0 8px' }}>Tout voir</button>
+        <Btn variant="solid" size="sm" onClick={() => { setZoom(1); setViewStart(0) }} style={{ padding: '0 8px' }}>Tout voir</Btn>
       </div>
 
       {/* (b) Main zoomed timeline */}
@@ -234,7 +235,7 @@ export default function TimelineBar({
               <div key={t} style={{ position: 'absolute', left: `${x}%`, top: 0, height: '100%', pointerEvents: 'none' }}>
                 <div style={{ position: 'absolute', top: 6, width: 1, height: major ? 8 : 5, background: 'var(--border3)' }} />
                 {major && (
-                  <div style={{ position: 'absolute', top: 2, left: 3, fontSize: 9, color: 'var(--text3)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>
+                  <div style={{ position: 'absolute', top: 2, left: 3, fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>
                     {fmtClock(t)}
                   </div>
                 )}
@@ -256,8 +257,9 @@ export default function TimelineBar({
               background: 'rgba(94,194,124,0.16)', border: '1px solid var(--success)',
               borderRadius: 4, pointerEvents: 'none', display: 'flex', alignItems: 'center', paddingLeft: 5,
             }}>
-              <span style={{ fontSize: 9, color: 'var(--success)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                ✓ {c.name}
+              <Icon d={ICONS.check} size={11} stroke="var(--success)" style={{ flexShrink: 0, marginRight: 4 }} />
+              <span style={{ fontSize: 11, color: 'var(--success)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {c.name}
               </span>
             </div>
           )
@@ -272,16 +274,16 @@ export default function TimelineBar({
             <div key={c._id}>
               <div style={{
                 position: 'absolute', top: 24, bottom: 6, left: `${l}%`, width: `${w}%`,
-                background: 'rgba(245,197,24,0.13)',
-                border: `1.5px solid ${focused ? 'var(--accent)' : 'rgba(245,197,24,0.6)'}`,
+                background: 'var(--accent-soft)',
+                border: `1.5px solid ${focused ? 'var(--accent)' : 'color-mix(in srgb, var(--accent) 60%, transparent)'}`,
                 borderRadius: 4, cursor: 'grab',
               }}>
-                <div style={{ position: 'absolute', left: -3, top: 0, bottom: 0, width: 6, cursor: 'ew-resize', background: 'rgba(245,197,24,0.5)' }} />
-                <div style={{ position: 'absolute', right: -3, top: 0, bottom: 0, width: 6, cursor: 'ew-resize', background: 'rgba(245,197,24,0.5)' }} />
+                <div style={{ position: 'absolute', left: -3, top: 0, bottom: 0, width: 6, cursor: 'ew-resize', background: 'color-mix(in srgb, var(--accent) 50%, transparent)' }} />
+                <div style={{ position: 'absolute', right: -3, top: 0, bottom: 0, width: 6, cursor: 'ew-resize', background: 'color-mix(in srgb, var(--accent) 50%, transparent)' }} />
               </div>
               <div style={{
                 position: 'absolute', top: 10, left: `${l}%`,
-                fontSize: 9, fontWeight: 700, color: 'var(--accent)', fontFamily: 'var(--font-mono)',
+                fontSize: 11, fontWeight: 700, color: 'var(--accent)', fontFamily: 'var(--font-mono)',
                 pointerEvents: 'none', whiteSpace: 'nowrap',
               }}>
                 #{idx + 1}
@@ -299,7 +301,7 @@ export default function TimelineBar({
               position: 'absolute', top: 24, bottom: 6, left: `${l}%`, width: `${w}%`,
               border: '2px dashed var(--accent)', borderRadius: 4, pointerEvents: 'none',
             }}>
-              <div style={{ position: 'absolute', top: -14, left: 0, fontSize: 9, color: 'var(--accent)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>
+              <div style={{ position: 'absolute', top: -14, left: 0, fontSize: 11, color: 'var(--accent)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>
                 {(draft.end - draft.start).toFixed(1)}s
               </div>
             </div>
@@ -351,7 +353,7 @@ export default function TimelineBar({
         <div style={{
           position: 'absolute', top: 0, bottom: 0,
           left: `${(vs / duration) * 100}%`, width: `${(viewDur / duration) * 100}%`,
-          background: 'rgba(245,197,24,0.10)', border: '1px solid var(--accent)', boxSizing: 'border-box',
+          background: 'var(--accent-soft)', border: '1px solid var(--accent)', boxSizing: 'border-box',
         }}>
           <div style={{ position: 'absolute', left: -3, top: 0, bottom: 0, width: 6, cursor: 'ew-resize' }} />
           <div style={{ position: 'absolute', right: -3, top: 0, bottom: 0, width: 6, cursor: 'ew-resize' }} />
@@ -359,17 +361,11 @@ export default function TimelineBar({
       </div>
 
       {/* (d) Helper tip */}
-      <div style={{ padding: '6px 12px', background: 'var(--bg)', fontSize: 10, color: 'var(--text4)', fontFamily: 'var(--font-mono)', display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+      <div style={{ padding: '6px 12px', background: 'var(--bg)', fontSize: 11, color: 'var(--text4)', fontFamily: 'var(--font-mono)', display: 'flex', gap: 14, flexWrap: 'wrap' }}>
         <span>Cliquer-glisser pour créer un clip</span>
         <span>⌥ + molette pour zoomer</span>
         <span>Suppr retirer le bloc</span>
       </div>
     </div>
   )
-}
-
-const zBtn = {
-  minWidth: 30, height: 30, background: 'var(--surface2)', color: 'var(--text2)',
-  border: '1px solid var(--border2)', borderRadius: 9, fontSize: 14, cursor: 'pointer',
-  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
 }

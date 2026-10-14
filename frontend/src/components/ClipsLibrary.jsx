@@ -2,6 +2,8 @@ import React, { useState, useMemo } from 'react'
 import ClipCard from './ClipCard'
 import { Icon, ICONS } from '../Icons'
 import { Btn, Select, ScreenHeader } from '../ui'
+import { TRACK_HEXES } from '../config/tracks'
+import { useToast } from '../ToastContext'
 
 const FILTERS = [
   { key: 'all',     label: 'Tous' },
@@ -25,7 +27,7 @@ function fmtTotal(sec) {
 }
 
 export default function ClipsLibrary({ clips, onDub, onMeme, onDelete, onRename, onStatusChange, onNewClip, onSetProject }) {
-  const [toast, setToast] = useState(null)
+  const toast = useToast()
   const [filter, setFilter] = useState('all')
   const [sort, setSort] = useState('recent')
   const [search, setSearch] = useState('')
@@ -44,12 +46,7 @@ export default function ClipsLibrary({ clips, onDub, onMeme, onDelete, onRename,
     const name = window.prompt('Nom du projet (vide = retirer du projet) :')
     if (name == null) return
     const ok = await onSetProject?.(clipId, name.trim())
-    if (ok) showToast(name.trim() ? `Déplacé vers « ${name.trim()} »` : 'Retiré du projet')
-  }
-
-  function showToast(msg, type = 'info') {
-    setToast({ msg, type })
-    setTimeout(() => setToast(null), 3000)
+    if (ok) toast.success(name.trim() ? `Déplacé vers « ${name.trim()} »` : 'Retiré du projet')
   }
 
   const counts = useMemo(() => {
@@ -78,7 +75,7 @@ export default function ClipsLibrary({ clips, onDub, onMeme, onDelete, onRename,
 
   const projectOptions = useMemo(() => [
     { v: '__all', l: 'Tous les projets', icon: ICONS.grid },
-    ...projects.map((p, i) => ({ v: p, l: p, dot: ['#f5c518', '#7ec0ff', '#f08aaf', '#7ed4a8'][i % 4] })),
+    ...projects.map((p, i) => ({ v: p, l: p, dot: TRACK_HEXES[i % TRACK_HEXES.length] })),
     { v: '__none', l: 'Sans projet' },
   ], [projects])
 
@@ -120,8 +117,8 @@ export default function ClipsLibrary({ clips, onDub, onMeme, onDelete, onRename,
               }}>
                 {f.label}
                 <span style={{
-                  fontSize: 10.5, padding: '1px 6px', borderRadius: 99, fontFamily: 'var(--font-mono)',
-                  background: active ? 'rgba(245,197,24,0.13)' : 'var(--surface2)', color: active ? 'var(--accent)' : 'var(--text3)',
+                  fontSize: 11, padding: '1px 6px', borderRadius: 99, fontFamily: 'var(--font-mono)',
+                  background: active ? 'var(--accent-soft)' : 'var(--surface2)', color: active ? 'var(--accent)' : 'var(--text3)',
                 }}>{counts[f.key] || 0}</span>
               </button>
             )
@@ -137,22 +134,16 @@ export default function ClipsLibrary({ clips, onDub, onMeme, onDelete, onRename,
       <div style={{ flex: 1, overflow: 'auto', padding: 28 }}>
         {visible.length === 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60%', gap: 14, color: 'var(--text3)' }}>
-            <div style={{ fontSize: 40, opacity: 0.25 }}>▤</div>
+            <Icon d={ICONS.grid} size={40} style={{ opacity: 0.25 }} />
             <div style={{ fontSize: 14, color: 'var(--text2)' }}>
               {clips.length === 0 ? 'Aucun clip encore' : 'Aucun clip dans ce filtre'}
             </div>
             {clips.length === 0 && (
               <>
                 <div style={{ fontSize: 12 }}>Importez une vidéo et découpez des segments</div>
-                <button onClick={onNewClip}
-                  style={{
-                    marginTop: 4, padding: '10px 20px',
-                    background: 'var(--accent)', color: '#000',
-                    fontWeight: 600, fontSize: 13,
-                    borderRadius: 'var(--radius)', cursor: 'pointer',
-                  }}>
-                  + Importer une vidéo
-                </button>
+                <Btn variant="primary" size="lg" icon={ICONS.plus} onClick={onNewClip} style={{ marginTop: 4 }}>
+                  Importer une vidéo
+                </Btn>
               </>
             )}
           </div>
@@ -174,16 +165,6 @@ export default function ClipsLibrary({ clips, onDub, onMeme, onDelete, onRename,
         )}
       </div>
 
-      {toast && (
-        <div style={{
-          position: 'fixed', bottom: 24, right: 24, padding: '10px 18px',
-          background: toast.type === 'error' ? 'var(--danger)' : toast.type === 'success' ? 'var(--success)' : 'var(--surface3)',
-          color: '#fff', borderRadius: 'var(--radius)', fontSize: 13, fontWeight: 500,
-          zIndex: 1000, boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
-        }}>
-          {toast.msg}
-        </div>
-      )}
     </div>
   )
 }

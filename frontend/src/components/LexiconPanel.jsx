@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
+import { Btn, ICONS } from '../ui'
 
 // Dubbing lexicon — per-project term glossary (translation + pronunciation).
 // Scoped to the clip's project; project='' entries are global (shown everywhere).
@@ -72,11 +73,11 @@ export default function LexiconPanel({ project = '' }) {
             onKeyDown={e => { if (e.key === 'Enter') add() }}
             placeholder="Prononciation" style={inp} />
           <button onClick={add} disabled={busy || !term.trim()}
-            style={{ padding: '6px 14px', background: term.trim() ? 'var(--accent)' : 'var(--surface3)', color: term.trim() ? '#000' : 'var(--text4)', fontWeight: 600, fontSize: 12, border: 'none', borderRadius: 6, cursor: term.trim() ? 'pointer' : 'default', flexShrink: 0 }}>
+            style={{ padding: '6px 14px', minHeight: 32, background: term.trim() ? 'var(--accent)' : 'var(--surface3)', color: term.trim() ? '#0b0b0d' : 'var(--text4)', fontWeight: 600, fontSize: 12, border: 'none', borderRadius: 6, cursor: term.trim() ? 'pointer' : 'default', flexShrink: 0 }}>
             + Ajouter
           </button>
         </div>
-        <span style={{ fontSize: 10, color: 'var(--text4)' }}>
+        <span style={{ fontSize: 11, color: 'var(--text4)' }}>
           {project ? `Projet « ${project} » + termes globaux` : 'Termes globaux (aucun projet)'}
         </span>
         {error && <span style={{ fontSize: 11, color: 'var(--danger)' }}>{error}</span>}
@@ -100,12 +101,11 @@ export default function LexiconPanel({ project = '' }) {
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
                 <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text)' }}>{e.term}</span>
                 {e.translation && <span style={{ fontSize: 11.5, color: 'var(--accent)' }}>→ {e.translation}</span>}
-                {!e.project && <span style={{ fontSize: 9, color: 'var(--text4)', border: '1px solid var(--border2)', borderRadius: 3, padding: '0 4px' }}>global</span>}
+                {!e.project && <span style={{ fontSize: 11, color: 'var(--text4)', border: '1px solid var(--border2)', borderRadius: 3, padding: '0 4px' }}>global</span>}
               </div>
-              {e.phonetic && <div style={{ fontSize: 10.5, color: 'var(--text3)', fontFamily: 'var(--font-mono)', marginTop: 1 }}>/{e.phonetic}/</div>}
+              {e.phonetic && <div style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)', marginTop: 1 }}>/{e.phonetic}/</div>}
             </div>
-            <button onClick={() => remove(e.id)} title="Supprimer"
-              style={{ background: 'none', border: 'none', color: 'var(--text4)', cursor: 'pointer', fontSize: 13, flexShrink: 0 }}>✕</button>
+            <Btn size="sm" icon={ICONS.close} title="Supprimer" onClick={() => remove(e.id)} />
           </div>
         ))}
       </div>

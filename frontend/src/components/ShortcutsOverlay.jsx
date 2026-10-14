@@ -1,16 +1,6 @@
 import React, { useEffect } from 'react'
 import { createPortal } from 'react-dom'
-
-const Kbd = ({ children }) => (
-  <span style={{
-    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-    minWidth: 22, padding: '1px 6px',
-    background: 'var(--surface3)', border: '1px solid var(--border2)',
-    borderBottom: '2px solid var(--border2)', borderRadius: 4,
-    fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 600,
-    color: 'var(--text)', lineHeight: '18px',
-  }}>{children}</span>
-)
+import { Btn, Kbd, SectionLabel, ICONS } from '../ui'
 
 // PRO_BR_HANDOFF §7 + DubbingWorkspace keymap, condensed.
 const GROUPS = [
@@ -56,6 +46,8 @@ const GROUPS = [
     rows: [
       { keys: ['Ctrl', 'Z'],             label: 'Annuler' },
       { keys: ['Ctrl', 'Y'],             label: 'Rétablir' },
+      { keys: ['⌘', 'K'],                label: 'Palette de commandes' },
+      { keys: ['/'],                     label: 'Palette de commandes' },
       { keys: ['Ctrl', 'S'],             label: 'Sauvegarder (auto-save 1,5 s)' },
       { keys: ['E'],                     label: 'Exporter' },
       { keys: ['?'],                     label: 'Cette aide' },
@@ -83,49 +75,44 @@ export default function ShortcutsOverlay({ open, onClose }) {
       onClick={onClose}
       style={{
         position: 'fixed', inset: 0,
-        background: 'rgba(0,0,0,0.55)',
+        background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(3px)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        zIndex: 100,
+        zIndex: 'var(--z-modal)',
       }}>
       <div
         onClick={e => e.stopPropagation()}
         style={{
-          background: 'var(--surface2)',
+          background: 'var(--surface)',
           border: '1px solid var(--border2)',
-          borderRadius: 8,
-          padding: '20px 24px',
-          width: 'min(820px, 92vw)',
+          borderRadius: 14,
+          padding: 24,
+          width: 'min(860px, 92vw)',
           maxHeight: '88vh', overflow: 'auto',
-          boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+          boxShadow: '0 18px 60px rgba(0,0,0,0.55)',
         }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 14 }}>
-          <h2 style={{ margin: 0, fontSize: 17, color: 'var(--text)' }}>Raccourcis clavier</h2>
-          <span style={{ fontSize: 12, color: 'var(--text3)' }}>Échap pour fermer</span>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 20 }}>
+          <div>
+            <div style={{ fontSize: 11, color: 'var(--text3)', letterSpacing: 1.4, fontWeight: 600, marginBottom: 4, fontFamily: 'var(--font-mono)' }}>
+              AIDE · ÉCHAP POUR FERMER
+            </div>
+            <h2 style={{ margin: 0, fontSize: 20, fontWeight: 600, color: 'var(--text)' }}>Raccourcis clavier</h2>
+          </div>
           <div style={{ flex: 1 }} />
-          <button onClick={onClose}
-            style={{
-              background: 'transparent', border: '1px solid var(--border2)',
-              color: 'var(--text2)', borderRadius: 4, padding: '4px 10px',
-              fontSize: 12, cursor: 'pointer',
-            }}>Fermer</button>
+          <Btn size="sm" icon={ICONS.close} onClick={onClose} title="Fermer" />
         </div>
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
-          gap: 18,
+          gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))',
+          gap: '20px 28px',
         }}>
           {GROUPS.map(g => (
             <div key={g.title}>
-              <div style={{
-                fontSize: 10.5, color: 'var(--text3)', textTransform: 'uppercase',
-                letterSpacing: 1, fontFamily: 'var(--font-mono)', marginBottom: 8,
-              }}>{g.title}</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <SectionLabel style={{ textTransform: 'uppercase', marginBottom: 6 }}>{g.title}</SectionLabel>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
                 {g.rows.map((row, i) => (
                   <div key={i} style={{
-                    display: 'flex', alignItems: 'center', gap: 8,
-                    padding: '5px 8px', background: 'var(--surface)',
-                    border: '1px solid var(--border)', borderRadius: 6,
+                    display: 'flex', alignItems: 'center', gap: 8, padding: '7px 0',
+                    borderTop: i ? '1px solid var(--border)' : 'none',
                   }}>
                     <span style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                       {row.keys.map((k, j) => <Kbd key={j}>{k}</Kbd>)}

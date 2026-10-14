@@ -93,12 +93,12 @@ export default function Preferences() {
                 const active = settings.accent.toLowerCase() === a.hex.toLowerCase()
                 return (
                   <div key={a.hex} onClick={() => update({ accent: a.hex })} title={a.name}
-                    style={{ width: 30, height: 30, borderRadius: 8, background: a.hex, cursor: 'pointer',
+                    style={{ width: 32, height: 32, borderRadius: 8, background: a.hex, cursor: 'pointer',
                       border: active ? '2px solid var(--text)' : '1px solid transparent',
                       boxShadow: active ? `0 0 0 2px ${a.hex}55` : 'none' }} />
                 )
               })}
-              <label style={{ width: 30, height: 30, borderRadius: 8, overflow: 'hidden', cursor: 'pointer', border: '1px dashed var(--border2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Personnalisé">
+              <label style={{ width: 32, height: 32, borderRadius: 8, overflow: 'hidden', cursor: 'pointer', border: '1px dashed var(--border2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Personnalisé">
                 <input type="color" value={settings.accent} onChange={e => update({ accent: e.target.value })} style={{ width: 40, height: 40, padding: 0, border: 'none', background: 'none', cursor: 'pointer' }} />
               </label>
             </div>
@@ -179,10 +179,10 @@ function FontUpload({ onUploaded }) {
       const r = await fetch('/api/fonts/upload', { method: 'POST', body: fd })
       if (!r.ok) throw new Error(`HTTP ${r.status}`)
       const d = await r.json().catch(() => ({}))
-      setMsg(`✓ ${d.name || file.name}`)
+      setMsg({ ok: true, text: d.name || file.name })
       onUploaded?.()
     } catch (err) {
-      setMsg('Erreur : ' + err.message)
+      setMsg({ ok: false, text: 'Erreur : ' + err.message })
     } finally {
       setBusy(false)
       e.target.value = ''
@@ -196,7 +196,11 @@ function FontUpload({ onUploaded }) {
           <Icon d={ICONS.upload} size={15} /> {busy ? 'Envoi…' : 'Importer une police (TTF / OTF)'}
         </span>
       </label>
-      {msg && <span style={{ fontSize: 12, color: msg.startsWith('✓') ? 'var(--success)' : 'var(--danger)' }}>{msg}</span>}
+      {msg && (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: msg.ok ? 'var(--success)' : 'var(--danger)' }}>
+          <Icon d={msg.ok ? ICONS.check : ICONS.warn} size={13} />{msg.text}
+        </span>
+      )}
     </div>
   )
 }

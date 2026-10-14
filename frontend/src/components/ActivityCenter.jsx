@@ -50,7 +50,7 @@ function GroupLabel({ children, color }) {
 
 function Tile({ color, icon, size = 38, r = 9 }) {
   return (
-    <div style={{ width: size, height: size, flexShrink: 0, borderRadius: r, background: color + '14', border: `1px solid ${color}33`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <div style={{ width: size, height: size, flexShrink: 0, borderRadius: r, background: `color-mix(in srgb, ${color} 8%, transparent)`, border: `1px solid color-mix(in srgb, ${color} 20%, transparent)`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <Icon d={icon} size={Math.round(size * 0.47)} stroke={color} />
     </div>
   )
@@ -160,7 +160,7 @@ function RunRow({ j, onCancel }) {
       </div>
       <div style={{ textAlign: 'right', minWidth: 56 }}>
         <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--accent)' }}>{pct}%</div>
-        {j.eta != null && <div style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>~{fmtEta(j.eta)}</div>}
+        {j.eta != null && <div style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>~{fmtEta(j.eta)}</div>}
       </div>
       <Btn size="sm" variant="outline" onClick={onCancel}>Annuler</Btn>
     </div>
@@ -169,7 +169,7 @@ function RunRow({ j, onCancel }) {
 
 function FailRow({ j, onRetry, onDismiss }) {
   return (
-    <div style={{ ...rowBase, background: 'rgba(232,89,93,0.05)', borderColor: 'rgba(232,89,93,0.27)' }}>
+    <div style={{ ...rowBase, background: 'color-mix(in srgb, var(--danger) 5%, transparent)', borderColor: 'color-mix(in srgb, var(--danger) 27%, transparent)' }}>
       <Tile color="var(--danger)" icon={iconFor(j.kind)} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 13.5, fontWeight: 600 }}>{j.title}</div>
@@ -189,7 +189,7 @@ function DoneJobRow({ j, onDismiss }) {
       <Tile color={color} icon={cancelled ? ICONS.close : ICONS.check} size={34} r={8} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 600 }}>{j.title}</div>
-        <div style={{ fontSize: 10.5, color: 'var(--text3)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>{cancelled ? 'Annulé' : (j.stage || 'Terminé')}</div>
+        <div style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>{cancelled ? 'Annulé' : (j.stage || 'Terminé')}</div>
       </div>
       <Btn size="sm" variant="outline" icon={ICONS.close} onClick={onDismiss} title="Retirer" />
     </div>
@@ -213,7 +213,7 @@ function ExportRow({ e }) {
           <span style={{ fontSize: 13, fontWeight: 600 }}>{(e.format || '').toUpperCase()}</span>
           <span style={{ fontSize: 11.5, color: 'var(--text3)' }}>{e.filename}</span>
         </div>
-        <div style={{ fontSize: 10.5, color: 'var(--text3)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
+        <div style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
           {[e.quality, fmtBytes(e.size_bytes), fmtWhen(e.created_at)].filter(Boolean).join(' · ')}
         </div>
       </div>

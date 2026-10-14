@@ -1,10 +1,11 @@
 import React, { createContext, useCallback, useContext, useRef, useState } from 'react'
+import { Icon, ICONS } from './Icons'
 
 /* Toast surface with an undoable variant.
 
    Usage:
      const toast = useToast()
-     toast.show({ msg: 'Exporté ✓', kind: 'success' })
+     toast.show({ msg: 'Exporté', kind: 'success' })
      toast.error('Échec : ' + e.message)
      toast.undo({
        msg: 'Réplique supprimée',
@@ -99,7 +100,7 @@ function ToastStack({ toasts, onDismiss }) {
   if (!toasts.length) return null
   return (
     <div style={{
-      position: 'fixed', left: 14, bottom: 14, zIndex: 1000,
+      position: 'fixed', left: 14, bottom: 14, zIndex: 'var(--z-toast)',
       display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 360,
     }}>
       {toasts.map(t => (
@@ -111,11 +112,11 @@ function ToastStack({ toasts, onDismiss }) {
 
 function ToastCard({ toast, onDismiss }) {
   const colors = {
-    info:    { border: 'var(--border2)',   icon: '·', iconColor: 'var(--text3)' },
-    success: { border: 'var(--success)',   icon: '✓', iconColor: 'var(--success)' },
-    error:   { border: 'var(--danger)',    icon: '✕', iconColor: 'var(--danger)' },
-    undo:    { border: 'var(--accent)',    icon: '↶', iconColor: 'var(--accent)' },
-  }[toast.kind] || { border: 'var(--border2)', icon: '·', iconColor: 'var(--text3)' }
+    info:    { border: 'var(--border2)',   icon: ICONS.dot,   iconColor: 'var(--text3)' },
+    success: { border: 'var(--success)',   icon: ICONS.check, iconColor: 'var(--success)' },
+    error:   { border: 'var(--danger)',    icon: ICONS.warn,  iconColor: 'var(--danger)' },
+    undo:    { border: 'var(--accent)',    icon: ICONS.undo,  iconColor: 'var(--accent)' },
+  }[toast.kind] || { border: 'var(--border2)', icon: ICONS.dot, iconColor: 'var(--text3)' }
 
   return (
     <div style={{
@@ -128,7 +129,7 @@ function ToastCard({ toast, onDismiss }) {
       fontSize: 12.5, color: 'var(--text)',
       minWidth: 260,
     }}>
-      <span style={{ color: colors.iconColor, fontSize: 14, lineHeight: 1 }}>{colors.icon}</span>
+      <Icon d={colors.icon} size={15} stroke={colors.iconColor} style={{ color: colors.iconColor }} />
       <span style={{ flex: 1 }}>{toast.msg}</span>
       {toast.action && (
         <button
@@ -136,13 +137,15 @@ function ToastCard({ toast, onDismiss }) {
           style={{
             background: 'transparent', border: '1px solid var(--border2)',
             color: 'var(--accent)', borderRadius: 4,
-            padding: '3px 10px', fontSize: 11, fontWeight: 600, cursor: 'pointer',
+            padding: '0 10px', minHeight: 32, fontSize: 11, fontWeight: 600, cursor: 'pointer',
           }}>{toast.action.label}</button>
       )}
       <button
         onClick={() => toast.onClose ? toast.onClose() : onDismiss(toast.id)}
-        title="Fermer"
-        style={{ background: 'transparent', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 14, padding: '0 4px' }}>×</button>
+        title="Fermer" aria-label="Fermer"
+        style={{ background: 'transparent', border: 'none', color: 'var(--text3)', cursor: 'pointer', width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
+        <Icon d={ICONS.close} size={14} />
+      </button>
     </div>
   )
 }

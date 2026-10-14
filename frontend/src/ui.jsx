@@ -8,14 +8,14 @@ export { Icon, ICONS }
 
 const V = n => `var(--${n})`
 
-// ── Button — sm30 / md36 / lg42, variants ghost/primary/solid/outline ──
+// ── Button — sm32 / md36 / lg42, variants ghost/primary/solid/outline ──
 export function Btn({ children, variant = 'ghost', size = 'md', icon, iconR, active, danger, onClick, title, style, full, disabled }) {
   const [h, setH] = useState(false)
-  const H = { sm: 30, md: 36, lg: 42 }[size]
+  const H = { sm: 32, md: 36, lg: 42 }[size]
   const pad = { sm: '0 12px', md: '0 15px', lg: '0 20px' }[size]
   const fz = { sm: 12, md: 13, lg: 14 }[size]
   let bg = 'transparent', col = V('text2'), bord = '1px solid transparent'
-  if (variant === 'primary') { bg = h ? '#ffd83a' : V('accent'); col = '#0b0b0d' }
+  if (variant === 'primary') { bg = h ? V('accent-text') : V('accent'); col = '#0b0b0d' }
   else if (variant === 'solid') { bg = h ? V('surface3') : V('surface2'); col = V('text'); bord = `1px solid ${V('border2')}` }
   else if (variant === 'outline') { bg = h ? V('surface') : 'transparent'; col = V('text'); bord = `1px solid ${V('border2')}` }
   else { bg = h ? V('surface2') : 'transparent'; col = active ? V('accent') : V('text2') }
@@ -82,24 +82,27 @@ export function SectionLabel({ children, style }) {
 export function Kbd({ children }) {
   return <span style={{
     padding: '1px 6px', borderRadius: 5, background: V('surface2'), border: `1px solid ${V('border2')}`,
-    fontFamily: V('font-mono'), fontSize: 10.5, color: V('text2'), lineHeight: 1.6,
+    fontFamily: V('font-mono'), fontSize: 11, color: V('text2'), lineHeight: 1.6,
   }}>{children}</span>
 }
 
-export function Toggle({ on, onClick, color }) {
+export function Toggle({ on, onClick, color, title }) {
   const c = color || V('accent')
   return (
-    <div onClick={onClick} style={{
-      width: 38, height: 22, borderRadius: 99, flexShrink: 0, position: 'relative', cursor: 'pointer',
-      background: on ? c : V('surface3'), border: `1px solid ${on ? c : V('border2')}`, transition: 'background .15s',
-    }}>
-      <div style={{ width: 18, height: 18, borderRadius: '50%', background: on ? '#0b0b0d' : V('text3'), position: 'absolute', top: 1, left: on ? 17 : 1, transition: 'left .16s' }} />
+    <div onClick={onClick} title={title} role="switch" aria-checked={!!on}
+      style={{ height: 32, display: 'inline-flex', alignItems: 'center', flexShrink: 0, cursor: 'pointer' }}>
+      <div style={{
+        width: 38, height: 22, borderRadius: 99, position: 'relative',
+        background: on ? c : V('surface3'), border: `1px solid ${on ? c : V('border2')}`, transition: 'background .15s',
+      }}>
+        <div style={{ width: 18, height: 18, borderRadius: '50%', background: on ? '#0b0b0d' : V('text3'), position: 'absolute', top: 1, left: on ? 17 : 1, transition: 'left .16s' }} />
+      </div>
     </div>
   )
 }
 
 export function Segmented({ options, value, onChange, size = 'md' }) {
-  const H = size === 'sm' ? 28 : 34
+  const H = size === 'sm' ? 32 : 34
   return (
     <div style={{ display: 'inline-flex', gap: 3, background: V('surface'), border: `1px solid ${V('border')}`, borderRadius: 9, padding: 3 }}>
       {options.map(o => {
@@ -176,7 +179,7 @@ export function MenuItem({ icon, children, onClick, active, danger, color }) {
 }
 
 export function Select({ value, options, onChange, width = 'auto', size = 'md', placeholder }) {
-  const H = { sm: 30, md: 36 }[size] || 36
+  const H = { sm: 32, md: 36 }[size] || 36
   const cur = options.find(o => o.v === value)
   return (
     <Popover width={typeof width === 'number' ? width : 200}
@@ -217,5 +220,23 @@ export function ScreenHeader({ kicker, title, sub, right, pad = '24px 32px 0' })
         {right}
       </div>
     </div>
+  )
+}
+
+// ── Save status — Dot + label, shared by editor header ──
+const SAVE_STATUS = {
+  saved:   { color: V('success'), label: 'Sauvegardé' },
+  saving:  { color: V('text2'),   label: 'Sauvegarde…', pulse: true },
+  unsaved: { color: V('accent'),  label: 'Non sauvegardé' },
+  error:   { color: V('danger'),  label: 'Erreur' },
+}
+
+export function SaveStatus({ status, style }) {
+  const st = SAVE_STATUS[status]
+  if (!st) return null
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 11, color: st.color, whiteSpace: 'nowrap', flexShrink: 0, ...style }}>
+      <Dot color={st.color} size={7} pulse={st.pulse} />{st.label}
+    </span>
   )
 }

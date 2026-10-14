@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react'
-import { Icon, ICONS } from '../Icons'
+import { Icon, ICONS, Btn, Dot, SectionLabel } from '../ui'
 
 const RecorderPanel = forwardRef(function RecorderPanel({ clipId, subtitles = [], activeCharacter = '', activeIndex = null, videoRef = null }, ref) {
   const [takes, setTakes] = useState([])
@@ -271,20 +271,20 @@ const RecorderPanel = forwardRef(function RecorderPanel({ clipId, subtitles = []
           style={{
             width: 68, height: 68, borderRadius: '50%', cursor: 'pointer',
             background: recording ? 'var(--danger)' : 'var(--accent)',
-            border: `4px solid ${recording ? 'rgba(232,89,93,0.27)' : 'rgba(245,197,24,0.27)'}`,
+            border: `4px solid ${recording ? 'rgba(232,89,93,0.27)' : 'var(--accent-ring)'}`,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            boxShadow: recording ? '0 0 28px rgba(232,89,93,0.4)' : '0 0 22px rgba(245,197,24,0.27)',
+            boxShadow: recording ? '0 0 28px rgba(232,89,93,0.4)' : '0 0 22px var(--accent-ring)',
           }}>
           <Icon d={recording ? ICONS.pause : ICONS.mic} size={27} stroke="#0b0b0d" fill={recording ? '#0b0b0d' : 'none'} />
         </button>
         <div style={{ fontSize: 12.5, color: 'var(--text2)', fontFamily: 'var(--font-mono)' }}>
           {recording
-            ? <span style={{ color: 'var(--danger)' }}>● ENREGISTREMENT</span>
+            ? <span style={{ color: 'var(--danger)', display: 'inline-flex', alignItems: 'center', gap: 8 }}><Dot color="var(--danger)" pulse />ENREGISTREMENT</span>
             : 'Appuyer pour enregistrer · R'}
         </div>
         {(hasSub && hasVideo) && (
           <div style={{ position: 'absolute', top: 12, right: 12 }}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, color: 'var(--text3)', background: 'var(--surface2)', border: '1px solid var(--border2)', borderRadius: 99, padding: '3px 8px' }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--text3)', background: 'var(--surface2)', border: '1px solid var(--border2)', borderRadius: 99, padding: '3px 8px' }}>
               <Icon d={ICONS.film} size={10} /> réplique {activeIndex + 1}
             </span>
           </div>
@@ -299,22 +299,22 @@ const RecorderPanel = forwardRef(function RecorderPanel({ clipId, subtitles = []
 
       {/* Takes header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{ fontSize: 10.5, letterSpacing: 1.4, color: 'var(--text3)', fontWeight: 700 }}>PRISES</span>
-        <span style={{ fontSize: 10.5, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>{takes.length}</span>
+        <SectionLabel>PRISES</SectionLabel>
+        <span style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>{takes.length}</span>
       </div>
 
       {/* A/B compare */}
       {(takeA || takeB) && (
         <div style={{ background: 'var(--surface)', border: '1px solid rgba(90,169,240,0.27)', borderRadius: 9, padding: 12, display: 'flex', flexDirection: 'column', gap: 9 }}>
-          <div style={{ fontSize: 10, color: 'var(--info)', letterSpacing: 1, fontWeight: 700 }}>COMPARAISON A / B</div>
+          <SectionLabel style={{ color: 'var(--info)' }}>COMPARAISON A / B</SectionLabel>
           {[{ t: takeA, k: 'A', c: 'var(--accent)' }, { t: takeB, k: 'B', c: 'var(--info)' }].map(({ t, k, c }) => (
             <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
               <div style={{ width: 22, height: 22, borderRadius: 6, background: 'color-mix(in srgb, ' + c + ' 14%, transparent)', color: c, fontWeight: 800, fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{k}</div>
-              <button onClick={() => t && playTake(t)} disabled={!t} style={{ width: 28, height: 28, borderRadius: 7, background: 'var(--surface2)', border: '1px solid var(--border2)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: t ? 'pointer' : 'default' }}>
+              <button onClick={() => t && playTake(t)} disabled={!t} style={{ width: 32, height: 32, borderRadius: 7, background: 'var(--surface2)', border: '1px solid var(--border2)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: t ? 'pointer' : 'default' }}>
                 <Icon d={ICONS.play} size={12} style={{ color: c }} />
               </button>
               <span style={{ flex: 1, fontSize: 12, color: 'var(--text)' }}>{t ? takeLabel(t) : '—'}</span>
-              <span style={{ fontSize: 10.5, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>{t ? `${t.duration.toFixed(1)}s` : ''}</span>
+              <span style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>{t ? `${t.duration.toFixed(1)}s` : ''}</span>
             </div>
           ))}
         </div>
@@ -333,31 +333,26 @@ const RecorderPanel = forwardRef(function RecorderPanel({ clipId, subtitles = []
           const sel = t.id === abA || t.id === abB
           return (
             <div key={t.id} style={{
-              background: isSyncing ? 'rgba(245,197,24,0.06)' : 'var(--surface)',
-              border: `1px solid ${sel ? 'var(--accent)' : isSyncing ? 'rgba(245,197,24,0.4)' : 'var(--border)'}`,
+              background: isSyncing ? 'var(--accent-dim)' : 'var(--surface)',
+              border: `1px solid ${sel ? 'var(--accent)' : isSyncing ? 'var(--accent-ring)' : 'var(--border)'}`,
               borderRadius: 9, padding: 12,
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 9 }}>
                 <button onClick={() => isPlaying ? (audioRef.current?.pause(), setPlaying(null)) : playTake(t)} title="Écouter"
-                  style={{ width: 30, height: 30, borderRadius: 8, background: 'var(--surface2)', border: '1px solid var(--border2)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                  style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--surface2)', border: '1px solid var(--border2)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
                   <Icon d={isPlaying ? ICONS.pause : ICONS.play} size={13} style={{ color: isPlaying ? 'var(--accent)' : 'var(--text2)' }} />
                 </button>
                 <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{takeLabel(t)}</span>
                 <div style={{ flex: 1 }} />
-                <span style={{ fontSize: 10.5, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>{t.duration.toFixed(1)}s</span>
+                <span style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>{t.duration.toFixed(1)}s</span>
                 {hasVideo && (
-                  <button onClick={() => isSyncing ? (stopSync(), videoRef.current?.pause()) : previewWithVideo(t)} title="Écouter avec vidéo"
-                    style={{ ...iconBtn, color: isSyncing ? 'var(--accent)' : 'var(--text3)' }}>
-                    <Icon d={isSyncing ? ICONS.stop : ICONS.film} size={13} />
-                  </button>
+                  <Btn size="sm" active={isSyncing} icon={isSyncing ? ICONS.stop : ICONS.film} title="Écouter avec vidéo"
+                    onClick={() => isSyncing ? (stopSync(), videoRef.current?.pause()) : previewWithVideo(t)} />
                 )}
-                <button onClick={() => assignAB(t.id)} title="Comparer A/B"
-                  style={{ ...iconBtn, color: sel ? 'var(--accent)' : 'var(--text3)', fontWeight: 700, fontSize: 10 }}>
+                <Btn size="sm" active={sel} onClick={() => assignAB(t.id)} title="Comparer A/B" style={{ padding: '0 6px', fontWeight: 700 }}>
                   {t.id === abA ? 'A' : t.id === abB ? 'B' : 'A/B'}
-                </button>
-                <button onClick={() => removeTake(t.id)} title="Supprimer" style={{ ...iconBtn, color: 'var(--text3)' }}>
-                  <Icon d={ICONS.trash} size={13} />
-                </button>
+                </Btn>
+                <Btn size="sm" icon={ICONS.trash} onClick={() => removeTake(t.id)} title="Supprimer" />
               </div>
               {/* mini waveform (placeholder bars from duration seed) */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 1.5, height: 24 }}>
@@ -375,8 +370,3 @@ const RecorderPanel = forwardRef(function RecorderPanel({ clipId, subtitles = []
 })
 
 export default RecorderPanel
-
-const iconBtn = {
-  background: 'none', border: 'none', fontSize: 12, padding: '5px 6px',
-  borderRadius: 6, cursor: 'pointer', display: 'flex', alignItems: 'center',
-}

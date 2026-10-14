@@ -41,6 +41,8 @@ function applySettings(s) {
   root.style.setProperty('--accent', s.accent)
   root.style.setProperty('--accent-soft', `rgba(${r},${g},${b},0.13)`)
   root.style.setProperty('--accent-dim', `rgba(${r},${g},${b},0.06)`)
+  root.style.setProperty('--accent-ring', `rgba(${r},${g},${b},0.28)`)
+  root.style.setProperty('--accent-glow', `rgba(${r},${g},${b},0.35)`)
   root.style.setProperty('--accent-text', lighten(s.accent, 0.25))
   root.style.fontSize = `${DENSITY_FONT[s.density] || 14}px`
 }

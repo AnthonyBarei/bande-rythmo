@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import VideoEditor from './VideoEditor'
 import PlexBrowser from './PlexBrowser'
 import { Icon, ICONS } from '../Icons'
-import { ScreenHeader } from '../ui'
+import { Btn, Dot, ScreenHeader, SectionLabel } from '../ui'
 import { useProgress } from '../ProgressContext'
 
 const selectStyle = {
@@ -263,8 +263,8 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
               >
                 <Icon d={s.icon} size={15} style={{ color: active ? 'var(--accent)' : 'inherit' }} />
                 {s.label}
-                {s.online && <span style={{ fontSize: 8.5, padding: '1px 5px', background: 'rgba(94,194,124,.16)', color: 'var(--success)', borderRadius: 3, fontWeight: 700 }}>● ONLINE</span>}
-                <span style={{ fontSize: 10.5, color: 'var(--text4)', marginLeft: 2 }}>{s.hint}</span>
+                {s.online && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, padding: '1px 5px', background: 'var(--success-soft)', color: 'var(--success)', borderRadius: 3, fontWeight: 700 }}><Dot color="var(--success)" size={5} />ONLINE</span>}
+                <span style={{ fontSize: 11, color: 'var(--text4)', marginLeft: 2 }}>{s.hint}</span>
               </button>
             )
           })}
@@ -272,7 +272,7 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
       </div>
 
       {error && (
-        <div style={{ margin: 16, padding: '10px 14px', background: 'rgba(229,69,69,0.1)', border: '1px solid rgba(229,69,69,0.3)', borderRadius: 4, color: 'var(--danger)', fontSize: 13 }}>
+        <div style={{ margin: 16, padding: '10px 14px', background: 'var(--danger-soft)', border: '1px solid color-mix(in srgb, var(--danger) 30%, transparent)', borderRadius: 4, color: 'var(--danger)', fontSize: 13 }}>
           {error}
         </div>
       )}
@@ -309,12 +309,7 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
               placeholder="https://exemple.com/video.mp4"
               style={{ flex: 1, fontFamily: 'var(--font-mono)', fontSize: 12 }}
             />
-            <button
-              onClick={handleUrlLoad}
-              style={{ padding: '8px 18px', background: 'var(--accent)', color: '#000', fontWeight: 600, fontSize: 13, borderRadius: 'var(--radius)' }}
-            >
-              Charger
-            </button>
+            <Btn variant="primary" onClick={handleUrlLoad}>Charger</Btn>
           </div>
           <div style={{ fontSize: 11, color: 'var(--text3)' }}>Le flux est lu directement — aucun téléchargement.</div>
         </div>
@@ -328,15 +323,12 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
               ? <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}><Icon d={ICONS.film} size={14} style={{ color: 'var(--success)' }} /><strong style={{ color: 'var(--text)' }}>{video.plexTitle}</strong>{video.plexYear ? ` (${video.plexYear})` : ''}</span>
               : <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}><Icon d={ICONS.film} size={14} style={{ color: 'var(--text3)' }} />{video.filename}</span>
             }
-            <span style={{ color: 'var(--text3)', fontFamily: 'var(--font-mono)', fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 400 }}>
+            <span style={{ color: 'var(--text3)', fontFamily: 'var(--font-mono)', fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 400 }}>
               {video.sourcePath}
             </span>
-            <button
-              onClick={clearSource}
-              style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text3)', background: 'none', border: '1px solid var(--border2)', borderRadius: 3, padding: '2px 8px' }}
-            >
+            <Btn variant="outline" size="sm" onClick={clearSource} style={{ marginLeft: 'auto' }}>
               {tab === TAB.PLEX ? '← Bibliothèque' : '← Changer de source'}
-            </button>
+            </Btn>
           </div>
 
           {/* Track selector */}
@@ -345,7 +337,7 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
               padding: '10px 16px', background: 'var(--surface)', borderBottom: '1px solid var(--border)',
               display: 'flex', gap: 24, alignItems: 'center', flexWrap: 'wrap',
             }}>
-              <span style={{ fontSize: 11, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1 }}>Pistes</span>
+              <SectionLabel>PISTES</SectionLabel>
 
               {videoOptions.length > 0 && (
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>

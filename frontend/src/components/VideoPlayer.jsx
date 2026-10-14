@@ -146,12 +146,12 @@ export default function VideoPlayer({
           >
             <div style={{
               display: 'flex', alignItems: 'center', gap: 10,
-              background: 'rgba(245, 197, 24,0.92)', color: '#000',
+              background: 'var(--accent)', color: '#0b0b0d',
               fontWeight: 700, fontSize: 15,
               padding: '12px 24px', borderRadius: 6,
               boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
             }}>
-              <Icon d={ICONS.volume} size={16} stroke="#000" /> Cliquez pour activer le son
+              <Icon d={ICONS.volume} size={16} stroke="#0b0b0d" /> Cliquez pour activer le son
             </div>
           </div>
         )}
@@ -160,7 +160,7 @@ export default function VideoPlayer({
 
       {/* Range bar (rangeMode) — blue IN · accent OUT · white playhead. */}
       {rangeMode && duration > 0 && (
-        <div style={{ background: '#0a0a0a', borderTop: '1px solid #111', padding: '8px 12px 4px' }}>
+        <div style={{ background: 'var(--bg2)', borderTop: '1px solid var(--border)', padding: '8px 12px 4px' }}>
           <div style={{ position: 'relative', height: 10, background: 'var(--surface3)', borderRadius: 3, opacity: imageMode ? 0.55 : 1 }}>
             <div style={{
               position: 'absolute', top: 0, height: '100%',
@@ -168,24 +168,24 @@ export default function VideoPlayer({
               left: `${(inPoint / duration) * 100}%`,
               width: `${((outPoint - inPoint) / duration) * 100}%`,
             }} />
-            <div style={{ position: 'absolute', top: 0, width: 3, height: '100%', background: '#4af', borderRadius: 1, left: `${(inPoint / duration) * 100}%` }} />
+            <div style={{ position: 'absolute', top: 0, width: 3, height: '100%', background: 'var(--info)', borderRadius: 1, left: `${(inPoint / duration) * 100}%` }} />
             <div style={{ position: 'absolute', top: 0, width: 3, height: '100%', background: 'var(--accent)', borderRadius: 1, left: `calc(${(outPoint / duration) * 100}% - 3px)` }} />
             <div style={{ position: 'absolute', top: -3, width: 2, height: 'calc(100% + 6px)', background: '#fff', borderRadius: 1, left: `${(currentTime / duration) * 100}%`, boxShadow: '0 0 4px rgba(255,255,255,0.6)', pointerEvents: 'none' }} />
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'var(--font-mono)', fontSize: 10.5, marginTop: 6, color: 'var(--text2)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'var(--font-mono)', fontSize: 11, marginTop: 6, color: 'var(--text2)' }}>
             <button
               onClick={() => onInChange?.(Math.min(currentTime, outPoint - 0.1))}
               disabled={imageMode}
-              style={{ padding: '3px 8px', background: 'rgba(68,170,255,0.12)', color: '#4af', border: '1px solid rgba(68,170,255,0.3)', borderRadius: 4, fontSize: 10.5, cursor: imageMode ? 'default' : 'pointer', opacity: imageMode ? 0.5 : 1, minHeight: 26 }}
+              style={{ padding: '3px 8px', background: 'var(--info-soft)', color: 'var(--info)', border: '1px solid var(--info-soft)', borderRadius: 4, fontSize: 11, cursor: imageMode ? 'default' : 'pointer', opacity: imageMode ? 0.5 : 1, minHeight: 32 }}
               title="Marquer IN au temps courant"
             >[ IN</button>
-            <span style={{ color: '#4af' }}>{fmt(inPoint)}</span>
+            <span style={{ color: 'var(--info)' }}>{fmt(inPoint)}</span>
             <span style={{ flex: 1, textAlign: 'center', color: 'var(--text3)' }}>· {fmt(currentTime)} ·</span>
             <span style={{ color: 'var(--accent)' }}>{fmt(outPoint)}</span>
             <button
               onClick={() => onOutChange?.(Math.max(currentTime, inPoint + 0.1))}
               disabled={imageMode}
-              style={{ padding: '3px 8px', background: 'rgba(245,197,24,0.12)', color: 'var(--accent)', border: '1px solid rgba(245,197,24,0.3)', borderRadius: 4, fontSize: 10.5, cursor: imageMode ? 'default' : 'pointer', opacity: imageMode ? 0.5 : 1, minHeight: 26 }}
+              style={{ padding: '3px 8px', background: 'var(--accent-soft)', color: 'var(--accent)', border: '1px solid var(--accent-ring)', borderRadius: 4, fontSize: 11, cursor: imageMode ? 'default' : 'pointer', opacity: imageMode ? 0.5 : 1, minHeight: 32 }}
               title="Marquer OUT au temps courant"
             >OUT ]</button>
           </div>
@@ -194,21 +194,21 @@ export default function VideoPlayer({
 
       {/* Transport bar */}
       <div style={{
-        background: '#0a0a0a', borderTop: '1px solid #111',
+        background: 'var(--bg2)', borderTop: '1px solid var(--border)',
         padding: '5px 12px', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0,
       }}>
         <button
           onClick={togglePlay}
           style={{
-            background: 'rgba(245, 197, 24,0.04)', color: 'var(--accent)',
+            background: 'var(--accent-dim)', color: 'var(--accent)',
             padding: '5px 8px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            border: '1px solid rgba(245,197,24,0.27)', borderRadius: 3, minWidth: 30,
+            border: '1px solid var(--accent-ring)', borderRadius: 3, minWidth: 32, minHeight: 32,
           }}
         >
           <Icon d={playing ? ICONS.pause : ICONS.play} size={14} />
         </button>
 
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text2)', minWidth: 108, flexShrink: 0 }}>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text2)', minWidth: 108, flexShrink: 0 }}>
           {fmt(currentTime)} / {fmt(duration)}
         </span>
 
@@ -223,7 +223,7 @@ export default function VideoPlayer({
           onChange={e => changeSpeed(e.target.value)}
           style={{
             background: 'var(--surface3)', color: 'var(--text2)',
-            border: '1px solid var(--border2)', borderRadius: 3, padding: '2px 4px', fontSize: 10,
+            border: '1px solid var(--border2)', borderRadius: 3, padding: '2px 4px', fontSize: 11,
           }}
         >
           {[0.5, 0.75, 1, 1.25, 1.5].map(s => <option key={s} value={s}>{s}×</option>)}
@@ -234,8 +234,8 @@ export default function VideoPlayer({
             onClick={toggleMute}
             style={{
               background: 'none', color: muted ? 'var(--text4)' : 'var(--text2)',
-              padding: '4px 6px', display: 'flex', alignItems: 'center',
-              border: '1px solid var(--border2)', borderRadius: 3,
+              padding: '4px 6px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              border: '1px solid var(--border2)', borderRadius: 3, minWidth: 32, minHeight: 32,
             }}
           >
             <Icon d={muted ? ICONS.mute : ICONS.volume} size={13} />

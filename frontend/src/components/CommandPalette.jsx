@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
-import { Icon, ICONS } from '../Icons'
+import { Icon, ICONS, Kbd } from '../ui'
 
 // Command palette (⌘K / Ctrl+K / "/") — fuzzy-ish search over navigation,
 // quick actions, and clips. Keyboard: ↑/↓ move, ↵ run, Esc close.
@@ -13,9 +13,11 @@ export default function CommandPalette({ open, onClose, onNavigate, onNewClip, o
 
   const items = useMemo(() => {
     const base = [
+      { id: 'nav-clips',    icon: ICONS.grid,     label: 'Aller à — Bibliothèque', run: () => onNavigate('clips') },
       { id: 'nav-import',   icon: ICONS.upload,   label: 'Aller à — Importer',  run: () => onNavigate('import') },
-      { id: 'nav-clips',    icon: ICONS.grid,     label: 'Aller à — Mes Clips',  run: () => onNavigate('clips') },
-      { id: 'nav-memes',    icon: ICONS.smile,    label: 'Aller à — Memes',      run: () => onNavigate('memes') },
+      { id: 'nav-dub',      icon: ICONS.edit2,    label: 'Aller à — Éditeur',    run: () => onNavigate('dub') },
+      { id: 'nav-record',   icon: ICONS.mic,      label: 'Aller à — Studio',     run: () => onNavigate('record') },
+      { id: 'nav-memes',    icon: ICONS.meme2,     label: 'Aller à — Atelier',    run: () => onNavigate('memes') },
       { id: 'nav-activity', icon: ICONS.activity, label: 'Aller à — Activité',    run: () => onNavigate('activity') },
       { id: 'nav-settings', icon: ICONS.settings, label: 'Aller à — Réglages',   run: () => onNavigate('settings') },
       { id: 'act-new',      icon: ICONS.plus,     label: 'Nouveau clip — importer une vidéo', run: () => onNewClip?.() },
@@ -71,7 +73,7 @@ export default function CommandPalette({ open, onClose, onNavigate, onNewClip, o
               }}>
               <Icon d={it.icon} size={16} sw={1.7} />
               <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.label}</span>
-              {it.meta && <span style={{ fontSize: 10.5, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>{it.meta}</span>}
+              {it.meta && <span style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>{it.meta}</span>}
               {i === sel && <Kbd>↵</Kbd>}
             </button>
           ))}
@@ -83,11 +85,4 @@ export default function CommandPalette({ open, onClose, onNavigate, onNewClip, o
     </div>,
     document.body
   )
-}
-
-function Kbd({ children }) {
-  return <span style={{
-    padding: '1px 6px', borderRadius: 5, background: 'var(--surface2)', border: '1px solid var(--border2)',
-    fontFamily: 'var(--font-mono)', fontSize: 10.5, color: 'var(--text2)', lineHeight: 1.6,
-  }}>{children}</span>
 }

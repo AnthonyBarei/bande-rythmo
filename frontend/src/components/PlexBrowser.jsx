@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Icon, ICONS } from '../Icons'
+import { Btn, Dot, SectionLabel } from '../ui'
 
 /* PlexBrowser — restyled per MEME_PLEX_HANDOFF §1.
    Connect: centered 460px card, ▶ PLEX amber wordmark, green probe banner,
@@ -79,7 +80,7 @@ function PlexConnect({ onConnected }) {
             fontSize: 18, fontWeight: 800, color: PLEX_AMBER,
             letterSpacing: 1.5, fontFamily: 'var(--font-mono)',
           }}>
-            ▶ PLEX
+            <Icon d={ICONS.play} size={16} fill="currentColor" />PLEX
           </span>
           <span style={{ fontSize: 12, color: 'var(--text3)' }}>Connecter votre serveur</span>
         </div>
@@ -88,13 +89,13 @@ function PlexConnect({ onConnected }) {
           <div style={{
             fontSize: 12, color: 'var(--success)',
             padding: '8px 12px',
-            background: 'rgba(94,194,124,0.10)',
-            border: '1px solid rgba(94,194,124,0.35)',
+            background: 'var(--success-soft)',
+            border: '1px solid color-mix(in srgb, var(--success) 35%, transparent)',
             borderRadius: 6,
             marginBottom: 14,
             display: 'flex', alignItems: 'center', gap: 6,
           }}>
-            <span>●</span>
+            <Dot color="var(--success)" size={6} />
             <span>Serveur Plex détecté — <code style={{ fontFamily: 'var(--font-mono)' }}>{detected}</code></span>
           </div>
         )}
@@ -110,8 +111,8 @@ function PlexConnect({ onConnected }) {
         )}
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <label style={{ fontSize: 11, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, fontFamily: 'var(--font-mono)' }}>
-            URL serveur
+                    <label>
+            <SectionLabel>URL SERVEUR</SectionLabel>
             <input
               value={url}
               onChange={e => setUrl(e.target.value)}
@@ -119,8 +120,8 @@ function PlexConnect({ onConnected }) {
               placeholder="http://localhost:32400"
             />
           </label>
-          <label style={{ fontSize: 11, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, fontFamily: 'var(--font-mono)' }}>
-            Token Plex
+                    <label>
+            <SectionLabel>TOKEN PLEX</SectionLabel>
             <input
               value={token}
               onChange={e => setToken(e.target.value)}
@@ -128,31 +129,20 @@ function PlexConnect({ onConnected }) {
               type="password"
               placeholder="••••••••••••••••••••"
             />
-            <span style={{ display: 'block', marginTop: 6, fontSize: 11, color: 'var(--text3)', textTransform: 'none', letterSpacing: 0 }}>
+            <span style={{ display: 'block', marginTop: 6, fontSize: 11, color: 'var(--text3)' }}>
               Plex Web → ⚙ → XML → attribut <code style={{ color: 'var(--accent)', fontFamily: 'var(--font-mono)' }}>X-Plex-Token</code>
             </span>
           </label>
 
           {err && (
-            <div style={{ fontSize: 12, color: 'var(--danger)', padding: '8px 12px', background: 'rgba(232,93,93,0.10)', border: '1px solid rgba(232,93,93,0.35)', borderRadius: 6 }}>
+            <div style={{ fontSize: 12, color: 'var(--danger)', padding: '8px 12px', background: 'var(--danger-soft)', border: '1px solid color-mix(in srgb, var(--danger) 35%, transparent)', borderRadius: 6 }}>
               {err}
             </div>
           )}
 
-          <button
-            onClick={handleConnect}
-            disabled={loading || !token}
-            style={{
-              padding: '10px 18px',
-              background: (loading || !token) ? 'var(--surface3)' : 'var(--accent)',
-              color: (loading || !token) ? 'var(--text3)' : '#000',
-              fontWeight: 600, fontSize: 13,
-              borderRadius: 6, marginTop: 4, minHeight: 36,
-              cursor: (loading || !token) ? 'default' : 'pointer',
-            }}
-          >
+          <Btn variant="primary" full onClick={handleConnect} disabled={loading || !token} style={{ marginTop: 4 }}>
             {loading ? 'Connexion…' : 'Connecter'}
-          </button>
+          </Btn>
 
           <div style={{ fontSize: 11, color: 'var(--text3)', textAlign: 'center', marginTop: 4 }}>
             La connexion reste locale — token stocké uniquement sur votre machine.
@@ -268,8 +258,8 @@ function LibraryGrid({ sectionId, onSelect, selectedKey }) {
               {selected && (
                 <div style={{
                   position: 'absolute', top: 8, left: 8,
-                  background: 'var(--accent)', color: '#000',
-                  fontSize: 9, fontWeight: 800, letterSpacing: 1.2,
+                  background: 'var(--accent)', color: '#0b0b0d',
+                  fontSize: 11, fontWeight: 800, letterSpacing: 1.2,
                   padding: '2px 7px', borderRadius: 3,
                 }}>
                   SÉLECTIONNÉ
@@ -283,7 +273,7 @@ function LibraryGrid({ sectionId, onSelect, selectedKey }) {
                 }}>
                   {item.title}
                 </div>
-                {item.year && <div style={{ fontSize: 10.5, color: 'var(--text3)', marginTop: 2, fontFamily: 'var(--font-mono)' }}>{item.year}</div>}
+                {item.year && <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2, fontFamily: 'var(--font-mono)' }}>{item.year}</div>}
               </div>
             </button>
           )
@@ -372,10 +362,7 @@ export default function PlexBrowser({ onSourceSelected }) {
     return (
       <div style={{ padding: 24, display: 'flex', alignItems: 'center', gap: 12, fontSize: 13 }}>
         <span style={{ color: 'var(--danger)' }}>{err}</span>
-        <button onClick={checkStatus}
-          style={{ fontSize: 11, color: 'var(--text2)', background: 'transparent', border: '1px solid var(--border2)', borderRadius: 5, padding: '4px 10px', minHeight: 28, cursor: 'pointer' }}>
-          Réessayer
-        </button>
+        <Btn variant="outline" size="sm" onClick={checkStatus}>Réessayer</Btn>
       </div>
     )
   }
@@ -401,8 +388,9 @@ export default function PlexBrowser({ onSourceSelected }) {
           <span style={{
             fontSize: 14, fontWeight: 800, color: PLEX_AMBER,
             letterSpacing: 1.2, fontFamily: 'var(--font-mono)',
+            display: 'inline-flex', alignItems: 'center', gap: 5,
           }}>
-            ▶ PLEX
+            <Icon d={ICONS.play} size={13} fill="currentColor" />PLEX
           </span>
         </div>
         <div style={{ padding: 8, display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -424,7 +412,7 @@ export default function PlexBrowser({ onSourceSelected }) {
                 <span style={{ flex: 1 }}>{lib.title}</span>
                 {typeof lib.count === 'number' && (
                   <span style={{
-                    fontSize: 10, fontFamily: 'var(--font-mono)',
+                    fontSize: 11, fontFamily: 'var(--font-mono)',
                     color: 'var(--text3)',
                   }}>{lib.count}</span>
                 )}
@@ -445,29 +433,22 @@ export default function PlexBrowser({ onSourceSelected }) {
         }}>
           <span style={{
             display: 'inline-flex', alignItems: 'center', gap: 5,
-            fontSize: 10.5, fontWeight: 700, letterSpacing: 1,
+            fontSize: 11, fontWeight: 700, letterSpacing: 1,
             color: 'var(--success)',
             padding: '3px 8px', borderRadius: 99,
-            background: 'rgba(94,194,124,0.10)',
-            border: '1px solid rgba(94,194,124,0.35)',
+            background: 'var(--success-soft)',
+            border: '1px solid color-mix(in srgb, var(--success) 35%, transparent)',
             fontFamily: 'var(--font-mono)',
           }}>
-            ● ONLINE
+            <Dot color="var(--success)" size={6} />ONLINE
           </span>
           <span style={{ fontSize: 12, color: 'var(--text2)', fontWeight: 500 }}>{status.server}</span>
           <div style={{ flex: 1 }} />
           {loadingItem && <span style={{ fontSize: 11, color: 'var(--accent)' }}>Chargement…</span>}
           {err && <span style={{ fontSize: 11, color: 'var(--danger)' }}>{err}</span>}
-          <button
-            onClick={() => { setStatus(null); checkStatus() }}
-            title="Recharger"
-            style={{
-              fontSize: 11, color: 'var(--text3)',
-              background: 'transparent', border: '1px solid var(--border2)',
-              borderRadius: 5, padding: '4px 10px', minHeight: 28, cursor: 'pointer',
-            }}>
+          <Btn variant="outline" size="sm" onClick={() => { setStatus(null); checkStatus() }} title="Recharger">
             Recharger
-          </button>
+          </Btn>
         </div>
 
         {activeSectionId && (

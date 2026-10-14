@@ -5,7 +5,7 @@ import ClipsLibrary from './components/ClipsLibrary'
 import DubbingWorkspace from './components/DubbingWorkspace'
 import MemeGenerator from './components/MemeGenerator'
 import Preferences from './components/Preferences'
-import { Icon, ICONS } from './Icons'
+import { Icon, ICONS, Kbd } from './ui'
 import { ProgressProvider } from './ProgressContext'
 import { ToastProvider, useToast } from './ToastContext'
 import ShortcutsOverlay from './components/ShortcutsOverlay'
@@ -52,6 +52,7 @@ function AppInner() {
   const [memeClip, setMemeClip] = useState(null)
   const [memeInitialTab, setMemeInitialTab] = useState(null)
   const [dubExportOpen, setDubExportOpen] = useState(false)
+  const [dubMode, setDubMode] = useState('dub')
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [cmdOpen, setCmdOpen] = useState(false)
 
@@ -113,6 +114,7 @@ function AppInner() {
 
   function handleDub(clip) {
     setActiveClip(clip)
+    setDubMode('dub')
     setSection('dub')
   }
 
@@ -210,7 +212,7 @@ function AppInner() {
   function navigate(s) {
     setDubExportOpen(false)
     if (s === 'memes') { setMemeClip(null); setMemeInitialTab(null); setSection('memes'); return }
-    if (s === 'record' || s === 'dub') { const tgt = activeClip || clips[0]; if (tgt) { setActiveClip(tgt); setSection('dub') } else setSection('clips'); return }
+    if (s === 'record' || s === 'dub') { const tgt = activeClip || clips[0]; if (tgt) { setActiveClip(tgt); setDubMode(s); setSection('dub') } else setSection('clips'); return }
     setSection(s)
   }
 
@@ -218,7 +220,7 @@ function AppInner() {
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: 'var(--bg)' }}>
 
       {/* Full-height rail (redesign shell — rail spans the whole window) */}
-      <Sidebar section={section} onNavigate={navigate} />
+      <Sidebar section={section} dubMode={dubMode} onNavigate={navigate} />
 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
 
@@ -235,8 +237,8 @@ function AppInner() {
             <span style={{ fontSize: 13 }}>Rechercher ou commande…</span>
             <div style={{ flex: 1 }} />
             <span style={{ display: 'flex', gap: 3 }}>
-              <kbd style={{ padding: '1px 5px', borderRadius: 4, background: 'var(--surface2)', border: '1px solid var(--border2)', fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text2)' }}>⌘</kbd>
-              <kbd style={{ padding: '1px 5px', borderRadius: 4, background: 'var(--surface2)', border: '1px solid var(--border2)', fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text2)' }}>K</kbd>
+              <Kbd>⌘</Kbd>
+              <Kbd>K</Kbd>
             </span>
           </button>
           <button onClick={() => setShortcutsOpen(true)} title="Raccourcis clavier (?)"
@@ -248,7 +250,7 @@ function AppInner() {
             <Icon d={ICONS.activity} size={16} />
           </button>
           <div style={{ width: 1, height: 22, background: 'var(--border)' }} />
-          <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#000', fontWeight: 700, fontSize: 12, fontFamily: 'var(--font-mono)' }}>S</div>
+          <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#0b0b0d', fontWeight: 700, fontSize: 12, fontFamily: 'var(--font-mono)' }}>S</div>
         </div>
         )}
 
@@ -281,6 +283,7 @@ function AppInner() {
             onBack={() => { setDubExportOpen(false); setSection('clips') }}
             exportOpen={dubExportOpen}
             onToggleExport={() => setDubExportOpen(v => !v)}
+            initialPanel={dubMode}
           />
         )}
         {section === 'memes' && (

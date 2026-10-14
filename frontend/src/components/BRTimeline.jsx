@@ -157,7 +157,7 @@ export default function BRTimeline({
   }, [duration, waveform, onSeek])
 
   return (
-    <div style={{ flexShrink: 0, height, borderTop: '1px solid var(--border)', background: '#0a0a0c' }}>
+    <div style={{ flexShrink: 0, height, borderTop: '1px solid var(--border)', background: 'var(--bg)' }}>
       <canvas
         ref={canvasRef}
         style={{ display: 'block', width: '100%', height: '100%', cursor: 'pointer' }}

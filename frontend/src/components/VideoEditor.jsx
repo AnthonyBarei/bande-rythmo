@@ -1,22 +1,12 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import TimelineBar from './TimelineBar'
 import VideoPlayer from './VideoPlayer'
-import { Icon, ICONS } from '../Icons'
+import { Icon, ICONS, Kbd, SectionLabel } from '../ui'
 import { useProgress } from '../ProgressContext'
 import { fmtClockHours as fmt } from '../utils/timecode'
 
 let _pendingId = 0
 const newId = () => ++_pendingId
-
-const Kbd = ({ children }) => (
-  <span style={{
-    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-    padding: '1px 5px', background: '#1a1a1a',
-    border: '1px solid #333', borderBottom: '2px solid #333',
-    borderRadius: 3, fontFamily: 'var(--font-mono)',
-    fontSize: 10, color: 'var(--text3)', lineHeight: '16px',
-  }}>{children}</span>
-)
 
 export default function VideoEditor({ video, onClipsCreated, videoStream, audioStream, audioSrc }) {
   const videoRef = useRef(null)
@@ -194,7 +184,7 @@ export default function VideoEditor({ video, onClipsCreated, videoStream, audioS
         padding: '6px 16px', background: 'var(--surface)', borderBottom: '1px solid var(--border)',
         display: 'flex', gap: 8, alignItems: 'center', fontSize: 12, color: 'var(--text2)',
       }}>
-        <span style={{ color: '#f5c518' }}>◎</span>
+        <span style={{ color: 'var(--accent)' }}>◎</span>
         <span><strong style={{ color: 'var(--text)' }}>Glissez sur la timeline</strong> pour délimiter un clip — déplacez ou redimensionnez les blocs orange ensuite.</span>
         <div style={{ flex: 1 }} />
         <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text3)' }}>
@@ -204,7 +194,7 @@ export default function VideoEditor({ video, onClipsCreated, videoStream, audioS
 
       {/* Shortcut hints */}
       <div style={{
-        padding: '5px 16px', background: '#0e0e0e', borderBottom: '1px solid var(--border)',
+        padding: '5px 16px', background: 'var(--bg2)', borderBottom: '1px solid var(--border)',
         display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center',
       }}>
         {[
@@ -225,25 +215,25 @@ export default function VideoEditor({ video, onClipsCreated, videoStream, audioS
       {pendingClips.length > 0 && (
         <div style={{ padding: '12px 16px 8px' }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
-            <span style={{ fontSize: 10.5, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, fontFamily: 'var(--font-mono)' }}>
+            <SectionLabel style={{ textTransform: 'uppercase' }}>
               Clips en attente
-            </span>
+            </SectionLabel>
             <span style={{ fontSize: 11, color: 'var(--text3)' }}>{pendingClips.length}</span>
             <div style={{ flex: 1 }} />
-            <span style={{ fontSize: 10.5, color: 'var(--text4)' }}>Cliquer le nom pour éditer · ⏎ valider</span>
+            <span style={{ fontSize: 11, color: 'var(--text4)' }}>Cliquer le nom pour éditer · ⏎ valider</span>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
             {pendingClips.map((c, idx) => (
               <div key={c._id} style={{
-                display: 'grid', gridTemplateColumns: '28px 1fr auto auto 28px',
+                display: 'grid', gridTemplateColumns: '28px 1fr auto auto 32px',
                 alignItems: 'center', gap: 10,
                 padding: '7px 10px', background: 'var(--surface)',
                 border: '1px solid var(--border)', borderRadius: 'var(--radius)',
               }}>
                 <span style={{
-                  width: 16, height: 16, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  width: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center',
                   background: 'var(--accent-soft)', color: 'var(--accent)',
-                  fontFamily: 'var(--font-mono)', fontSize: 9.5, fontWeight: 800, borderRadius: 4,
+                  fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 800, borderRadius: 4,
                 }}>{idx + 1}</span>
                 {editingId === c._id ? (
                   <input
@@ -274,7 +264,7 @@ export default function VideoEditor({ video, onClipsCreated, videoStream, audioS
                 <button
                   onClick={() => handleRemove(c._id)}
                   title="Retirer"
-                  style={{ color: 'var(--text3)', background: 'none', padding: '3px 5px', borderRadius: 3, border: 'none', display: 'flex', alignItems: 'center' }}
+                  style={{ color: 'var(--text3)', background: 'none', padding: '3px 5px', borderRadius: 3, border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: 32, minHeight: 32 }}
                   onMouseEnter={e => e.currentTarget.style.color = 'var(--danger)'}
                   onMouseLeave={e => e.currentTarget.style.color = 'var(--text3)'}
                 ><Icon d={ICONS.trash} size={13} /></button>
@@ -289,7 +279,7 @@ export default function VideoEditor({ video, onClipsCreated, videoStream, audioS
               style={{
                 padding: '8px 16px',
                 background: saving ? 'var(--surface3)' : 'var(--accent)',
-                color: saving ? 'var(--text3)' : '#000',
+                color: saving ? 'var(--text3)' : '#0b0b0d',
                 fontWeight: 600, fontSize: 13, borderRadius: 'var(--radius)',
               }}
             >
@@ -307,9 +297,9 @@ export default function VideoEditor({ video, onClipsCreated, videoStream, audioS
       {/* Saved clips */}
       {savedClips.length > 0 && (
         <div style={{ padding: '0 16px 16px' }}>
-          <div style={{ fontSize: 11, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, padding: '12px 0 8px' }}>
+          <SectionLabel style={{ textTransform: 'uppercase', padding: '12px 0 8px' }}>
             Clips créés ({savedClips.length})
-          </div>
+          </SectionLabel>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             {savedClips.map(clip => (
               <div key={clip.clip_id} style={{
@@ -317,7 +307,7 @@ export default function VideoEditor({ video, onClipsCreated, videoStream, audioS
                 padding: '7px 10px', background: 'var(--surface)',
                 border: '1px solid var(--border)', borderRadius: 4,
               }}>
-                <span style={{ color: 'var(--success)', fontSize: 12 }}>✓</span>
+                <Icon d={ICONS.check} size={13} stroke="var(--success)" />
                 <span style={{ flex: 1, fontSize: 13 }}>{clip.name}</span>
                 <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text2)' }}>
                   {fmt(clip.start)} → {fmt(clip.end)}
@@ -327,7 +317,7 @@ export default function VideoEditor({ video, onClipsCreated, videoStream, audioS
             ))}
           </div>
           <div style={{ marginTop: 10, fontSize: 12, color: 'var(--text2)' }}>
-            → Retrouvez vos clips dans <strong style={{ color: '#f5c518' }}>Mes Clips</strong>
+            → Retrouvez vos clips dans <strong style={{ color: 'var(--accent)' }}>Mes Clips</strong>
           </div>
         </div>
       )}
@@ -335,7 +325,7 @@ export default function VideoEditor({ video, onClipsCreated, videoStream, audioS
       {error && (
         <div style={{
           margin: '0 16px', padding: '10px 14px',
-          background: 'rgba(229,69,69,0.1)', border: '1px solid rgba(229,69,69,0.3)',
+          background: 'var(--danger-soft)', border: '1px solid var(--danger-soft)',
           borderRadius: 4, color: 'var(--danger)', fontSize: 13,
         }}>
           {error}

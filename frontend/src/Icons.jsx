@@ -55,7 +55,12 @@ export const ICONS = {
   // Misc
   plus:    'M12 5v14M5 12h14',
   close:   'M18 6L6 18M6 6l12 12',
+  x:       'M18 6L6 18M6 6l12 12',
   check:   'M5 12l5 5 9-11',
+  warn:    <><path d="M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></>,
+  dot:     <circle cx="12" cy="12" r="4" fill="currentColor" stroke="none" />,
+  undo:    <><path d="M9 14L4 9l5-5" /><path d="M4 9h11a5 5 0 010 10h-3" /></>,
+  redo:    <><path d="M15 14l5-5-5-5" /><path d="M20 9H9a5 5 0 000 10h3" /></>,
   chevron: 'M6 9l6 6 6-6',
   back:    <><line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" /></>,
   zoomIn:  <><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /><line x1="11" y1="8" x2="11" y2="14" /><line x1="8" y1="11" x2="14" y2="11" /></>,

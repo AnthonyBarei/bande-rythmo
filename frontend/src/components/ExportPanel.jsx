@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Icon, ICONS } from '../Icons'
+import { Icon, ICONS, Btn, SectionLabel, Segmented } from '../ui'
 import { useProgress } from '../ProgressContext'
 import { useSettings } from '../SettingsContext'
 import { fmtClock } from '../utils/timecode'
@@ -334,57 +334,46 @@ export default function ExportPanel({ segmentId, subtitles, boucles = [], pxPerS
           </label>
           {loopRegion && (
             <button onClick={() => { setRangeIn(loopRegion.start); setRangeOut(loopRegion.end); setRangeOn(true) }}
-              style={{ fontSize: 10.5, color: 'var(--accent)', background: 'rgba(245,197,24,0.1)', border: '1px solid rgba(245,197,24,0.3)', borderRadius: 4, padding: '3px 8px', cursor: 'pointer' }}>
+              style={{ fontSize: 11, color: 'var(--accent)', background: 'var(--accent-soft)', border: '1px solid var(--accent-ring)', borderRadius: 4, padding: '3px 8px', cursor: 'pointer', minHeight: 32 }}>
               ⟲ Utiliser la boucle
             </button>
           )}
           <div style={{ flex: 1 }} />
-          <span style={{ fontSize: 10.5, color: 'var(--text3)' }}>
+          <span style={{ fontSize: 11, color: 'var(--text3)' }}>
             {rangeOn ? `${fmtSec(rangeIn)} → ${fmtSec(rangeOut)} · ${fmtSec(Math.max(0, rangeOut - rangeIn))}` : 'clip entier'}
           </span>
         </div>
         {rangeOn && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
-            <span style={{ fontSize: 10, color: '#4af', fontFamily: 'var(--font-mono)', width: 28 }}>IN</span>
+            <span style={{ fontSize: 11, color: 'var(--info)', fontFamily: 'var(--font-mono)', width: 28 }}>IN</span>
             <input type="range" min={0} max={duration || 1} step={0.05} value={rangeIn}
               onChange={e => setRangeIn(Math.min(+e.target.value, rangeOut - 0.1))}
-              style={{ flex: 1, color: '#4af', '--pct': `${(rangeIn / (duration || 1)) * 100}%` }} />
+              style={{ flex: 1, color: 'var(--info)', '--pct': `${(rangeIn / (duration || 1)) * 100}%` }} />
             <button onClick={() => setRangeIn(Math.min(getCurrentTime?.() || 0, rangeOut - 0.1))}
-              style={{ fontSize: 10, color: '#4af', background: 'rgba(68,170,255,0.1)', border: '1px solid rgba(68,170,255,0.3)', borderRadius: 4, padding: '3px 7px', cursor: 'pointer', fontFamily: 'var(--font-mono)' }}>[ ici</button>
+              style={{ fontSize: 11, color: 'var(--info)', background: 'var(--info-soft)', border: '1px solid var(--info-soft)', borderRadius: 4, padding: '3px 7px', cursor: 'pointer', fontFamily: 'var(--font-mono)', minHeight: 32 }}>[ ici</button>
           </div>
         )}
         {rangeOn && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
-            <span style={{ fontSize: 10, color: 'var(--accent)', fontFamily: 'var(--font-mono)', width: 28 }}>OUT</span>
+            <span style={{ fontSize: 11, color: 'var(--accent)', fontFamily: 'var(--font-mono)', width: 28 }}>OUT</span>
             <input type="range" min={0} max={duration || 1} step={0.05} value={rangeOut}
               onChange={e => setRangeOut(Math.max(+e.target.value, rangeIn + 0.1))}
               style={{ flex: 1, color: 'var(--accent)', '--pct': `${(rangeOut / (duration || 1)) * 100}%` }} />
             <button onClick={() => setRangeOut(Math.max(getCurrentTime?.() || 0, rangeIn + 0.1))}
-              style={{ fontSize: 10, color: 'var(--accent)', background: 'rgba(245,197,24,0.1)', border: '1px solid rgba(245,197,24,0.3)', borderRadius: 4, padding: '3px 7px', cursor: 'pointer', fontFamily: 'var(--font-mono)' }}>ici ]</button>
+              style={{ fontSize: 11, color: 'var(--accent)', background: 'var(--accent-soft)', border: '1px solid var(--accent-ring)', borderRadius: 4, padding: '3px 7px', cursor: 'pointer', fontFamily: 'var(--font-mono)', minHeight: 32 }}>ici ]</button>
           </div>
         )}
       </div>
 
       {/* MP4 quality preset — trade render time for fidelity. */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', marginBottom: 8, background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 6 }}>
-        <span style={{ fontSize: 10.5, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, fontFamily: 'var(--font-mono)' }}>Qualité MP4</span>
-        <div style={{ display: 'flex', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, padding: 2 }}>
-          {[
-            { v: 'draft',    l: 'Draft',    desc: '~3× plus rapide · aperçu' },
-            { v: 'standard', l: 'Standard', desc: 'équilibré · défaut' },
-            { v: 'youtube',  l: 'YouTube',  desc: 'final · supersample 4 · preset slow' },
-          ].map(o => (
-            <button key={o.v} onClick={() => setQuality(o.v)} title={o.desc}
-              style={{
-                padding: '5px 12px', fontSize: 11.5, borderRadius: 4,
-                background: quality === o.v ? 'var(--accent)' : 'transparent',
-                color: quality === o.v ? '#000' : 'var(--text2)',
-                fontWeight: quality === o.v ? 700 : 500, border: 'none',
-                cursor: 'pointer', minHeight: 28,
-              }}>{o.l}</button>
-          ))}
-        </div>
-        <span style={{ fontSize: 10.5, color: 'var(--text3)', flex: 1, textAlign: 'right' }}>
+        <SectionLabel style={{ textTransform: 'uppercase' }}>Qualité MP4</SectionLabel>
+        <Segmented size="sm" value={quality} onChange={setQuality} options={[
+          { v: 'draft',    l: 'Draft',    desc: '~3× plus rapide · aperçu' },
+          { v: 'standard', l: 'Standard', desc: 'équilibré · défaut' },
+          { v: 'youtube',  l: 'YouTube',  desc: 'final · supersample 4 · preset slow' },
+        ]} />
+        <span style={{ fontSize: 11, color: 'var(--text3)', flex: 1, textAlign: 'right' }}>
           {quality === 'draft' && 'preset fast · crf 23 · supersample 2'}
           {quality === 'standard' && 'preset medium · crf 21 · supersample 3'}
           {quality === 'youtube' && 'preset slow · crf 19 · supersample 4'}
@@ -394,25 +383,15 @@ export default function ExportPanel({ segmentId, subtitles, boucles = [], pxPerS
       {/* GPU encode — shown only when a usable HW encoder is detected. */}
       {hwEncoders?.any && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', marginBottom: 8, background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 6 }}>
-          <span style={{ fontSize: 10.5, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, fontFamily: 'var(--font-mono)' }}>Encodage</span>
-          <div style={{ display: 'flex', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, padding: 2 }}>
-            {[
-              { v: 'off',  l: 'CPU' },
-              { v: 'auto', l: 'GPU (auto)' },
-              ...(hwEncoders.nvenc ? [{ v: 'nvenc', l: 'NVENC' }] : []),
-              ...(hwEncoders.qsv ? [{ v: 'qsv', l: 'QSV' }] : []),
-              ...(hwEncoders.amf ? [{ v: 'amf', l: 'AMF' }] : []),
-            ].map(o => (
-              <button key={o.v} onClick={() => setGpu(o.v)}
-                style={{
-                  padding: '5px 12px', fontSize: 11.5, borderRadius: 4,
-                  background: gpu === o.v ? 'var(--accent)' : 'transparent',
-                  color: gpu === o.v ? '#000' : 'var(--text2)',
-                  fontWeight: gpu === o.v ? 700 : 500, border: 'none', cursor: 'pointer', minHeight: 28,
-                }}>{o.l}</button>
-            ))}
-          </div>
-          <span style={{ fontSize: 10.5, color: 'var(--text3)', flex: 1, textAlign: 'right' }}>
+          <SectionLabel style={{ textTransform: 'uppercase' }}>Encodage</SectionLabel>
+          <Segmented size="sm" value={gpu} onChange={setGpu} options={[
+            { v: 'off',  l: 'CPU' },
+            { v: 'auto', l: 'GPU (auto)' },
+            ...(hwEncoders.nvenc ? [{ v: 'nvenc', l: 'NVENC' }] : []),
+            ...(hwEncoders.qsv ? [{ v: 'qsv', l: 'QSV' }] : []),
+            ...(hwEncoders.amf ? [{ v: 'amf', l: 'AMF' }] : []),
+          ]} />
+          <span style={{ fontSize: 11, color: 'var(--text3)', flex: 1, textAlign: 'right' }}>
             {gpu === 'off' ? 'libx264 — qualité maximale' : 'accélération matérielle — plus rapide'}
           </span>
         </div>
@@ -423,7 +402,7 @@ export default function ExportPanel({ segmentId, subtitles, boucles = [], pxPerS
           <input type="checkbox" checked={detectionBurn} onChange={e => setDetectionBurn(e.target.checked)} />
           Incruster la détection (MP4)
         </label>
-        <span style={{ fontSize: 10.5, color: 'var(--text3)' }}>
+        <span style={{ fontSize: 11, color: 'var(--text3)' }}>
           Par défaut désactivé — les studios préfèrent la bande propre et l'autorité dans le DetX.
         </span>
       </div>
@@ -434,7 +413,7 @@ export default function ExportPanel({ segmentId, subtitles, boucles = [], pxPerS
           <input type="checkbox" checked={autoDownload} onChange={e => setAutoDownload(e.target.checked)} />
           Télécharger automatiquement
         </label>
-        <span style={{ fontSize: 10.5, color: 'var(--text3)' }}>
+        <span style={{ fontSize: 11, color: 'var(--text3)' }}>
           Désactivez pour empiler des exports puis télécharger plus tard depuis l'historique.
         </span>
       </div>
@@ -442,15 +421,14 @@ export default function ExportPanel({ segmentId, subtitles, boucles = [], pxPerS
       {/* Exports précédents — re-download anytime, no re-render. */}
       {history.length > 0 && (
         <div style={{ marginBottom: 12 }}>
-          <div style={{ fontSize: 10.5, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, fontFamily: 'var(--font-mono)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <SectionLabel style={{ textTransform: 'uppercase', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
             Exports précédents
             <span style={{ color: 'var(--text4)' }}>· {history.length}</span>
             <div style={{ flex: 1 }} />
-            <button onClick={refreshHistory}
-              style={{ background: 'transparent', border: '1px solid var(--border2)', color: 'var(--text3)', borderRadius: 4, padding: '2px 8px', fontSize: 10, cursor: 'pointer' }}>
+            <Btn variant="outline" size="sm" onClick={refreshHistory} style={{ textTransform: 'none', letterSpacing: 0 }}>
               Rafraîchir
-            </button>
-          </div>
+            </Btn>
+          </SectionLabel>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 220, overflowY: 'auto' }}>
             {history.map(h => {
               const fmt = FORMATS.find(f => f.id === h.format) || { color: 'var(--text2)', label: h.format.toUpperCase() }
@@ -464,7 +442,7 @@ export default function ExportPanel({ segmentId, subtitles, boucles = [], pxPerS
                   fontSize: 12,
                 }}>
                   <span style={{
-                    fontSize: 10, fontWeight: 700, letterSpacing: 1,
+                    fontSize: 11, fontWeight: 700, letterSpacing: 1,
                     color: fmt.color, padding: '2px 7px',
                     background: 'var(--surface2)',
                     border: `1px solid ${fmt.color}33`,
@@ -476,18 +454,10 @@ export default function ExportPanel({ segmentId, subtitles, boucles = [], pxPerS
                   </span>
                   <span style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>{fmtBytes(h.size_bytes)}</span>
                   <span style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)', minWidth: 80, textAlign: 'right' }}>{fmtTime(h.created_at)}</span>
-                  <button
-                    onClick={() => redownload(h.id, h.filename)}
-                    title="Télécharger"
-                    style={{ background: 'var(--accent)', color: '#000', border: 'none', borderRadius: 4, padding: '4px 10px', fontSize: 11, fontWeight: 600, cursor: 'pointer', minHeight: 26 }}>
-                    ↓
-                  </button>
-                  <button
-                    onClick={() => removeExport(h.id)}
-                    title="Supprimer"
-                    style={{ background: 'transparent', border: '1px solid var(--border2)', color: 'var(--danger)', borderRadius: 4, padding: '4px 8px', fontSize: 11, cursor: 'pointer', minHeight: 26 }}>
-                    ✕
-                  </button>
+                  <Btn variant="primary" size="sm" icon={ICONS.download} title="Télécharger"
+                    onClick={() => redownload(h.id, h.filename)} />
+                  <Btn size="sm" icon={ICONS.close} danger title="Supprimer"
+                    onClick={() => removeExport(h.id)} />
                 </div>
               )
             })}
@@ -496,14 +466,14 @@ export default function ExportPanel({ segmentId, subtitles, boucles = [], pxPerS
       )}
 
       {error && (
-        <div style={{ padding: '10px 14px', background: 'rgba(229,69,69,0.1)', border: '1px solid rgba(229,69,69,0.3)', borderRadius: 4, color: 'var(--danger)', fontSize: 13 }}>
+        <div style={{ padding: '10px 14px', background: 'var(--danger-soft)', border: '1px solid var(--danger-soft)', borderRadius: 4, color: 'var(--danger)', fontSize: 13 }}>
           {error}
         </div>
       )}
 
       {lastExport && !error && !loading && (
-        <div style={{ padding: '10px 14px', background: 'rgba(68,187,85,0.1)', border: '1px solid rgba(68,187,85,0.3)', borderRadius: 4, color: 'var(--success)', fontSize: 13 }}>
-          ✓ Export {lastExport.toUpperCase()} {autoDownload ? 'téléchargé' : 'terminé — voir les exports précédents'}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 14px', background: 'var(--success-soft)', border: '1px solid var(--success-soft)', borderRadius: 4, color: 'var(--success)', fontSize: 13 }}>
+          <Icon d={ICONS.check} size={14} stroke="currentColor" /> Export {lastExport.toUpperCase()} {autoDownload ? 'téléchargé' : 'terminé — voir les exports précédents'}
         </div>
       )}
     </div>
@@ -624,29 +594,29 @@ function MixSection({ segmentId, subtitles = [], onExported }) {
     } finally { setBedBusy(false) }
   }
 
-  const mono = { fontSize: 10.5, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, fontFamily: 'var(--font-mono)' }
+  const bedBtn = { display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 32, boxSizing: 'border-box', fontSize: 11, color: 'var(--text2)', background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: 4, padding: '3px 8px', cursor: 'pointer' }
 
   return (
     <div style={{ padding: '12px', marginBottom: 8, background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 6 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: takes.length ? 10 : 0 }}>
-        <span style={mono}>Mixage — MP4 doublé</span>
-        <span style={{ fontSize: 10.5, color: 'var(--text4)' }}>{takes.length} prise{takes.length !== 1 ? 's' : ''}</span>
+        <SectionLabel style={{ textTransform: 'uppercase' }}>Mixage — MP4 doublé</SectionLabel>
+        <span style={{ fontSize: 11, color: 'var(--text4)' }}>{takes.length} prise{takes.length !== 1 ? 's' : ''}</span>
         <div style={{ flex: 1 }} />
         {/* bed management */}
         <label title="Remplacer l'audio du clip par un fichier (wav/mp3/m4a)" style={{ cursor: 'pointer' }}>
           <input type="file" accept="audio/*,.wav,.mp3,.m4a,.flac,.ogg" onChange={uploadBed} disabled={bedBusy} style={{ display: 'none' }} />
-          <span style={{ fontSize: 10.5, color: 'var(--text2)', background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: 4, padding: '3px 8px' }}>
+          <span style={bedBtn}>
             {bedBusy ? '…' : 'Remplacer l\'audio'}
           </span>
         </label>
         <button onClick={() => applyStem('no_vocals')} disabled={bedBusy} title="Utiliser l'instrumental Demucs (séparation vocale requise)"
-          style={{ fontSize: 10.5, color: 'var(--text2)', background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: 4, padding: '3px 8px', cursor: 'pointer' }}>
+          style={bedBtn}>
           Instrumental
         </button>
         {hasBed && (
           <button onClick={resetBed} disabled={bedBusy} title="Revenir à l'audio original"
-            style={{ fontSize: 10.5, color: 'var(--accent)', background: 'rgba(245,197,24,0.1)', border: '1px solid rgba(245,197,24,0.3)', borderRadius: 4, padding: '3px 8px', cursor: 'pointer' }}>
-            Piste remplacée ✕
+            style={{ ...bedBtn, color: 'var(--accent)', background: 'var(--accent-soft)', border: '1px solid var(--accent-ring)' }}>
+            Piste remplacée <Icon d={ICONS.close} size={12} stroke="currentColor" />
           </button>
         )}
       </div>
@@ -663,19 +633,19 @@ function MixSection({ segmentId, subtitles = [], onExported }) {
               const on = !!sel[t.id]?.on
               const gain = sel[t.id]?.gain || 0
               return (
-                <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 9px', background: 'var(--surface)', border: `1px solid ${on ? 'rgba(245,197,24,0.4)' : 'var(--border)'}`, borderRadius: 6 }}>
+                <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 9px', background: 'var(--surface)', border: `1px solid ${on ? 'var(--accent-ring)' : 'var(--border)'}`, borderRadius: 6 }}>
                   <input type="checkbox" checked={on}
                     onChange={e => setSel(s => ({ ...s, [t.id]: { on: e.target.checked, gain } }))} />
                   <span style={{ flex: 1, fontSize: 12, color: on ? 'var(--text)' : 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {takeLabel(t)}
                   </span>
-                  <span style={{ fontSize: 10.5, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>{(t.duration || 0).toFixed(1)}s</span>
+                  <span style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>{(t.duration || 0).toFixed(1)}s</span>
                   {on && (
                     <>
                       <input type="range" min={-12} max={12} step={1} value={gain}
                         onChange={e => setSel(s => ({ ...s, [t.id]: { on: true, gain: +e.target.value } }))}
                         style={{ width: 90 }} title="Gain de la prise (dB)" />
-                      <span style={{ fontSize: 10, color: gain !== 0 ? 'var(--accent)' : 'var(--text4)', fontFamily: 'var(--font-mono)', minWidth: 38, textAlign: 'right' }}>
+                      <span style={{ fontSize: 11, color: gain !== 0 ? 'var(--accent)' : 'var(--text4)', fontFamily: 'var(--font-mono)', minWidth: 38, textAlign: 'right' }}>
                         {gain > 0 ? '+' : ''}{gain} dB
                       </span>
                     </>
@@ -696,7 +666,7 @@ function MixSection({ segmentId, subtitles = [], onExported }) {
               <>
                 <input type="range" min={-24} max={0} step={1} value={duck} onChange={e => setDuck(+e.target.value)}
                   style={{ flex: 1 }} title="Atténuation de la piste originale (dB)" />
-                <span style={{ fontSize: 10.5, color: 'var(--text3)', fontFamily: 'var(--font-mono)', minWidth: 46, textAlign: 'right' }}>{duck} dB</span>
+                <span style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)', minWidth: 46, textAlign: 'right' }}>{duck} dB</span>
               </>
             )}
             {muteBed && <div style={{ flex: 1 }} />}
@@ -706,7 +676,7 @@ function MixSection({ segmentId, subtitles = [], onExported }) {
             style={{
               width: '100%', padding: '9px 0', borderRadius: 6, fontSize: 13, fontWeight: 600,
               background: busy ? 'var(--surface3)' : selected.length ? 'var(--accent)' : 'var(--surface3)',
-              color: busy || !selected.length ? 'var(--text3)' : '#000',
+              color: busy || !selected.length ? 'var(--text3)' : '#0b0b0d',
               cursor: busy || !selected.length ? 'default' : 'pointer', border: 'none',
             }}>
             {busy ? 'Mixage en cours…' : `Exporter le MP4 doublé${selected.length ? ` (${selected.length} prise${selected.length > 1 ? 's' : ''})` : ''}`}

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { Icon, ICONS } from '../Icons'
-import { Btn, Segmented, ScreenHeader } from '../ui'
+import { Btn, Segmented, ScreenHeader, SectionLabel } from '../ui'
 import { useProgress } from '../ProgressContext'
 
 const FONTS = [
@@ -563,7 +563,7 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
               >
                 <div style={{ marginBottom: 10, display: 'flex', justifyContent: 'center', color: 'var(--text3)' }}><Icon d={ICONS.upload} size={38} sw={1.4} /></div>
                 <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4, color: 'var(--text)' }}>Glissez une image ou un GIF</div>
-                <div style={{ fontSize: 12, color: '#888' }}>PNG · JPG · WEBP · GIF animé</div>
+                <div style={{ fontSize: 12, color: 'var(--text3)' }}>PNG · JPG · WEBP · GIF animé</div>
               </div>
             )}
 
@@ -592,7 +592,7 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
                       <Icon d={playing ? ICONS.pause : ICONS.play} size={12} />
                     </div>
                   </div>
-                  <div style={{ padding: '12px 14px', borderTop: '1px solid #1a1a1a', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div style={{ padding: '12px 14px', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 10 }}>
                     {/* Timeline click/drag to seek */}
                     <div
                       ref={timelineRef}
@@ -617,18 +617,18 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
                       }}
                     >
                       {!imageMode && <>
-                        <div style={{ position: 'absolute', top: 0, height: '100%', background: 'rgba(245, 197, 24,0.35)', borderRadius: 3, left: `${(inPoint / (videoDuration || 1)) * 100}%`, width: `${((outPoint - inPoint) / (videoDuration || 1)) * 100}%` }} />
-                        <div style={{ position: 'absolute', top: 0, width: 3, height: '100%', background: '#4af', borderRadius: 1, left: `${(inPoint / (videoDuration || 1)) * 100}%` }} />
+                        <div style={{ position: 'absolute', top: 0, height: '100%', background: 'var(--accent-glow)', borderRadius: 3, left: `${(inPoint / (videoDuration || 1)) * 100}%`, width: `${((outPoint - inPoint) / (videoDuration || 1)) * 100}%` }} />
+                        <div style={{ position: 'absolute', top: 0, width: 3, height: '100%', background: 'var(--info)', borderRadius: 1, left: `${(inPoint / (videoDuration || 1)) * 100}%` }} />
                         <div style={{ position: 'absolute', top: 0, width: 3, height: '100%', background: 'var(--accent)', borderRadius: 1, left: `calc(${(outPoint / (videoDuration || 1)) * 100}% - 3px)` }} />
                       </>}
                       <div style={{ position: 'absolute', top: -3, width: 2, height: 'calc(100% + 6px)', background: '#fff', borderRadius: 1, left: `${(videoTime / (videoDuration || 1)) * 100}%`, boxShadow: '0 0 4px rgba(255,255,255,0.6)', pointerEvents: 'none' }} />
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'center' }}>
-                      <button onClick={() => seekRelative(-1)} style={SEEK_BTN} title="−1s (Shift+←)">«</button>
-                      <button onClick={() => seekRelative(-0.1)} style={SEEK_BTN} title="−0.1s (←)">‹</button>
-                      <button onClick={togglePlay} style={{ ...SEEK_BTN, padding: '5px 14px', display: 'inline-flex', alignItems: 'center' }} title="Play/Pause (Space)"><Icon d={playing ? ICONS.pause : ICONS.play} size={12} /></button>
-                      <button onClick={() => seekRelative(0.1)} style={SEEK_BTN} title="+0.1s (→)">›</button>
-                      <button onClick={() => seekRelative(1)} style={SEEK_BTN} title="+1s (Shift+→)">»</button>
+                      <Btn variant="solid" size="sm" onClick={() => seekRelative(-1)} title="−1s (Shift+←)">«</Btn>
+                      <Btn variant="solid" size="sm" onClick={() => seekRelative(-0.1)} title="−0.1s (←)">‹</Btn>
+                      <Btn variant="solid" size="sm" icon={playing ? ICONS.pause : ICONS.play} onClick={togglePlay} title="Play/Pause (Space)" style={{ minWidth: 48 }} />
+                      <Btn variant="solid" size="sm" onClick={() => seekRelative(0.1)} title="+0.1s (→)">›</Btn>
+                      <Btn variant="solid" size="sm" onClick={() => seekRelative(1)} title="+1s (Shift+→)">»</Btn>
                     </div>
                     {imageMode ? (
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text3)' }}>
@@ -637,13 +637,13 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
                       </div>
                     ) : (<>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'var(--font-mono)', fontSize: 11 }}>
-                        <button onClick={() => setInPoint(Math.min(videoTime, outPoint - 0.1))} style={{ padding: '3px 7px', background: 'rgba(68,170,255,0.12)', color: '#4af', border: '1px solid rgba(68,170,255,0.3)', borderRadius: 3, fontSize: 11, cursor: 'pointer', fontFamily: 'var(--font-mono)' }}>[ IN</button>
-                        <span style={{ color: '#4af' }}>{fmtTime(inPoint)}</span>
+                        <button onClick={() => setInPoint(Math.min(videoTime, outPoint - 0.1))} style={{ padding: '3px 7px', minHeight: 32, background: 'var(--info-soft)', color: 'var(--info)', border: '1px solid color-mix(in srgb, var(--info) 30%, transparent)', borderRadius: 3, fontSize: 11, cursor: 'pointer', fontFamily: 'var(--font-mono)' }}>[ IN</button>
+                        <span style={{ color: 'var(--info)' }}>{fmtTime(inPoint)}</span>
                         <div style={{ flex: 1, textAlign: 'center', color: 'var(--text3)' }}>{fmtTime(videoTime)} · {gifDuration}s</div>
                         <span style={{ color: 'var(--accent)' }}>{fmtTime(outPoint)}</span>
-                        <button onClick={() => setOutPoint(Math.max(videoTime, inPoint + 0.1))} style={{ padding: '3px 7px', background: 'rgba(245, 197, 24,0.12)', color: 'var(--accent)', border: '1px solid rgba(245, 197, 24,0.3)', borderRadius: 3, fontSize: 11, cursor: 'pointer', fontFamily: 'var(--font-mono)' }}>OUT ]</button>
+                        <button onClick={() => setOutPoint(Math.max(videoTime, inPoint + 0.1))} style={{ padding: '3px 7px', minHeight: 32, background: 'var(--accent-soft)', color: 'var(--accent)', border: '1px solid var(--accent-ring)', borderRadius: 3, fontSize: 11, cursor: 'pointer', fontFamily: 'var(--font-mono)' }}>OUT ]</button>
                       </div>
-                      <input type="range" min={0} max={videoDuration || 1} step={0.05} value={inPoint} onChange={e => { const v = Math.min(+e.target.value, outPoint - 0.1); setInPoint(v); seekVideo(v) }} style={{ width: '100%', margin: 0, color: '#4af', '--pct': `${(inPoint / (videoDuration || 1)) * 100}%` }} />
+                      <input type="range" min={0} max={videoDuration || 1} step={0.05} value={inPoint} onChange={e => { const v = Math.min(+e.target.value, outPoint - 0.1); setInPoint(v); seekVideo(v) }} style={{ width: '100%', margin: 0, color: 'var(--info)', '--pct': `${(inPoint / (videoDuration || 1)) * 100}%` }} />
                       <input type="range" min={0} max={videoDuration || 1} step={0.05} value={outPoint} onChange={e => { const v = Math.max(+e.target.value, inPoint + 0.1); setOutPoint(v); seekVideo(v) }} style={{ width: '100%', margin: 0, color: 'var(--accent)', '--pct': `${(outPoint / (videoDuration || 1)) * 100}%` }} />
                     </>)}
                   </div>
@@ -654,8 +654,8 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 240px', gap: 20, alignItems: 'start' }}>
                   {rangePlayer}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {error && <div style={{ padding: '8px 10px', background: 'rgba(229,69,69,0.12)', color: '#e54545', borderRadius: 4, fontSize: 12, border: '1px solid rgba(229,69,69,0.3)' }}>{error}</div>}
-                    <button onClick={captureFrame} disabled={!videoReady} style={{ padding: '11px', fontWeight: 700, borderRadius: 4, fontSize: 13, background: videoReady ? 'var(--accent)' : 'var(--surface3)', color: videoReady ? '#000' : '#888', border: 'none', cursor: videoReady ? 'pointer' : 'default' }}>◉ Capturer ce frame</button>
+                    {error && <div style={{ padding: '8px 10px', background: 'var(--danger-soft)', color: 'var(--danger)', borderRadius: 4, fontSize: 12, border: '1px solid color-mix(in srgb, var(--danger) 30%, transparent)' }}>{error}</div>}
+                    <Btn variant="primary" size="lg" full icon={ICONS.rec} onClick={captureFrame} disabled={!videoReady}>Capturer ce frame</Btn>
                     <p style={{ fontSize: 11, color: 'var(--text3)', lineHeight: 1.6, margin: 0 }}>Naviguez puis capturez le frame souhaité — il s'ouvrira dans l'éditeur.</p>
                   </div>
                 </div>
@@ -665,8 +665,8 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 240px', gap: 20, alignItems: 'start' }}>
                   {rangePlayer}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {error && <div style={{ padding: '8px 10px', background: 'rgba(229,69,69,0.12)', color: '#e54545', borderRadius: 4, fontSize: 12, border: '1px solid rgba(229,69,69,0.3)' }}>{error}</div>}
-                    <button onClick={createGif} disabled={gifLoading || !videoReady || outPoint <= inPoint} style={{ padding: '11px', fontWeight: 700, borderRadius: 4, fontSize: 13, background: gifLoading || !videoReady || outPoint <= inPoint ? 'var(--surface3)' : 'var(--accent)', color: gifLoading || !videoReady || outPoint <= inPoint ? '#888' : '#000', border: 'none', cursor: gifLoading || !videoReady ? 'default' : 'pointer' }}>{gifLoading ? '◉ Génération GIF…' : '◉ Créer GIF'}</button>
+                    {error && <div style={{ padding: '8px 10px', background: 'var(--danger-soft)', color: 'var(--danger)', borderRadius: 4, fontSize: 12, border: '1px solid color-mix(in srgb, var(--danger) 30%, transparent)' }}>{error}</div>}
+                    <Btn variant="primary" size="lg" full icon={ICONS.rec} onClick={createGif} disabled={gifLoading || !videoReady || outPoint <= inPoint}>{gifLoading ? 'Génération GIF…' : 'Créer GIF'}</Btn>
                     <p style={{ fontSize: 11, color: 'var(--text3)', lineHeight: 1.6, margin: 0 }}>Réglez IN/OUT puis créez le GIF. Il s'ouvrira dans l'éditeur.</p>
                   </div>
                 </div>
@@ -676,17 +676,15 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 240px', gap: 20, alignItems: 'start' }}>
                   {rangePlayer}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {error && <div style={{ padding: '8px 10px', background: 'rgba(229,69,69,0.12)', color: '#e54545', borderRadius: 4, fontSize: 12, border: '1px solid rgba(229,69,69,0.3)' }}>{error}</div>}
-                    <button
+                    {error && <div style={{ padding: '8px 10px', background: 'var(--danger-soft)', color: 'var(--danger)', borderRadius: 4, fontSize: 12, border: '1px solid color-mix(in srgb, var(--danger) 30%, transparent)' }}>{error}</div>}
+                    <Btn variant="primary" size="lg" full icon={audioLoading ? ICONS.rec : undefined}
                       onClick={() => createAudio('mp3')}
                       disabled={audioLoading || !videoReady || outPoint <= inPoint}
-                      style={{ padding: '11px', fontWeight: 700, borderRadius: 4, fontSize: 13, background: audioLoading || !videoReady || outPoint <= inPoint ? 'var(--surface3)' : 'var(--accent)', color: audioLoading || !videoReady || outPoint <= inPoint ? '#888' : '#000', border: 'none', cursor: audioLoading || !videoReady ? 'default' : 'pointer' }}
-                    >{audioLoading ? '◉ Export…' : 'Télécharger MP3'}</button>
-                    <button
+                    >{audioLoading ? 'Export…' : 'Télécharger MP3'}</Btn>
+                    <Btn variant="solid" size="lg" full
                       onClick={() => createAudio('wav')}
                       disabled={audioLoading || !videoReady || outPoint <= inPoint}
-                      style={{ padding: '11px', fontWeight: 700, borderRadius: 4, fontSize: 13, background: 'var(--surface2)', color: audioLoading || !videoReady || outPoint <= inPoint ? '#888' : 'var(--text)', border: '1px solid var(--border2)', cursor: audioLoading || !videoReady ? 'default' : 'pointer' }}
-                    >Télécharger WAV</button>
+                    >Télécharger WAV</Btn>
                     <p style={{ fontSize: 11, color: 'var(--text3)', lineHeight: 1.6, margin: 0 }}>Réglez IN/OUT puis exportez l'audio de la sélection. MP3 = compact, WAV = lossless.</p>
                   </div>
                 </div>
@@ -701,20 +699,18 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
                 (MEME_PLEX_HANDOFF §2.3 — never show source + result stacked). */}
             {resultUrl ? (
               <div style={{ background: '#000', borderRadius: 6, overflow: 'hidden', border: '1px solid var(--accent)' }}>
-                <div style={{ padding: '6px 10px', borderBottom: '1px solid #1a1a1a', fontSize: 11, color: 'var(--accent)', fontWeight: 600 }}>
+                <div style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)', fontSize: 11, color: 'var(--accent)', fontWeight: 600 }}>
                   Résultat
                 </div>
                 <img src={resultUrl} alt="meme" style={{ display: 'block', width: '100%' }} />
-                <div style={{ display: 'flex', gap: 8, padding: 10, borderTop: '1px solid #1a1a1a' }}>
-                  <button onClick={() => setResultUrl(null)}
-                    style={{ flex: 1, padding: 9, background: 'var(--surface2)', color: 'var(--text)', fontWeight: 600, borderRadius: 4, fontSize: 12, border: '1px solid var(--border2)', cursor: 'pointer' }}>↩ Refaire</button>
-                  <button onClick={download}
-                    style={{ flex: 1, padding: 9, background: '#44bb55', color: '#fff', fontWeight: 700, borderRadius: 4, fontSize: 12, border: 'none', cursor: 'pointer' }}>↓ Télécharger</button>
+                <div style={{ display: 'flex', gap: 8, padding: 10, borderTop: '1px solid var(--border)' }}>
+                  <Btn variant="solid" icon={ICONS.undo} onClick={() => setResultUrl(null)} style={{ flex: 1 }}>Refaire</Btn>
+                  <Btn icon={ICONS.download} onClick={download} style={{ flex: 1, background: 'var(--success)', color: '#fff', fontWeight: 700 }}>Télécharger</Btn>
                 </div>
               </div>
             ) : (
             <div style={{ background: '#000', borderRadius: 6, overflow: 'hidden', border: '1px solid var(--border)' }}>
-              <div style={{ padding: '6px 10px', borderBottom: '1px solid #1a1a1a', fontSize: 11, color: '#666' }}>
+              <div style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)', fontSize: 11, color: 'var(--text3)' }}>
                 Glissez le texte pour le repositionner
               </div>
               <div style={{ position: 'relative' }}>
@@ -747,9 +743,9 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
 
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
-                  <span style={SL}>TEXTES</span>
+                  <SectionLabel>TEXTES</SectionLabel>
                   <div style={{ flex: 1 }} />
-                  <button onClick={addLayer} style={{ fontSize: 11, color: 'var(--accent)', background: 'rgba(245, 197, 24,0.1)', border: '1px solid rgba(245, 197, 24,0.3)', borderRadius: 3, padding: '3px 8px', cursor: 'pointer' }}>+ Ajouter</button>
+                  <Btn size="sm" active icon={ICONS.plus} onClick={addLayer}>Ajouter</Btn>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   {texts.map((t, i) => (
@@ -759,12 +755,12 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
                       style={{
                         display: 'flex', alignItems: 'center', gap: 6,
                         padding: '5px 8px',
-                        background: selectedId === t.id ? 'rgba(245, 197, 24,0.08)' : 'var(--surface3)',
-                        border: `1px solid ${selectedId === t.id ? 'rgba(245, 197, 24,0.4)' : 'var(--border)'}`,
+                        background: selectedId === t.id ? 'var(--accent-dim)' : 'var(--surface3)',
+                        border: `1px solid ${selectedId === t.id ? 'var(--accent-ring)' : 'var(--border)'}`,
                         borderRadius: 4, cursor: 'pointer',
                       }}
                     >
-                      <span style={{ fontSize: 10, color: '#555', width: 14, textAlign: 'center', flexShrink: 0 }}>{i + 1}</span>
+                      <span style={{ fontSize: 11, color: 'var(--text4)', width: 14, textAlign: 'center', flexShrink: 0 }}>{i + 1}</span>
                       <input
                         value={t.content}
                         onChange={e => updateLayer(t.id, { content: e.target.value })}
@@ -781,49 +777,49 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
                       <button
                         onClick={e => { e.stopPropagation(); duplicateLayer(t.id) }}
                         title="Dupliquer"
-                        style={{ fontSize: 11, color: 'var(--text3)', background: 'none', border: 'none', cursor: 'pointer', padding: '0 4px' }}
+                        style={{ ...ROW_BTN, fontSize: 11, color: 'var(--text3)', cursor: 'pointer' }}
                       >⎘</button>
                       <button
                         onClick={e => { e.stopPropagation(); reorderLayer(t.id, -1) }}
                         disabled={i === 0}
                         title="Monter"
-                        style={{ fontSize: 11, color: i === 0 ? 'var(--text4)' : 'var(--text3)', background: 'none', border: 'none', cursor: i === 0 ? 'default' : 'pointer', padding: '0 2px' }}
+                        style={{ ...ROW_BTN, fontSize: 11, color: i === 0 ? 'var(--text4)' : 'var(--text3)', cursor: i === 0 ? 'default' : 'pointer' }}
                       >↑</button>
                       <button
                         onClick={e => { e.stopPropagation(); reorderLayer(t.id, 1) }}
                         disabled={i === texts.length - 1}
                         title="Descendre"
-                        style={{ fontSize: 11, color: i === texts.length - 1 ? 'var(--text4)' : 'var(--text3)', background: 'none', border: 'none', cursor: i === texts.length - 1 ? 'default' : 'pointer', padding: '0 2px' }}
+                        style={{ ...ROW_BTN, fontSize: 11, color: i === texts.length - 1 ? 'var(--text4)' : 'var(--text3)', cursor: i === texts.length - 1 ? 'default' : 'pointer' }}
                       >↓</button>
                       {texts.length > 1 && (
                         <button
                           onClick={e => { e.stopPropagation(); removeLayer(t.id) }}
-                          style={{ fontSize: 14, color: '#e54545', background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', lineHeight: 1 }}
+                          style={{ ...ROW_BTN, color: 'var(--danger)', cursor: 'pointer' }}
                           title="Supprimer"
-                        >×</button>
+                        ><Icon d={ICONS.close} size={13} /></button>
                       )}
                     </div>
                   ))}
                 </div>
-                <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 6 }}>
+                <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6 }}>
                   ↑↓ ← → flèches : déplacer le texte sélectionné · ⇧ pour 5×
                 </div>
               </div>
 
               {sel && (
                 <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  <span style={SL}>STYLE — TEXTE {texts.findIndex(t => t.id === selectedId) + 1}</span>
+                  <SectionLabel>STYLE — TEXTE {texts.findIndex(t => t.id === selectedId) + 1}</SectionLabel>
 
                   <div>
-                    <label style={LBL}>POLICE</label>
+                    <SectionLabel style={LBL}>POLICE</SectionLabel>
                     <div style={{ display: 'flex', gap: 4 }}>
                       {FONTS.map(f => (
                         <button key={f.id} onClick={() => updateLayer(selectedId, { fontId: f.id })} style={{
-                          flex: 1, padding: '5px 4px',
-                          background: sel.fontId === f.id ? 'rgba(245, 197, 24,0.1)' : 'var(--surface3)',
-                          color: sel.fontId === f.id ? 'var(--accent)' : '#888',
-                          border: `1px solid ${sel.fontId === f.id ? 'rgba(245, 197, 24,0.4)' : 'var(--border2)'}`,
-                          borderRadius: 3, fontSize: 10, cursor: 'pointer', fontFamily: f.css,
+                          flex: 1, padding: '5px 4px', minHeight: 32,
+                          background: sel.fontId === f.id ? 'var(--accent-soft)' : 'var(--surface3)',
+                          color: sel.fontId === f.id ? 'var(--accent)' : 'var(--text3)',
+                          border: `1px solid ${sel.fontId === f.id ? 'var(--accent-ring)' : 'var(--border2)'}`,
+                          borderRadius: 3, fontSize: 11, cursor: 'pointer', fontFamily: f.css,
                         }}>{f.label}</button>
                       ))}
                     </div>
@@ -831,7 +827,7 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
 
                   <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
                     <div style={{ flex: 1 }}>
-                      <label style={LBL}>TAILLE — {sel.fontSize}px</label>
+                      <SectionLabel style={LBL}>TAILLE — {sel.fontSize}PX</SectionLabel>
                       <input type="range" min={16} max={120} value={sel.fontSize}
                         onChange={e => updateLayer(selectedId, { fontSize: +e.target.value })}
                         style={{ width: '100%', color: 'var(--accent)' }}
@@ -840,43 +836,43 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
                     <button
                       onClick={() => updateLayer(selectedId, { bold: !sel.bold })}
                       style={{
-                        padding: '4px 12px', marginBottom: 1,
-                        background: sel.bold ? 'rgba(245, 197, 24,0.1)' : 'var(--surface3)',
-                        color: sel.bold ? 'var(--accent)' : '#888',
-                        border: `1px solid ${sel.bold ? 'rgba(245, 197, 24,0.4)' : 'var(--border2)'}`,
+                        padding: '4px 12px', marginBottom: 1, minHeight: 32,
+                        background: sel.bold ? 'var(--accent-soft)' : 'var(--surface3)',
+                        color: sel.bold ? 'var(--accent)' : 'var(--text3)',
+                        border: `1px solid ${sel.bold ? 'var(--accent-ring)' : 'var(--border2)'}`,
                         borderRadius: 3, fontSize: 14, fontWeight: 700, cursor: 'pointer',
                       }}
                     >B</button>
                   </div>
 
                   <div>
-                    <label style={LBL}>COULEUR TEXTE</label>
-                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <SectionLabel style={LBL}>COULEUR TEXTE</SectionLabel>
+                    <div style={{ display: 'flex', gap: 2, alignItems: 'center' }}>
                       <input type="color" value={sel.color}
                         onChange={e => updateLayer(selectedId, { color: e.target.value })}
-                        style={{ width: 30, height: 26, border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}
+                        style={{ width: 32, height: 32, border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}
                       />
                       {QUICK_COLORS_TEXT.map(c => (
-                        <div key={c} onClick={() => updateLayer(selectedId, { color: c })}
-                          style={{ width: 18, height: 18, background: c, borderRadius: 2, cursor: 'pointer', flexShrink: 0,
-                            border: sel.color.toLowerCase() === c ? '2px solid var(--accent)' : '1px solid #444' }}
-                        />
+                        <div key={c} onClick={() => updateLayer(selectedId, { color: c })} style={SWATCH_HIT}>
+                          <div style={{ width: 24, height: 24, background: c, borderRadius: 3,
+                            border: sel.color.toLowerCase() === c ? '2px solid var(--accent)' : '1px solid var(--border2)' }} />
+                        </div>
                       ))}
                     </div>
                   </div>
 
                   <div>
-                    <label style={LBL}>CONTOUR — épaisseur {sel.strokeWidth}</label>
-                    <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6 }}>
+                    <SectionLabel style={LBL}>CONTOUR — ÉPAISSEUR {sel.strokeWidth}</SectionLabel>
+                    <div style={{ display: 'flex', gap: 2, alignItems: 'center', marginBottom: 6 }}>
                       <input type="color" value={sel.strokeColor}
                         onChange={e => updateLayer(selectedId, { strokeColor: e.target.value })}
-                        style={{ width: 30, height: 26, border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}
+                        style={{ width: 32, height: 32, border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}
                       />
                       {QUICK_COLORS_STROKE.map(c => (
-                        <div key={c} onClick={() => updateLayer(selectedId, { strokeColor: c })}
-                          style={{ width: 18, height: 18, background: c, borderRadius: 2, cursor: 'pointer', flexShrink: 0,
-                            border: sel.strokeColor.toLowerCase() === c ? '2px solid var(--accent)' : '1px solid #444' }}
-                        />
+                        <div key={c} onClick={() => updateLayer(selectedId, { strokeColor: c })} style={SWATCH_HIT}>
+                          <div style={{ width: 24, height: 24, background: c, borderRadius: 3,
+                            border: sel.strokeColor.toLowerCase() === c ? '2px solid var(--accent)' : '1px solid var(--border2)' }} />
+                        </div>
                       ))}
                     </div>
                     <input type="range" min={0} max={8} value={sel.strokeWidth}
@@ -886,16 +882,16 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
                   </div>
 
                   <div>
-                    <label style={LBL}>ALIGNEMENT</label>
+                    <SectionLabel style={LBL}>ALIGNEMENT</SectionLabel>
                     <div style={{ display: 'flex', gap: 4 }}>
                       {[['left', '⟵ Gauche'], ['center', '⊣ Centre'], ['right', 'Droite ⟶']].map(([v, lbl]) => (
                         <button key={v} onClick={() => updateLayer(selectedId, { align: v })}
                           style={{
-                            flex: 1, padding: '5px 4px',
-                            background: sel.align === v ? 'rgba(245, 197, 24,0.1)' : 'var(--surface3)',
-                            color: sel.align === v ? 'var(--accent)' : '#888',
-                            border: `1px solid ${sel.align === v ? 'rgba(245, 197, 24,0.4)' : 'var(--border2)'}`,
-                            borderRadius: 3, fontSize: 10, cursor: 'pointer',
+                            flex: 1, padding: '5px 4px', minHeight: 32,
+                            background: sel.align === v ? 'var(--accent-soft)' : 'var(--surface3)',
+                            color: sel.align === v ? 'var(--accent)' : 'var(--text3)',
+                            border: `1px solid ${sel.align === v ? 'var(--accent-ring)' : 'var(--border2)'}`,
+                            borderRadius: 3, fontSize: 11, cursor: 'pointer',
                           }}
                         >{lbl}</button>
                       ))}
@@ -905,21 +901,14 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
               )}
 
               {error && (
-                <div style={{ padding: '8px 10px', background: 'rgba(229,69,69,0.12)', color: '#e54545', borderRadius: 4, fontSize: 12, border: '1px solid rgba(229,69,69,0.3)' }}>
+                <div style={{ padding: '8px 10px', background: 'var(--danger-soft)', color: 'var(--danger)', borderRadius: 4, fontSize: 12, border: '1px solid color-mix(in srgb, var(--danger) 30%, transparent)' }}>
                   {error}
                 </div>
               )}
 
-              <button
-                onClick={generate}
-                disabled={loading || !imageUrl}
-                style={{
-                  padding: '10px', fontWeight: 700, borderRadius: 4, fontSize: 13,
-                  background: loading ? 'var(--surface3)' : 'var(--accent)',
-                  color: loading ? '#888' : '#000',
-                  border: 'none', cursor: loading ? 'default' : 'pointer',
-                }}
-              >{loading ? '◉ Génération…' : resultUrl ? '◉ Régénérer' : '◉ Générer'}</button>
+              <Btn variant="primary" size="lg" full icon={ICONS.rec} onClick={generate} disabled={loading || !imageUrl}>
+                {loading ? 'Génération…' : resultUrl ? 'Régénérer' : 'Générer'}
+              </Btn>
             </div>
           </div>
         )}
@@ -932,7 +921,6 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
   )
 }
 
-const SL = { fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: 1 }
-const LBL = { display: 'block', fontSize: 10, fontWeight: 700, color: '#666', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 4 }
-const BTN_GHOST = { fontSize: 11, color: 'var(--text2)', background: 'var(--surface2)', border: '1px solid var(--border2)', borderRadius: 5, padding: '5px 10px', cursor: 'pointer', minHeight: 28 }
-const SEEK_BTN = { fontSize: 13, color: 'var(--text2)', background: 'var(--surface2)', border: '1px solid var(--border2)', borderRadius: 5, padding: '5px 9px', cursor: 'pointer', minHeight: 28 }
+const LBL = { marginBottom: 4 }
+const ROW_BTN = { background: 'none', border: 'none', padding: 0, minWidth: 28, minHeight: 32, margin: '-6px 0', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }
+const SWATCH_HIT = { width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }

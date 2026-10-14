@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
+import { Icon, ICONS } from './Icons'
 import { filenameFromDisposition, saveBlob } from './download'
 
 /* Progress surface — one place for long ops (Whisper, MP4 burn, Plex remux,
@@ -286,7 +287,7 @@ function ProgressToasts({ jobs, onCancel, onDismiss, onRetry }) {
   if (!jobs.length) return null
   return (
     <div style={{
-      position: 'fixed', right: 14, bottom: 14, zIndex: 1000,
+      position: 'fixed', right: 14, bottom: 14, zIndex: 'var(--z-toast)',
       display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 340,
     }}>
       {jobs.map(j => (
@@ -330,7 +331,7 @@ function ProgressCard({ job, onCancel, onDismiss, onRetry }) {
             style={{
               background: 'transparent', border: '1px solid var(--border2)',
               color: 'var(--text2)', borderRadius: 4,
-              padding: '2px 8px', fontSize: 11, cursor: 'pointer',
+              padding: '0 8px', minHeight: 32, fontSize: 11, cursor: 'pointer',
             }}>Annuler</button>
         )}
         {isErr && job.retry && (
@@ -339,12 +340,15 @@ function ProgressCard({ job, onCancel, onDismiss, onRetry }) {
             style={{
               background: 'transparent', border: '1px solid var(--accent)',
               color: 'var(--accent)', borderRadius: 4,
-              padding: '2px 10px', fontSize: 11, fontWeight: 600, cursor: 'pointer',
+              padding: '0 10px', minHeight: 32, fontSize: 11, fontWeight: 600, cursor: 'pointer',
             }}>Réessayer</button>
         )}
         {(isErr || isDone || isCanc) && (
           <button onClick={() => onDismiss(job.key)} title="Fermer"
-            style={{ background: 'transparent', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 14, padding: '0 4px' }}>×</button>
+            aria-label="Fermer"
+            style={{ background: 'transparent', border: 'none', color: 'var(--text3)', cursor: 'pointer', width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
+            <Icon d={ICONS.close} size={14} />
+          </button>
         )}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
@@ -357,7 +361,7 @@ function ProgressCard({ job, onCancel, onDismiss, onRetry }) {
           </span>
         )}
         {isDone && (
-          <span style={{ fontSize: 11, color: 'var(--success)' }}>✓ Terminé</span>
+          <span style={{ fontSize: 11, color: 'var(--success)', display: 'inline-flex', alignItems: 'center', gap: 4 }}><Icon d={ICONS.check} size={12} />Terminé</span>
         )}
       </div>
       {(isRun || isDone) && (
