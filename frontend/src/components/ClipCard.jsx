@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { Icon, ICONS } from '../Icons'
 import { Avatar } from '../ui'
 
 const fmt = t => {
-  const m = Math.floor(t / 60)
-  const s = (t % 60).toFixed(0).padStart(2, '0')
-  return `${m}:${s}`
+  const r = Math.round(t)
+  return `${Math.floor(r / 60)}:${String(r % 60).padStart(2, '0')}`
 }
 
 const STATUS = {
@@ -31,6 +31,7 @@ export default function ClipCard({ clip, onDub, onMeme, onDelete, onRename, onSt
   const [hover, setHover] = useState(false)
   const [watching, setWatching] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const renameDoneRef = useRef(false)
   const duration = clip.end - clip.start
   const status = STATUS[clip.status] || STATUS.todo
 
@@ -52,7 +53,10 @@ export default function ClipCard({ clip, onDub, onMeme, onDelete, onRename, onSt
     if (c && !chars.includes(c)) chars.push(c)
   }
 
+  // Enter/Escape unmount the input, which also fires blur — commit only once.
   function submitRename() {
+    if (renameDoneRef.current) return
+    renameDoneRef.current = true
     const n = nameInput.trim()
     if (n && n !== clip.name) onRename(clip.clip_id, n)
     setEditingName(false)
@@ -160,13 +164,13 @@ export default function ClipCard({ clip, onDub, onMeme, onDelete, onRename, onSt
             onKeyDown={e => {
               e.stopPropagation()
               if (e.key === 'Enter') submitRename()
-              if (e.key === 'Escape') setEditingName(false)
+              if (e.key === 'Escape') { renameDoneRef.current = true; setEditingName(false) }
             }}
             style={{ width: '100%', fontSize: 13, fontWeight: 500 }}
           />
         ) : (
           <div
-            onClick={e => { e.stopPropagation(); setEditingName(true); setNameInput(clip.name) }}
+            onClick={e => { e.stopPropagation(); renameDoneRef.current = false; setEditingName(true); setNameInput(clip.name) }}
             style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', textWrap: 'pretty', marginBottom: 5 }}
             title="Cliquez pour renommer"
           >
@@ -206,7 +210,7 @@ export default function ClipCard({ clip, onDub, onMeme, onDelete, onRename, onSt
 
       {/* Action row — reveals on hover (prototype) */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto auto', borderTop: '1px solid var(--border)', opacity: hover ? 1 : 0, maxHeight: hover ? 44 : 0, overflow: 'hidden', transition: 'opacity 0.15s, max-height 0.15s' }}>
-        <ActionBtn onClick={e => { e.stopPropagation(); onDub(clip) }} accent flex title="Doublage">
+        <ActionBtn onClick={e => { e.stopPropagation(); onDub(clip) }} accent title="Doublage">
           Doubler
         </ActionBtn>
         <ActionBtn onClick={e => { e.stopPropagation(); setWatching(true) }} title="Voir le clip">
@@ -230,7 +234,7 @@ export default function ClipCard({ clip, onDub, onMeme, onDelete, onRename, onSt
       </div>
 
       {/* View modal */}
-      {watching && segmentUrl && (
+      {watching && segmentUrl && createPortal(
         <div
           onClick={e => { e.stopPropagation(); if (e.target === e.currentTarget) setWatching(false) }}
           style={{
@@ -247,13 +251,14 @@ export default function ClipCard({ clip, onDub, onMeme, onDelete, onRename, onSt
             </div>
             <video src={segmentUrl} controls autoPlay style={{ display: 'block', width: '100%', background: '#000' }} />
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   )
 }
 
-function ActionBtn({ children, onClick, accent, danger, title, flex, disabled, mono, last }) {
+function ActionBtn({ children, onClick, accent, danger, title, disabled, mono, last }) {
   const [hover, setHover] = useState(false)
   return (
     <button

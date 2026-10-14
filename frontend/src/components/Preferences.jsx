@@ -169,7 +169,7 @@ function FontUpload() {
     try {
       const fd = new FormData()
       fd.append('file', file)
-      const r = await fetch('/api/fonts', { method: 'POST', body: fd })
+      const r = await fetch('/api/fonts/upload', { method: 'POST', body: fd })
       if (!r.ok) throw new Error(`HTTP ${r.status}`)
       const d = await r.json().catch(() => ({}))
       setMsg(`✓ ${d.name || file.name}`)

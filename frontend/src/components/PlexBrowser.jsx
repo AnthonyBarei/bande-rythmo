@@ -50,8 +50,8 @@ function PlexConnect({ onConnected }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url, token }),
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.detail || 'Erreur')
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`)
       onConnected(data.server)
     } catch (e) {
       setErr(e.message)
@@ -167,20 +167,33 @@ function LibraryGrid({ sectionId, onSelect, selectedKey }) {
   const [items, setItems] = useState([])
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(false)
+  const [loadErr, setLoadErr] = useState(null)
   const debounceRef = useRef(null)
+  const reqRef = useRef(0)
 
+  // Latest request wins — a slow earlier search must not overwrite newer results.
   async function load(q = '') {
+    const req = ++reqRef.current
     setLoading(true)
+    setLoadErr(null)
     try {
       const url = `/api/plex/library/${sectionId}?limit=60${q ? `&search=${encodeURIComponent(q)}` : ''}`
       const res = await fetch(url)
-      const data = await res.json()
-      setItems(data.items || [])
-    } catch (_) {}
-    setLoading(false)
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`)
+      if (req === reqRef.current) setItems(data.items || [])
+    } catch (e) {
+      if (req === reqRef.current) { setItems([]); setLoadErr('Bibliothèque inaccessible : ' + e.message) }
+    } finally {
+      if (req === reqRef.current) setLoading(false)
+    }
   }
 
-  useEffect(() => { load() }, [sectionId])
+  useEffect(() => {
+    clearTimeout(debounceRef.current)
+    load(search)
+    return () => clearTimeout(debounceRef.current)
+  }, [sectionId])
 
   function handleSearch(e) {
     const q = e.target.value
@@ -276,8 +289,8 @@ function LibraryGrid({ sectionId, onSelect, selectedKey }) {
           )
         })}
         {!loading && items.length === 0 && (
-          <div style={{ gridColumn: '1/-1', color: 'var(--text3)', fontSize: 13, padding: 24, textAlign: 'center' }}>
-            Aucun résultat
+          <div style={{ gridColumn: '1/-1', color: loadErr ? 'var(--danger)' : 'var(--text3)', fontSize: 13, padding: 24, textAlign: 'center' }}>
+            {loadErr || 'Aucun résultat'}
           </div>
         )}
       </div>
@@ -294,24 +307,34 @@ export default function PlexBrowser({ onSourceSelected }) {
   const [err, setErr] = useState(null)
 
   async function checkStatus() {
-    const res = await fetch('/api/plex/status')
-    const data = await res.json()
-    setStatus(data)
-    if (data.connected) loadLibraries()
+    setErr(null)
+    try {
+      const res = await fetch('/api/plex/status')
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+      setStatus(data)
+      if (data.connected) loadLibraries()
+    } catch (e) {
+      setErr('Statut Plex indisponible : ' + e.message)
+    }
   }
 
   async function loadLibraries() {
     try {
       const res = await fetch('/api/plex/libraries')
-      const data = await res.json()
+      const data = await res.json().catch(() => null)
+      if (!res.ok || !Array.isArray(data)) throw new Error(data?.detail || `HTTP ${res.status}`)
       setLibraries(data)
-      if (data.length > 0) setActiveSectionId(data[0].id)
-    } catch (_) {}
+      if (data.length > 0) setActiveSectionId(prev => data.some(l => l.id === prev) ? prev : data[0].id)
+    } catch (e) {
+      setErr('Bibliothèques inaccessibles : ' + e.message)
+    }
   }
 
   useEffect(() => { checkStatus() }, [])
 
   async function handleSelect(ratingKey) {
+    if (loadingItem) return
     setLoadingItem(true)
     setErr(null)
     setSelectedKey(ratingKey)
@@ -324,7 +347,8 @@ export default function PlexBrowser({ onSourceSelected }) {
 
       const part = item.parts[0]
       const sourceId = crypto.randomUUID()
-      await fetch(`/api/files/register?source_id=${sourceId}&stream_url=${encodeURIComponent(part.stream_url)}&filename=${encodeURIComponent(part.filename)}`, { method: 'POST' })
+      const reg = await fetch(`/api/files/register?source_id=${sourceId}&stream_url=${encodeURIComponent(part.stream_url)}&filename=${encodeURIComponent(part.filename)}`, { method: 'POST' })
+      if (!reg.ok) throw new Error(`Enregistrement source : HTTP ${reg.status}`)
 
       onSourceSelected({
         sourceId,
@@ -343,7 +367,18 @@ export default function PlexBrowser({ onSourceSelected }) {
     }
   }
 
-  if (!status) return <div style={{ padding: 24, color: 'var(--text3)' }}>Vérification Plex…</div>
+  if (!status) {
+    if (!err) return <div style={{ padding: 24, color: 'var(--text3)' }}>Vérification Plex…</div>
+    return (
+      <div style={{ padding: 24, display: 'flex', alignItems: 'center', gap: 12, fontSize: 13 }}>
+        <span style={{ color: 'var(--danger)' }}>{err}</span>
+        <button onClick={checkStatus}
+          style={{ fontSize: 11, color: 'var(--text2)', background: 'transparent', border: '1px solid var(--border2)', borderRadius: 5, padding: '4px 10px', minHeight: 28, cursor: 'pointer' }}>
+          Réessayer
+        </button>
+      </div>
+    )
+  }
 
   if (!status.connected) {
     return <PlexConnect onConnected={() => checkStatus()} />

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { Icon, ICONS } from '../Icons'
 import { useProgress } from '../ProgressContext'
+import { useSettings } from '../SettingsContext'
 import { fmtClock } from '../utils/timecode'
 
 const FORMATS = [
@@ -13,13 +14,15 @@ const FORMATS = [
   { id: 'gif',         label: 'GIF',        icon: ICONS.gif,   desc: 'Clip animé',                                  color: '#ff6644', needsSubs: false },
   { id: 'mp3',         label: 'MP3',        icon: ICONS.audio, desc: 'Audio — StreamDeck, Discord…',                color: '#ff6688', needsSubs: false },
   { id: 'wav',         label: 'WAV',        icon: ICONS.audio, desc: 'Audio non compressé',                         color: '#aa88ff', needsSubs: false },
+  { id: 'dubpack',     label: 'Dubpack',    icon: ICONS.mic,   desc: 'Pack Choicer Voicer — OGV, répliques, timestamps', color: '#e879f9', needsSubs: true },
 ]
 
 export default function ExportPanel({ segmentId, subtitles, boucles = [], pxPerSec = 180, brOffset = 0, canvasH = 64, getCanvasWidth, brFont = 'atkinson', brStyle = 'classique', duration = 0, getCurrentTime, loopRegion = null }) {
   const [loading, setLoading] = useState(null)
   const [error, setError] = useState(null)
   const [lastExport, setLastExport] = useState(null)
-  const [detectionBurn, setDetectionBurn] = useState(false)
+  const { settings } = useSettings()
+  const [detectionBurn, setDetectionBurn] = useState(() => !!settings.exportDetectionBurn)
   const [quality, setQuality] = useState('standard')   // draft | standard | youtube
   // Custom export range — off = whole clip. Applies to every format.
   const [rangeOn, setRangeOn] = useState(false)
@@ -35,7 +38,7 @@ export default function ExportPanel({ segmentId, subtitles, boucles = [], pxPerS
 
   // Persist history toggle.
   useEffect(() => {
-    try { localStorage.setItem('export-auto-dl', autoDownload ? '1' : '0') } catch {}
+    try { localStorage.setItem('export-auto-dl', autoDownload ? '1' : '0') } catch { /* storage unavailable — keep in-memory value */ }
   }, [autoDownload])
 
   // Load past exports for the current clip.
@@ -52,7 +55,7 @@ export default function ExportPanel({ segmentId, subtitles, boucles = [], pxPerS
   // Default the range end to the clip duration when it arrives.
   useEffect(() => {
     if (duration > 0 && rangeOut === 0) setRangeOut(duration)
-  }, [duration]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [duration])
 
   // Probe HW encoders once (cached server-side).
   useEffect(() => {
@@ -73,9 +76,12 @@ export default function ExportPanel({ segmentId, subtitles, boucles = [], pxPerS
   async function removeExport(id) {
     if (!confirm('Supprimer cet export ?')) return
     try {
-      await fetch(`/api/export/${id}`, { method: 'DELETE' })
-      refreshHistory()
-    } catch {}
+      const res = await fetch(`/api/export/${id}`, { method: 'DELETE' })
+      if (!res.ok && res.status !== 404) throw new Error(`HTTP ${res.status}`)
+    } catch (e) {
+      setError('Suppression de l\'export échouée : ' + e.message)
+    }
+    refreshHistory()
   }
 
   const fmtSec = t => (!t && t !== 0) ? '--' : fmtClock(t)
@@ -125,6 +131,35 @@ export default function ExportPanel({ segmentId, subtitles, boucles = [], pxPerS
       if (rangeOn && rangeOut > rangeIn) {
         body.in_point = rangeIn
         body.out_point = rangeOut
+      }
+
+      // Dubpack → Theora OGV + one clip per line. Slow enough to be a job.
+      if (format === 'dubpack') {
+        const fireJob = async () => {
+          const res = await fetch('/api/export/dubpack-job', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          })
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}))
+            throw new Error(err.detail || `HTTP ${res.status}`)
+          }
+          const { job_id } = await res.json()
+          return job_id
+        }
+        const jobId = await fireJob()
+        progress.start({
+          kind: 'export-dubpack',
+          title: 'Export Dubpack',
+          jobId,
+          retry: fireJob,
+          downloadOnDone: autoDownload,
+          downloadFilename: 'dubpack.zip',
+          onDone: () => { setLastExport(format); setLoading(null); refreshHistory() },
+          onError: (err) => { setError('Erreur export : ' + err.message); setLoading(null) },
+          onCancel: () => { setError('Export annulé.'); setLoading(null) },
+        })
+        return
       }
 
       // GIF → job mode (two-pass palette → slow).
@@ -214,15 +249,19 @@ export default function ExportPanel({ segmentId, subtitles, boucles = [], pxPerS
         a.download = format === 'croisille'
           ? 'croisille.html'
           : `bande_rythmo${format === 'ass-karaoke' ? '_karaoke' : ''}.${ext}`
+        document.body.appendChild(a)
         a.click()
-        URL.revokeObjectURL(url)
+        a.remove()
+        setTimeout(() => URL.revokeObjectURL(url), 1000)
       }
       setLastExport(format)
       refreshHistory()
     } catch (e) {
+      // Also covers a job that failed to start — otherwise every button stays disabled.
       setError('Erreur export : ' + e.message)
+      setLoading(null)
     } finally {
-      if (format !== 'mp4' && format !== 'gif') setLoading(null)
+      if (format !== 'mp4' && format !== 'gif' && format !== 'dubpack') setLoading(null)
     }
   }
 
@@ -462,7 +501,7 @@ export default function ExportPanel({ segmentId, subtitles, boucles = [], pxPerS
 
       {lastExport && !error && !loading && (
         <div style={{ padding: '10px 14px', background: 'rgba(68,187,85,0.1)', border: '1px solid rgba(68,187,85,0.3)', borderRadius: 4, color: 'var(--success)', fontSize: 13 }}>
-          ✓ Export {lastExport.toUpperCase()} téléchargé
+          ✓ Export {lastExport.toUpperCase()} {autoDownload ? 'téléchargé' : 'terminé — voir les exports précédents'}
         </div>
       )}
     </div>
@@ -522,8 +561,9 @@ function MixSection({ segmentId, subtitles = [], onExported }) {
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
-      a.href = url; a.download = 'clip_double.mp4'; a.click()
-      URL.revokeObjectURL(url)
+      a.href = url; a.download = 'clip_double.mp4'
+      document.body.appendChild(a); a.click(); a.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
       setMsg({ kind: 'ok', text: `MP4 doublé exporté — ${selected.length} prise${selected.length > 1 ? 's' : ''} mixée${selected.length > 1 ? 's' : ''}.` })
       onExported?.()
     } catch (e) {
@@ -550,7 +590,7 @@ function MixSection({ segmentId, subtitles = [], onExported }) {
     } finally { setBedBusy(false); e.target.value = '' }
   }
 
-  async function useStem(stem) {
+  async function applyStem(stem) {
     setBedBusy(true); setMsg(null)
     try {
       const res = await fetch(`/api/clips/${segmentId}/use-stem`, {
@@ -570,7 +610,11 @@ function MixSection({ segmentId, subtitles = [], onExported }) {
   async function resetBed() {
     setBedBusy(true); setMsg(null)
     try {
-      await fetch(`/api/clips/${segmentId}/audio-bed`, { method: 'DELETE' })
+      const res = await fetch(`/api/clips/${segmentId}/audio-bed`, { method: 'DELETE' })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.detail || `HTTP ${res.status}`)
+      }
       setHasBed(false)
       setMsg({ kind: 'ok', text: 'Audio original restauré.' })
     } catch (err) {
@@ -588,12 +632,12 @@ function MixSection({ segmentId, subtitles = [], onExported }) {
         <div style={{ flex: 1 }} />
         {/* bed management */}
         <label title="Remplacer l'audio du clip par un fichier (wav/mp3/m4a)" style={{ cursor: 'pointer' }}>
-          <input type="file" accept="audio/*,.wav,.mp3,.m4a,.flac,.ogg" onChange={uploadBed} style={{ display: 'none' }} />
+          <input type="file" accept="audio/*,.wav,.mp3,.m4a,.flac,.ogg" onChange={uploadBed} disabled={bedBusy} style={{ display: 'none' }} />
           <span style={{ fontSize: 10.5, color: 'var(--text2)', background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: 4, padding: '3px 8px' }}>
             {bedBusy ? '…' : 'Remplacer l\'audio'}
           </span>
         </label>
-        <button onClick={() => useStem('no_vocals')} disabled={bedBusy} title="Utiliser l'instrumental Demucs (séparation vocale requise)"
+        <button onClick={() => applyStem('no_vocals')} disabled={bedBusy} title="Utiliser l'instrumental Demucs (séparation vocale requise)"
           style={{ fontSize: 10.5, color: 'var(--text2)', background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: 4, padding: '3px 8px', cursor: 'pointer' }}>
           Instrumental
         </button>

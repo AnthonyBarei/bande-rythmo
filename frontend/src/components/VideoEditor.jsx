@@ -30,6 +30,7 @@ export default function VideoEditor({ video, onClipsCreated, videoStream, audioS
   const [editingId, setEditingId] = useState(null)
   const [editValue, setEditValue] = useState('')
   const pendingRef = useRef(pendingClips)
+  const savingRef = useRef(false)
   useEffect(() => { pendingRef.current = pendingClips }, [pendingClips])
 
   useEffect(() => {
@@ -42,9 +43,13 @@ export default function VideoEditor({ video, onClipsCreated, videoStream, audioS
 
   const saveAll = useCallback(async () => {
     const pending = pendingRef.current
-    if (pending.length === 0) return
+    if (pending.length === 0 || savingRef.current) return
+    savingRef.current = true
     setSaving(true)
     setError(null)
+    // Clips added while the batch runs stay queued.
+    const submitted = new Set(pending.map(c => c._id))
+    const finish = () => { savingRef.current = false; setSaving(false) }
     const sourcePath = video?.sourcePath
 
     // Local/Plex source → job mode (per-segment progress + cancel).
@@ -80,16 +85,16 @@ export default function VideoEditor({ video, onClipsCreated, videoStream, audioS
           onDone: (result) => {
             const results = (result && result.clips) || []
             setSavedClips(prev => [...results, ...prev])
-            setPendingClips([])
+            setPendingClips(prev => prev.filter(c => !submitted.has(c._id)))
             onClipsCreated(results)
-            setSaving(false)
+            finish()
           },
-          onError: (err) => { setError('Erreur : ' + err.message); setSaving(false) },
-          onCancel: () => { setError('Découpe annulée.'); setSaving(false) },
+          onError: (err) => { setError('Erreur : ' + err.message); finish() },
+          onCancel: () => { setError('Découpe annulée.'); finish() },
         })
       } catch (e) {
         setError('Erreur : ' + e.message)
-        setSaving(false)
+        finish()
       }
       return
     }
@@ -109,12 +114,12 @@ export default function VideoEditor({ video, onClipsCreated, videoStream, audioS
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const results = await res.json()
       setSavedClips(prev => [...results, ...prev])
-      setPendingClips([])
+      setPendingClips(prev => prev.filter(c => !submitted.has(c._id)))
       onClipsCreated(results)
     } catch (e) {
       setError('Erreur : ' + e.message)
     } finally {
-      setSaving(false)
+      finish()
     }
   }, [video?.url, video?.file, video?.filename, video?.sourcePath, onClipsCreated, videoStream, audioStream, progress])
 

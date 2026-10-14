@@ -48,7 +48,7 @@ function load() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (raw) return { ...DEFAULTS, ...JSON.parse(raw) }
-  } catch (_) {}
+  } catch { /* unavailable or corrupt storage → defaults */ }
   return { ...DEFAULTS }
 }
 
@@ -61,7 +61,7 @@ export function SettingsProvider({ children }) {
     applySettings(settings)
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(settings))
-    } catch (_) {}
+    } catch { /* storage unavailable — settings stay in memory */ }
   }, [settings])
 
   function update(patch) {

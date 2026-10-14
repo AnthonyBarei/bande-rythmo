@@ -53,12 +53,6 @@ export function ToastProvider({ children }) {
     let commitTimer = null
     const id = `t-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`
 
-    const finish = () => {
-      cancelled = true
-      if (commitTimer) { clearTimeout(commitTimer); commitTimer = null }
-      dismiss(id)
-    }
-
     const action = {
       label: 'Annuler',
       run: () => {
@@ -70,22 +64,27 @@ export function ToastProvider({ children }) {
       },
     }
 
+    const commit = () => {
+      if (cancelled) return
+      cancelled = true
+      if (commitTimer) { clearTimeout(commitTimer); commitTimer = null }
+      try { opts.onCommit?.() } catch (e) { console.error(e) }
+      dismiss(id)
+    }
+
     setToasts(prev => [...prev, {
       id,
       msg: opts.msg || '',
       kind: 'undo',
       action,
+      // Closing with × must still commit — otherwise the destructive op is lost.
+      onClose: commit,
     }])
 
-    commitTimer = setTimeout(() => {
-      if (cancelled) return
-      cancelled = true
-      try { opts.onCommit?.() } catch (e) { console.error(e) }
-      dismiss(id)
-    }, duration)
+    commitTimer = setTimeout(commit, duration)
     timers.current.set(id, commitTimer)
 
-    return { id, cancel: action.run, commit: () => { if (!cancelled) { cancelled = true; clearTimeout(commitTimer); try { opts.onCommit?.() } catch {} ; dismiss(id) } } }
+    return { id, cancel: action.run, commit }
   }, [dismiss])
 
   return (
@@ -141,7 +140,7 @@ function ToastCard({ toast, onDismiss }) {
           }}>{toast.action.label}</button>
       )}
       <button
-        onClick={() => onDismiss(toast.id)}
+        onClick={() => toast.onClose ? toast.onClose() : onDismiss(toast.id)}
         title="Fermer"
         style={{ background: 'transparent', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 14, padding: '0 4px' }}>×</button>
     </div>

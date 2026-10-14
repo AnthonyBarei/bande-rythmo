@@ -12,13 +12,6 @@ import ShortcutsOverlay from './components/ShortcutsOverlay'
 import CommandPalette from './components/CommandPalette'
 import ActivityCenter from './components/ActivityCenter'
 
-const SAVE_STATUS = {
-  saved:   { text: '✓ Sauvegardé', color: 'var(--success)' },
-  saving:  { text: '… Sauvegarde', color: 'var(--text2)' },
-  unsaved: { text: '● Non sauvegardé', color: '#f5c518' },
-  error:   { text: '✕ Erreur', color: 'var(--danger)' },
-}
-
 export default function App() {
   return (
     <ProgressProvider>
@@ -29,20 +22,68 @@ export default function App() {
   )
 }
 
+const NAV_KEY = 'br-nav'
+const RESTORABLE = new Set(['import', 'clips', 'dub', 'memes', 'settings', 'activity'])
+
+function loadNav() {
+  try {
+    const nav = JSON.parse(sessionStorage.getItem(NAV_KEY) || '{}')
+    return RESTORABLE.has(nav.section) ? nav : {}
+  } catch {
+    return {} // storage blocked / corrupt — start fresh
+  }
+}
+
+function saveNav(nav) {
+  try {
+    sessionStorage.setItem(NAV_KEY, JSON.stringify(nav))
+  } catch {
+    // storage blocked — reload simply starts on Importer
+  }
+}
+
 function AppInner() {
   const toast = useToast()
-  const [section, setSection] = useState('import')
+  const [initialNav] = useState(loadNav)
+  const [section, setSection] = useState(initialNav.section || 'import')
   const [video, setVideo] = useState(null)
   const [clips, setClips] = useState([])
   const [activeClip, setActiveClip] = useState(null)
   const [memeClip, setMemeClip] = useState(null)
   const [memeInitialTab, setMemeInitialTab] = useState(null)
-  const [dubSaveStatus, setDubSaveStatus] = useState('saved')
   const [dubExportOpen, setDubExportOpen] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [cmdOpen, setCmdOpen] = useState(false)
 
-  useEffect(() => { fetchClips() }, [])
+  useEffect(() => {
+    let live = true
+    async function fetchClips() {
+      try {
+        const res = await fetch('/api/clips/')
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const data = await res.json()
+        if (!live) return
+        setClips(data)
+        if (initialNav.section === 'dub') {
+          const clip = data.find(c => c.clip_id === initialNav.clipId)
+          if (clip) setActiveClip(clip)
+          else setSection('clips')
+        }
+      } catch (e) {
+        console.error('Failed to fetch clips:', e)
+        if (!live) return
+        toast.error('Impossible de charger les clips — le serveur est-il lancé ?')
+        setSection(s => s === 'dub' ? 'clips' : s)
+      }
+    }
+    fetchClips()
+    return () => { live = false }
+  }, [])
+
+  useEffect(() => {
+    if (section === 'dub' && !activeClip) return // still restoring
+    saveNav({ section, clipId: activeClip?.clip_id || null })
+  }, [section, activeClip])
 
   // Global keys: "?" → shortcuts · ⌘K/Ctrl+K or "/" → command palette.
   useEffect(() => {
@@ -61,23 +102,13 @@ function AppInner() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  async function fetchClips() {
-    try {
-      const res = await fetch('/api/clips/')
-      if (!res.ok) return
-      const data = await res.json()
-      setClips(data)
-    } catch (e) {
-      console.error('Failed to fetch clips:', e)
-    }
-  }
-
   function handleClipsCreated(newClips) {
     setClips(prev => {
       const ids = new Set(prev.map(c => c.clip_id))
       return [...newClips.filter(c => !ids.has(c.clip_id)), ...prev]
     })
-    setSection('clips')
+    // A batch job may finish after the user moved on — don't yank them away.
+    setSection(s => s === 'import' ? 'clips' : s)
   }
 
   function handleDub(clip) {
@@ -91,9 +122,12 @@ function AppInner() {
     setSection('memes')
   }
 
+  // Never switch the open clip: a late auto-save of a previous clip must not
+  // yank the editor back to it.
   function handleClipUpdated(updated) {
     setClips(prev => prev.map(c => c.clip_id === updated.clip_id ? updated : c))
-    setActiveClip(updated)
+    setActiveClip(prev => prev?.clip_id === updated.clip_id ? updated : prev)
+    setMemeClip(prev => prev?.clip_id === updated.clip_id ? updated : prev)
   }
 
   async function handleDelete(clipId) {
@@ -109,7 +143,10 @@ function AppInner() {
       },
       onCommit: async () => {
         try {
-          await fetch(`/api/clips/${clipId}`, { method: 'DELETE' })
+          const res = await fetch(`/api/clips/${clipId}`, { method: 'DELETE' })
+          if (!res.ok && res.status !== 404) throw new Error(`HTTP ${res.status}`)
+          setActiveClip(prev => prev?.clip_id === clipId ? null : prev)
+          setMemeClip(prev => prev?.clip_id === clipId ? null : prev)
         } catch (e) {
           console.error(e)
           toast.error('Suppression échouée — clip restauré')
@@ -126,11 +163,13 @@ function AppInner() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name }),
       })
-      if (!res.ok) return
-      const updated = await res.json()
-      setClips(prev => prev.map(c => c.clip_id === clipId ? updated : c))
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      handleClipUpdated(await res.json())
+      return true
     } catch (e) {
       console.error(e)
+      toast.error(`Renommage échoué : ${e.message}`)
+      return false
     }
   }
 
@@ -141,11 +180,13 @@ function AppInner() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status }),
       })
-      if (!res.ok) return
-      const updated = await res.json()
-      setClips(prev => prev.map(c => c.clip_id === clipId ? updated : c))
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      handleClipUpdated(await res.json())
+      return true
     } catch (e) {
       console.error(e)
+      toast.error(`Changement de statut échoué : ${e.message}`)
+      return false
     }
   }
 
@@ -156,25 +197,28 @@ function AppInner() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ project }),
       })
-      if (!res.ok) return
-      const updated = await res.json()
-      setClips(prev => prev.map(c => c.clip_id === clipId ? updated : c))
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      handleClipUpdated(await res.json())
+      return true
     } catch (e) {
       console.error(e)
+      toast.error(`Changement de projet échoué : ${e.message}`)
+      return false
     }
+  }
+
+  function navigate(s) {
+    setDubExportOpen(false)
+    if (s === 'memes') { setMemeClip(null); setMemeInitialTab(null); setSection('memes'); return }
+    if (s === 'record' || s === 'dub') { const tgt = activeClip || clips[0]; if (tgt) { setActiveClip(tgt); setSection('dub') } else setSection('clips'); return }
+    setSection(s)
   }
 
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: 'var(--bg)' }}>
 
       {/* Full-height rail (redesign shell — rail spans the whole window) */}
-      <Sidebar section={section} onNavigate={s => {
-        setDubExportOpen(false)
-        if (s === 'memes') { setMemeClip(null); setSection('memes'); return }
-        if (s === 'record') { const tgt = activeClip || clips[0]; if (tgt) { setActiveClip(tgt); setSection('dub') } else setSection('clips'); return }
-        if (s === 'dub') { const tgt = activeClip || clips[0]; if (tgt) { setActiveClip(tgt); setSection('dub') } else setSection('clips'); return }
-        setSection(s)
-      }} />
+      <Sidebar section={section} onNavigate={navigate} />
 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
 
@@ -235,7 +279,6 @@ function AppInner() {
             clip={activeClip}
             onUpdate={handleClipUpdated}
             onBack={() => { setDubExportOpen(false); setSection('clips') }}
-            onSaveStatus={setDubSaveStatus}
             exportOpen={dubExportOpen}
             onToggleExport={() => setDubExportOpen(v => !v)}
           />
@@ -250,8 +293,8 @@ function AppInner() {
       <CommandPalette
         open={cmdOpen}
         onClose={() => setCmdOpen(false)}
-        onNavigate={setSection}
-        onNewClip={() => setSection('import')}
+        onNavigate={navigate}
+        onNewClip={() => navigate('import')}
         onShortcuts={() => setShortcutsOpen(true)}
         clips={clips}
         onOpenClip={handleDub}

@@ -49,16 +49,17 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
   //   Drop zone (no clip) → 'image'
   // Persist last-used tab per session (sessionStorage), but explicit prop wins.
   const [sourceTab, setSourceTab] = useState(() => {
+    if (!clip) return 'image'   // no clip → only the image drop zone exists
     if (initialTab) return initialTab
     try {
       const last = sessionStorage.getItem('meme-last-tab')
       if (last) return last
-    } catch {}
+    } catch { /* storage unavailable → default tab */ }
     return 'image'
   })
   // Persist tab selection across session.
   useEffect(() => {
-    try { sessionStorage.setItem('meme-last-tab', sourceTab) } catch {}
+    try { sessionStorage.setItem('meme-last-tab', sourceTab) } catch { /* storage unavailable */ }
   }, [sourceTab])
   const [imageUrl, setImageUrl] = useState(null)
   const [imageName, setImageName] = useState(null)
@@ -101,7 +102,12 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
   selectedIdRef.current = selectedId
   draggingRef.current = dragging
 
+  // Reset only when the clip actually changes — running on mount would
+  // override initialTab (ClipCard "GIF" must land on the GIF tab).
+  const prevClipIdRef = useRef(clip?.clip_id)
   useEffect(() => {
+    if (prevClipIdRef.current === clip?.clip_id) return
+    prevClipIdRef.current = clip?.clip_id
     setImageUrl(null)
     setResultUrl(null)
     setVideoTime(0)
@@ -109,8 +115,12 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
     setVideoReady(false)
     setInPoint(0)
     setOutPoint(0)
-    setSourceTab('image')
-  }, [clip?.clip_id])
+    setSourceTab(clip && initialTab ? initialTab : 'image')
+  }, [clip?.clip_id, initialTab])
+
+  // Release replaced blob URLs (frames, GIFs, results can weigh several MB).
+  useEffect(() => () => { if (imageUrl?.startsWith('blob:')) URL.revokeObjectURL(imageUrl) }, [imageUrl])
+  useEffect(() => () => { if (resultUrl?.startsWith('blob:')) URL.revokeObjectURL(resultUrl) }, [resultUrl])
 
   useEffect(() => {
     if (!imageUrl) { setImageDims(null); imgRef.current = null; isGifRef.current = false; return }
@@ -178,7 +188,7 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
     canvas.width = maxW
     canvas.height = Math.round(maxW * (imageDims.h / imageDims.w))
     draw()
-  }, [imageDims, draw])
+  }, [imageDims, draw, resultUrl])
 
   useEffect(() => { draw() }, [texts, selectedId, draw])
 
@@ -292,8 +302,10 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
       ? { ...t, x: Math.max(0, Math.min(100, t.x + dx)), y: Math.max(0, Math.min(100, t.y + dy)) }
       : t))
   }
-  // Arrow-key nudge for selected layer when not editing text.
+  // Arrow-key nudge for selected layer — only while the editor canvas is shown,
+  // otherwise arrows also seek the player and move a hidden layer.
   useEffect(() => {
+    if (!imageUrl || resultUrl) return
     function onKey(e) {
       if (!selectedIdRef.current) return
       if (['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return
@@ -309,7 +321,7 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  }, [imageUrl, resultUrl])
 
   function handleFile(f) {
     if (!f) return
@@ -339,7 +351,7 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
   }
 
   useEffect(() => {
-    if (sourceTab !== 'video' && sourceTab !== 'audio') return
+    if (!segmentUrl || imageUrl) return
     function onKey(e) {
       if (['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return
       if (e.key === 'ArrowLeft') { e.preventDefault(); seekRelative(e.shiftKey ? -1 : -0.1) }
@@ -348,7 +360,7 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [sourceTab, videoDuration])
+  }, [segmentUrl, imageUrl, videoDuration, inPoint, outPoint])
 
   function togglePlay() {
     const v = videoRef.current
@@ -451,8 +463,10 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
       const a = document.createElement('a')
       a.href = url
       a.download = `${clip.name}_${inPoint.toFixed(1)}s-${outPoint.toFixed(1)}s.${format}`
+      document.body.appendChild(a)
       a.click()
-      URL.revokeObjectURL(url)
+      a.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
     } catch (e) {
       setError('Erreur audio : ' + e.message)
     } finally {

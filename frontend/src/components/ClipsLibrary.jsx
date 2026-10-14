@@ -22,7 +22,6 @@ export default function ClipsLibrary({ clips, onDub, onMeme, onDelete, onRename,
   const [filter, setFilter] = useState('all')
   const [sort, setSort] = useState('recent')
   const [search, setSearch] = useState('')
-  const [sortOpen, setSortOpen] = useState(false)
   const [projectFilter, setProjectFilter] = useState('__all')   // __all | __none | <name>
 
   const projects = useMemo(() => {
@@ -30,12 +29,15 @@ export default function ClipsLibrary({ clips, onDub, onMeme, onDelete, onRename,
     for (const c of clips) if (c.project) set.add(c.project)
     return [...set].sort((a, b) => a.localeCompare(b))
   }, [clips])
+  // A project that lost its last clip falls back to "all" (its Select may be gone).
+  const activeProject = projectFilter === '__all' || projectFilter === '__none' || projects.includes(projectFilter)
+    ? projectFilter : '__all'
 
   async function assignProject(clipId) {
     const name = window.prompt('Nom du projet (vide = retirer du projet) :')
     if (name == null) return
-    await onSetProject?.(clipId, name.trim())
-    showToast(name.trim() ? `Déplacé vers « ${name.trim()} »` : 'Retiré du projet')
+    const ok = await onSetProject?.(clipId, name.trim())
+    if (ok) showToast(name.trim() ? `Déplacé vers « ${name.trim()} »` : 'Retiré du projet')
   }
 
   function showToast(msg, type = 'info') {
@@ -51,28 +53,21 @@ export default function ClipsLibrary({ clips, onDub, onMeme, onDelete, onRename,
 
   const visible = useMemo(() => {
     let list = clips
-    if (projectFilter === '__none') list = list.filter(c => !c.project)
-    else if (projectFilter !== '__all') list = list.filter(c => c.project === projectFilter)
+    if (activeProject === '__none') list = list.filter(c => !c.project)
+    else if (activeProject !== '__all') list = list.filter(c => c.project === activeProject)
     if (filter !== 'all') list = list.filter(c => (c.status || 'todo') === filter)
     if (search.trim()) {
       const q = search.trim().toLowerCase()
-      list = list.filter(c => c.name.toLowerCase().includes(q))
+      list = list.filter(c => (c.name || '').toLowerCase().includes(q))
     }
     list = [...list]
-    if (sort === 'name') list.sort((a, b) => a.name.localeCompare(b.name))
+    if (sort === 'name') list.sort((a, b) => (a.name || '').localeCompare(b.name || ''))
     else if (sort === 'duration') list.sort((a, b) => (b.end - b.start) - (a.end - a.start))
     else list.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
     return list
-  }, [clips, filter, search, sort, projectFilter])
+  }, [clips, filter, search, sort, activeProject])
 
   const totalDur = useMemo(() => clips.reduce((s, c) => s + (c.end - c.start), 0), [clips])
-
-  async function handleDelete(clipId) {
-    await onDelete(clipId)
-    showToast('Clip supprimé')
-  }
-
-  const sortLabel = SORTS.find(s => s.key === sort)?.label || 'Récents'
 
   const projectOptions = useMemo(() => [
     { v: '__all', l: 'Tous les projets', icon: ICONS.grid },
@@ -103,7 +98,7 @@ export default function ClipsLibrary({ clips, onDub, onMeme, onDelete, onRename,
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, borderBottom: '1px solid var(--border)', height: 44 }}>
           {projects.length > 0 && (
             <>
-              <Select size="sm" width={170} value={projectFilter} onChange={setProjectFilter} options={projectOptions} />
+              <Select size="sm" width={170} value={activeProject} onChange={setProjectFilter} options={projectOptions} />
               <div style={{ width: 1, height: 20, background: 'var(--border)', margin: '0 6px' }} />
             </>
           )}
@@ -162,7 +157,7 @@ export default function ClipsLibrary({ clips, onDub, onMeme, onDelete, onRename,
                 clip={clip}
                 onDub={onDub}
                 onMeme={onMeme}
-                onDelete={handleDelete}
+                onDelete={onDelete}
                 onRename={onRename}
                 onStatusChange={onStatusChange}
                 onAssignProject={assignProject}

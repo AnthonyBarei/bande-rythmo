@@ -29,7 +29,6 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
   const sourceIdRef = useRef(null)
   const pollRef = useRef(null)
   const progress = useProgress()
-  const progressKeyRef = useRef(null)
 
   const timeoutRef = useRef(null)
 
@@ -53,36 +52,59 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
     setRemuxing(true)
 
     let progressStarted = false
+    let stale = false
+    const statusUrl = `/api/files/remux-status/${sid}?video=${v}&audio=${a}`
+    const streamUrl = `/api/files/stream/${sid}?video=${v}&audio=${a}`
 
+    // The backend creates the job inside a task spawned after the POST returns,
+    // so the POST usually carries no job_id — read it back from the status.
     async function fireRemuxJob() {
       const r = await fetch(`/api/files/remux/${sid}?video=${v}&audio=${a}`, { method: 'POST' })
       const j = await r.json().catch(() => ({}))
-      return j.job_id || null
+      if (!r.ok) throw new Error(j.detail || `HTTP ${r.status}`)
+      if (j.job_id) return j.job_id
+      const st = await fetch(statusUrl).then(res => res.json()).catch(() => ({}))
+      return st.job_id || null
+    }
+
+    function startProgress(jobId) {
+      if (progressStarted || stale) return
+      progressStarted = true
+      progress.start({
+        kind: 'plex-remux',
+        title: 'Préparation audio',
+        jobId,
+        retry: fireRemuxJob,
+        onDone: () => {
+          if (stale) return
+          stopPoll()
+          setRemuxing(false)
+          setError(null)
+          setAudioSrc(streamUrl)
+        },
+        onCancel: () => {
+          if (stale) return
+          stopPoll()
+          setRemuxing(false)
+          setError('Extraction annulée.')
+        },
+        onError: (err) => {
+          if (stale) return
+          stopPoll()
+          setRemuxing(false)
+          setError('Erreur remux : ' + err.message)
+        },
+      })
     }
 
     async function startRemux() {
       try {
         const jobId = await fireRemuxJob()
-        if (jobId && !progressStarted) {
-          progressStarted = true
-          progress.start({
-            kind: 'plex-remux',
-            title: 'Préparation audio',
-            jobId,
-            retry: fireRemuxJob,
-            onCancel: () => {
-              stopPoll()
-              setRemuxing(false)
-              setError('Extraction annulée.')
-            },
-            onError: (err) => {
-              stopPoll()
-              setRemuxing(false)
-              setError('Erreur remux : ' + err.message)
-            },
-          })
-        }
-      } catch (_) {}
+        if (jobId) startProgress(jobId)
+      } catch (e) {
+        console.warn('remux start failed', e)
+      }
+      if (stale) return
 
       timeoutRef.current = setTimeout(() => {
         stopPoll()
@@ -92,45 +114,32 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
 
       pollRef.current = setInterval(async () => {
         try {
-          const res = await fetch(`/api/files/remux-status/${sid}?video=${v}&audio=${a}`)
+          const res = await fetch(statusUrl)
           const data = await res.json()
+          if (stale) return
           // If we missed the job_id on POST (race), pick it up on first poll.
-          if (data.job_id && !progressStarted) {
-            progressStarted = true
-            progress.start({
-              kind: 'plex-remux',
-              title: 'Préparation audio',
-              jobId: data.job_id,
-              onCancel: () => {
-                stopPoll()
-                setRemuxing(false)
-                setError('Extraction annulée.')
-              },
-              onError: (err) => {
-                stopPoll()
-                setRemuxing(false)
-                setError('Erreur remux : ' + err.message)
-              },
-            })
-          }
+          if (data.job_id) startProgress(data.job_id)
           if (data.status === 'ready') {
             stopPoll()
             setRemuxing(false)
-            setAudioSrc(`/api/files/stream/${sid}?video=${v}&audio=${a}`)
+            setAudioSrc(streamUrl)
           } else if (data.status === 'error') {
             stopPoll()
             setRemuxing(false)
             setError('Erreur remux — piste introuvable')
           }
-        } catch (_) {}
+        } catch (e) {
+          console.warn('remux status poll failed', e)
+        }
       }, 2000)
     }
 
     startRemux()
-    return stopPoll
+    return () => { stale = true; stopPoll() }
   }, [videoStream, audioStream])
 
   async function handleLocalPick() {
+    if (picking) return
     setError(null)
     setPicking(true)
     stopPoll()
@@ -177,6 +186,18 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
     sourceIdRef.current = null
     const filename = u.split('/').pop()?.split('?')[0] || 'video'
     onVideoSet({ filename, sourcePath: u, sourceId: null, url: u })
+  }
+
+  function clearSource() {
+    stopPoll()
+    setError(null)
+    setStreams(null)
+    setVideoStream(null)
+    setAudioStream(null)
+    setRemuxing(false)
+    setAudioSrc(null)
+    sourceIdRef.current = null
+    onVideoSet(null)
   }
 
   function handlePlexSelected(source) {
@@ -310,14 +331,12 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
             <span style={{ color: 'var(--text3)', fontFamily: 'var(--font-mono)', fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 400 }}>
               {video.sourcePath}
             </span>
-            {tab === TAB.PLEX && (
-              <button
-                onClick={() => onVideoSet(null)}
-                style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text3)', background: 'none', border: '1px solid var(--border2)', borderRadius: 3, padding: '2px 8px' }}
-              >
-                ← Bibliothèque
-              </button>
-            )}
+            <button
+              onClick={clearSource}
+              style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text3)', background: 'none', border: '1px solid var(--border2)', borderRadius: 3, padding: '2px 8px' }}
+            >
+              {tab === TAB.PLEX ? '← Bibliothèque' : '← Changer de source'}
+            </button>
           </div>
 
           {/* Track selector */}

@@ -166,6 +166,15 @@ export default function TimelineBar({
   }
   function onMiniUp() { miniDragRef.current = null }
 
+  // React's onWheel is passive → preventDefault is ignored and Alt+wheel also
+  // scrolls the page. Attach a non-passive native listener instead.
+  useEffect(() => {
+    const el = trackRef.current
+    if (!el) return
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  })
+
   // --- Delete focused pending clip ---
   useEffect(() => {
     if (!focusedId) return
@@ -214,7 +223,6 @@ export default function TimelineBar({
         onMouseMove={onTrackMove}
         onMouseUp={onTrackUp}
         onMouseLeave={onTrackUp}
-        onWheel={onWheel}
         style={{ position: 'relative', height: 88, background: 'var(--bg)', cursor: 'crosshair', userSelect: 'none', overflow: 'hidden' }}
       >
         {/* Ruler */}

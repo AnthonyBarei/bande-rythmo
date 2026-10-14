@@ -21,16 +21,15 @@ export default function CommandPalette({ open, onClose, onNavigate, onNewClip, o
       { id: 'act-new',      icon: ICONS.plus,     label: 'Nouveau clip — importer une vidéo', run: () => onNewClip?.() },
       { id: 'act-help',     icon: ICONS.kbd,      label: 'Raccourcis clavier',   run: () => onShortcuts?.() },
     ]
-    const clipItems = clips.slice(0, 50).map(c => ({
+    const clipItems = clips.map(c => ({
       id: 'clip-' + c.clip_id, icon: ICONS.film,
-      label: `Ouvrir — ${c.name}`,
+      label: `Ouvrir — ${c.name || c.clip_id}`,
       meta: c.project || (c.subtitles?.length ? `${c.subtitles.length} répl.` : ''),
       run: () => onOpenClip?.(c),
     }))
-    const all = [...base, ...clipItems]
     const query = q.trim().toLowerCase()
-    if (!query) return all
-    return all.filter(i => i.label.toLowerCase().includes(query) || (i.meta || '').toLowerCase().includes(query))
+    const match = i => !query || i.label.toLowerCase().includes(query) || (i.meta || '').toLowerCase().includes(query)
+    return [...base.filter(match), ...clipItems.filter(match).slice(0, 50)]
   }, [q, clips, onNavigate, onNewClip, onShortcuts, onOpenClip])
 
   useEffect(() => { if (sel >= items.length) setSel(Math.max(0, items.length - 1)) }, [items.length, sel])

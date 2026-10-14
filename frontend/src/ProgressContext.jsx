@@ -32,6 +32,16 @@ function wsUrl(jobId) {
   return `${proto}//${window.location.host}/api/jobs/${jobId}/ws`
 }
 
+function filenameFromDisposition(cd) {
+  if (!cd) return null
+  const star = /filename\*\s*=\s*utf-8''([^;]+)/i.exec(cd)
+  if (star) {
+    try { return decodeURIComponent(star[1].trim()) } catch { /* malformed → plain filename */ }
+  }
+  const plain = /filename\s*=\s*"?([^";]+)"?/i.exec(cd)
+  return plain ? plain[1].trim() : null
+}
+
 function fmtEta(s) {
   if (s == null || !isFinite(s) || s < 0) return null
   if (s < 60) return `${Math.round(s)}s`
@@ -42,15 +52,16 @@ function fmtEta(s) {
 
 export function ProgressProvider({ children }) {
   const [jobs, setJobs] = useState([])
-  const jobsRef = useRef([])
-  useEffect(() => { jobsRef.current = jobs }, [jobs])
-  const handlers = useRef(new Map())
+  const handlers = useRef(new Map()) // key → { jobId, settled, callbacks… } (sync source of truth)
   const sockets = useRef(new Map())  // key → WebSocket
   const timers = useRef(new Map())   // key → poll timeout id
 
   const stopAll = useCallback((key) => {
     const ws = sockets.current.get(key)
-    if (ws) { try { ws.close() } catch {} ; sockets.current.delete(key) }
+    if (ws) {
+      sockets.current.delete(key)
+      try { ws.close() } catch (e) { console.warn('ws close failed', e) }
+    }
     const t = timers.current.get(key)
     if (t) { clearTimeout(t); timers.current.delete(key) }
   }, [])
@@ -78,33 +89,47 @@ export function ProgressProvider({ children }) {
     } : j))
   }, [])
 
-  const finalize = useCallback(async (key, status, error) => {
-    const job = jobsRef.current.find(j => j.key === key)
-    if (!job) return
-    const h = handlers.current.get(key) || {}
+  // Guards against stale transports: a socket/poll of a retried or removed job.
+  const isCurrent = useCallback((key, jobId) => {
+    const h = handlers.current.get(key)
+    return !!h && h.jobId === jobId && !h.settled
+  }, [])
+
+  const finalize = useCallback(async (key, jobId, status, error) => {
+    if (!isCurrent(key, jobId)) return
+    const h = handlers.current.get(key)
+    h.settled = true
     stopAll(key)
 
     if (status === 'done') {
       try {
-        const rr = await fetch(`/api/jobs/${job.jobId}/result`)
-        if (h.downloadOnDone) {
+        const rr = await fetch(`/api/jobs/${jobId}/result`)
+        if (!rr.ok) {
+          const err = await rr.json().catch(() => ({}))
+          throw new Error(err.detail || `HTTP ${rr.status}`)
+        }
+        const ct = rr.headers.get('content-type') || ''
+        if (ct.includes('json')) {
+          h.onDone?.(await rr.json())
+        } else if (h.downloadOnDone) {
           const blob = await rr.blob()
           const url = URL.createObjectURL(blob)
           const a = document.createElement('a')
           a.href = url
-          a.download = h.downloadFilename || 'export'
+          a.download = filenameFromDisposition(rr.headers.get('content-disposition')) || h.downloadFilename || 'export'
+          document.body.appendChild(a)
           a.click()
-          URL.revokeObjectURL(url)
+          a.remove()
+          setTimeout(() => URL.revokeObjectURL(url), 1000)
           h.onDone?.(null)
         } else {
-          const ct = rr.headers.get('content-type') || ''
-          const result = ct.includes('json') ? await rr.json() : await rr.blob()
-          h.onDone?.(result)
+          h.onDone?.(await rr.blob())
         }
+        setTimeout(() => dismiss(key), 2500)
       } catch (e) {
+        setJobs(prev => prev.map(j => j.key === key ? { ...j, status: 'error', error: e.message || 'Résultat indisponible' } : j))
         h.onError?.(e)
       }
-      setTimeout(() => dismiss(key), 2500)
     } else if (status === 'cancelled') {
       h.onCancel?.()
       setTimeout(() => dismiss(key), 1200)
@@ -112,65 +137,73 @@ export function ProgressProvider({ children }) {
       h.onError?.(new Error(error || 'Job failed'))
       // Keep visible so user can hit "Réessayer".
     }
-  }, [dismiss, stopAll])
+  }, [dismiss, stopAll, isCurrent])
 
   /* Polling fallback. Recursive setTimeout instead of setInterval so a slow
      network turn doesn't stack overlapping requests. */
-  const poll = useCallback(async (key) => {
-    const job = jobsRef.current.find(j => j.key === key)
-    if (!job) return
+  const poll = useCallback(async (key, jobId) => {
+    if (!isCurrent(key, jobId)) return
+    const schedule = (ms) => {
+      if (!isCurrent(key, jobId)) return
+      timers.current.set(key, setTimeout(() => poll(key, jobId), ms))
+    }
     try {
-      const res = await fetch(`/api/jobs/${job.jobId}`)
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const data = await res.json()
-      applyState(key, data)
-      if (data.status === 'done' || data.status === 'error' || data.status === 'cancelled') {
-        await finalize(key, data.status, data.error)
+      const res = await fetch(`/api/jobs/${jobId}`)
+      if (!isCurrent(key, jobId)) return
+      if (res.status === 404) {
+        const msg = 'Tâche introuvable (serveur redémarré ?)'
+        applyState(key, { status: 'error', error: msg })
+        await finalize(key, jobId, 'error', msg)
         return
       }
-      const id = setTimeout(() => poll(key), POLL_MS)
-      timers.current.set(key, id)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+      if (!isCurrent(key, jobId)) return
+      applyState(key, data)
+      if (data.status === 'done' || data.status === 'error' || data.status === 'cancelled') {
+        await finalize(key, jobId, data.status, data.error)
+        return
+      }
+      schedule(POLL_MS)
     } catch (e) {
-      const id = setTimeout(() => poll(key), POLL_MS * 2)
-      timers.current.set(key, id)
+      console.warn('job poll failed', e)
+      schedule(POLL_MS * 2)
     }
-  }, [applyState, finalize])
+  }, [applyState, finalize, isCurrent])
 
   /* Open WebSocket; on close-before-final or error, switch to polling. */
   const openSocket = useCallback((key, jobId) => {
-    let finalized = false
+    if (!isCurrent(key, jobId)) return
     let ws
     try {
       ws = new WebSocket(wsUrl(jobId))
     } catch (e) {
-      // Browser refused — straight to polling.
-      poll(key)
+      console.warn('WebSocket refused — polling', e)
+      poll(key, jobId)
       return
     }
     sockets.current.set(key, ws)
 
     ws.onmessage = (ev) => {
-      try {
-        const data = JSON.parse(ev.data)
-        if (data.heartbeat) return
-        applyState(key, data)
-        if (data.final || data.status === 'done' || data.status === 'error' || data.status === 'cancelled') {
-          finalized = true
-          finalize(key, data.status, data.error)
-        }
-      } catch {}
+      let data
+      try { data = JSON.parse(ev.data) } catch (e) { console.warn('bad job frame', e); return }
+      if (data.heartbeat || !isCurrent(key, jobId)) return
+      applyState(key, data)
+      if (data.final || data.status === 'done' || data.status === 'error' || data.status === 'cancelled') {
+        finalize(key, jobId, data.status, data.error)
+      }
     }
     ws.onerror = () => {
       // Fall through to onclose handling.
     }
     ws.onclose = () => {
+      // Closed on purpose (stopAll / unmount / retry) → no longer in the map.
+      if (sockets.current.get(key) !== ws) return
       sockets.current.delete(key)
-      if (!finalized) {
-        // Socket dropped mid-job — start polling so we still observe completion.
-        poll(key)
-      }
+      // Socket dropped mid-job — start polling so we still observe completion.
+      poll(key, jobId)
     }
-  }, [applyState, finalize, poll])
+  }, [applyState, finalize, poll, isCurrent])
 
   const start = useCallback((opts) => {
     const key = `${opts.kind || 'job'}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
@@ -184,6 +217,9 @@ export function ProgressProvider({ children }) {
       retry: opts.retry || null,
     }
     handlers.current.set(key, {
+      jobId: opts.jobId,
+      settled: false,
+      retrying: false,
       onDone: opts.onDone, onError: opts.onError, onCancel: opts.onCancel,
       downloadOnDone: !!opts.downloadOnDone,
       downloadFilename: opts.downloadFilename,
@@ -192,45 +228,64 @@ export function ProgressProvider({ children }) {
       title: opts.title,
     })
     setJobs(prev => [...prev, entry])
-    // Open WS after the entry is in state so applyState can find it.
-    setTimeout(() => openSocket(key, opts.jobId), 0)
+    openSocket(key, opts.jobId)
     return {
       key,
       async cancel() {
-        try { await fetch(`/api/jobs/${opts.jobId}/cancel`, { method: 'POST' }) } catch {}
+        try {
+          await fetch(`/api/jobs/${opts.jobId}/cancel`, { method: 'POST' })
+        } catch (e) { console.warn('job cancel failed', e) }
       },
     }
   }, [openSocket])
 
   const retry = useCallback(async (key) => {
     const h = handlers.current.get(key)
-    if (!h || !h.retry) return
+    if (!h || !h.retry || h.retrying) return
+    h.retrying = true
     try {
       const newJobId = await h.retry()
-      if (!newJobId) return
+      if (!newJobId || handlers.current.get(key) !== h) return
+      stopAll(key)
+      h.jobId = newJobId
+      h.settled = false
       setJobs(prev => prev.map(j => j.key === key ? {
         ...j, jobId: newJobId,
         stage: 'Démarrage…', pct: 0, eta: null,
         status: 'running', error: null,
       } : j))
-      stopAll(key)
-      setTimeout(() => openSocket(key, newJobId), 0)
+      openSocket(key, newJobId)
     } catch (e) {
       setJobs(prev => prev.map(j => j.key === key ? { ...j, error: e.message || 'Retry failed' } : j))
+    } finally {
+      h.retrying = false
     }
   }, [openSocket, stopAll])
 
   const cancelByKey = useCallback(async (key) => {
-    const j = jobsRef.current.find(x => x.key === key)
-    if (!j) return
-    try { await fetch(`/api/jobs/${j.jobId}/cancel`, { method: 'POST' }) } catch {}
-  }, [])
+    const h = handlers.current.get(key)
+    if (!h) return
+    const jobId = h.jobId
+    try {
+      const res = await fetch(`/api/jobs/${jobId}/cancel`, { method: 'POST' })
+      // Backend forgot the job (restart) → nothing will ever finalize it.
+      if (res.status === 404 && isCurrent(key, jobId)) {
+        applyState(key, { status: 'cancelled' })
+        finalize(key, jobId, 'cancelled')
+      }
+    } catch (e) { console.warn('job cancel failed', e) }
+  }, [applyState, finalize, isCurrent])
 
-  useEffect(() => () => {
-    for (const ws of sockets.current.values()) { try { ws.close() } catch {} }
-    for (const id of timers.current.values()) clearTimeout(id)
-    sockets.current.clear()
-    timers.current.clear()
+  useEffect(() => {
+    const socketMap = sockets.current
+    const timerMap = timers.current
+    return () => {
+      const open = [...socketMap.values()]
+      socketMap.clear()
+      for (const ws of open) { try { ws.close() } catch (e) { console.warn('ws close failed', e) } }
+      for (const id of timerMap.values()) clearTimeout(id)
+      timerMap.clear()
+    }
   }, [])
 
   const value = { start, jobs, cancelByKey, dismiss, retry }

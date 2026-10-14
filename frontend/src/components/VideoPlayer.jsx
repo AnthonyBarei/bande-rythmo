@@ -57,7 +57,7 @@ export default function VideoPlayer({
     const a = audioRef.current
     if (!v || !a || !audioSrc) return
 
-    const onPlay = () => { a.currentTime = v.currentTime; a.play().catch(() => {}) }
+    const onPlay = () => { a.currentTime = v.currentTime; a.play().catch(e => console.warn('audio track play failed', e)) }
     const onPause = () => a.pause()
     const onSeeked = () => { a.currentTime = v.currentTime }
     const onRateChange = () => { a.playbackRate = v.playbackRate }
@@ -66,6 +66,8 @@ export default function VideoPlayer({
     v.addEventListener('pause', onPause)
     v.addEventListener('seeked', onSeeked)
     v.addEventListener('ratechange', onRateChange)
+    a.playbackRate = v.playbackRate
+    if (!v.paused) onPlay()
     return () => {
       v.removeEventListener('play', onPlay)
       v.removeEventListener('pause', onPause)
@@ -77,7 +79,8 @@ export default function VideoPlayer({
   function togglePlay() {
     const v = ref.current
     if (!v) return
-    if (!ready) { v.muted = false; v.volume = 1; setMuted(false); setReady(true) }
+    // An external audio track keeps the video muted — otherwise both tracks play.
+    if (!ready) { v.muted = !!audioSrc; v.volume = 1; setMuted(false); setReady(true) }
     v.paused ? v.play() : v.pause()
   }
 
@@ -104,7 +107,7 @@ export default function VideoPlayer({
   }
 
   function handleMetadata(e) {
-    const d = e.target.duration
+    const d = isFinite(e.target.duration) ? e.target.duration : 0
     setDuration(d)
     onLoadedMetadata?.(d)
   }

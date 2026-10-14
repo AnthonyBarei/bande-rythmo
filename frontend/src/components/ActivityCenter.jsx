@@ -9,6 +9,7 @@ import { useProgress } from '../ProgressContext'
 
 const KIND_ICON = {
   'export-mp4': ICONS.film, 'mp4': ICONS.film, 'export-gif': ICONS.gif, 'gif': ICONS.gif,
+  'export-dubpack': ICONS.mic, 'dubpack': ICONS.mic,
   'transcribe': ICONS.mic, 'import-batch': ICONS.upload, 'proxy': ICONS.film,
   'vocals': ICONS.audio, 'export': ICONS.download, 'plex-remux': ICONS.film,
 }
