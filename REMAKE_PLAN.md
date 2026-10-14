@@ -150,24 +150,24 @@ scenarios · live UI smoke (library, editor playback, Dubpack job + cancel).
 
 ### Ordered next steps
 
-**A — product decisions (block the fixes below)**
-1. Dubpack OGV audio: original voice or backing track/bed?
-2. Clip delete: also delete take audio + export files (today: DB rows only)?
-3. Persist réplique `hidden` / `take` flags (UI sets them, backend drops them; canvas ignores `hidden`)?
-4. Undo granularity: coalesce keystrokes into one step per edit burst?
-5. `brOffset` time base: keyboard I/O/S/Delete use raw video time, band uses time + offset — unify on which?
-6. Preferences `exportBrFont`/`exportBrStyle`: wire into export or remove?
-7. Hinted shortcuts "R" (record) / "E" (export) with no handler: implement or drop hint?
+**A — product decisions ✅ (2026-10-14)**
+1. Dubpack OGV → silent audio; audio = `_backing_track` (bed) + per-line samples (Choicer Voicer spec + M&E convention)
+2. Clip delete → also removes takes, exports, proxy/bed/stems
+3. `hidden` / `take` persisted; hidden = dimmed in list, off band/timeline/playback, excluded from all exports
+4. Undo coalesces typing bursts (1 s window per réplique field)
+5. Keyboard/toolbar edits + seeks use band time (video + `brOffset`)
+6. Preferences « Bande rythmo » style/police = band defaults, synced with the editor picker
+7. `R` record toggle, `E` export
 
-**B — small fixes (no decision needed)**
-- [ ] Re-download of a purged export saves a JSON error file (410) → fetch + blob, show error
-- [ ] `files.py start_remux` returns `job_id` directly (frontend works around it)
-- [ ] Dubpack: clamp cues past media end (empty .ogg / missing .png)
-- [ ] Leaks: `/mp4-canvas` overlay webm, failed `mp4-dubbed` partial, cancelled remux .m4a, `JOBS` auto-prune
-- [ ] ASS re-import of our own scrolling ASS imports background/labels; `\{` mangled
-- [ ] Library: total duration shown as raw seconds ("4700s"); card actions hover-only (touch)
-- [ ] `translateAll` overwrites edits made during the request
-- [ ] Mid-run `exports/<uuid>/` staging dirs from pre-fix cancels can be deleted by hand
+**B — small fixes ✅** re-download 410, remux `job_id`, Dubpack cues past end, leaks + job auto-prune,
+ASS re-import, library duration + card actions, translate merge, error boundary.
+
+**B2 — leftovers (open)**
+- [ ] Header « Enregistrer (R) » / Voix « Enregistrer la prise » buttons only open the recorder (R key toggles)
+- [ ] Time base still video time in RecorderPanel « Écouter avec vidéo » and ExportPanel range « au curseur » — align with band time when `brOffset` ≠ 0 (mix placement too)
+- [ ] Keyboard I/O don't clamp start/end like the toolbar buttons
+- [ ] Sync `/export` mp4 and `/mp4-canvas` outputs not recorded in export history → never cleaned
+- [ ] Stale `exports/<uuid>/` staging dirs from pre-fix cancels — delete by hand
 
 **C — Phase 2 refactor** (section 5) → **D — Phase 3 pro workflow** → **E — users/auth** →
 **F — integrations (Stremio, qBittorrent, Plex series drill-down)** → **G — gamification** (CLAUDE.md ideas).
