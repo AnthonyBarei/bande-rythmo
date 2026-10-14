@@ -56,10 +56,18 @@ const brFontStack = id => {
 }
 // Band text font — reference BandCanvas: weight 600, 26px for the Caveat
 // manuscrite, 20px for other faces, 14px italic for (réactions); × Style scale.
-const brCanvasFont = (id, scale, isReact) => {
-  const px = isReact ? 14 : (id === 'cursive' ? 26 : 20)
-  return `${isReact ? 'italic ' : ''}600 ${Math.max(10, Math.round(px * scale))}px ${brFontStack(id)}`
-}
+const brFontPx = (id, scale, isReact) =>
+  Math.max(10, Math.round((isReact ? 14 : (id === 'cursive' ? 26 : 20)) * scale))
+const brCanvasFont = (id, scale, isReact) =>
+  `${isReact ? 'italic ' : ''}600 ${brFontPx(id, scale, isReact)}px ${brFontStack(id)}`
+// Band marks keep a fixed size whatever the track height (FIXES_R4 #5): only
+// the gaps between lanes grow when the band is enlarged.
+const WEDGE_H = 10        // début/fin triangle height, centred on the text line
+const WEDGE_D = 6         // triangle depth into the block
+const SIGN_PX = 12        // détection sign box
+const SIGN_GAP = 3        // glyph ↔ sign gap
+const WAVE_MAX_AMP = 18   // per-track waveform half-height cap
+const BAND_BG = '#0b0b0d' // reference T.bg (classique band background)
 // Canvas can't read CSS variables — --text4 / --danger tokens (not user-swappable).
 const TEXT4 = '#565660'
 const DANGER = '#E8595D'
@@ -716,14 +724,10 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
 
       // Background
       ctx.shadowBlur = 0
-      ctx.fillStyle = isNeon ? '#06060a' : isMinimal ? '#0d0d10' : '#0a0a0c'
+      // Flat reference background — no scan lines: they lifted every 3rd row
+      // inside the blocks above the trackHex + '12' fill (FIXES_R4 #6).
+      ctx.fillStyle = isNeon ? '#06060a' : isMinimal ? '#0d0d10' : BAND_BG
       ctx.fillRect(0, 0, W, H)
-
-      // Scan lines (classique only)
-      if (!isNeon && !isMinimal) {
-        ctx.fillStyle = 'rgba(255,255,255,0.012)'
-        for (let sy = 0; sy < H; sy += 3) ctx.fillRect(0, sy, W, 1)
-      }
 
       // Track separators
       for (let track = 1; track < numTracks; track++) {
@@ -757,11 +761,22 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
       if (!isMinimal) {
         const waveData = waveformRef.current
         ctx.setLineDash([])
+        // Bars stay in the gaps: inside a block the only paint is the
+        // trackHex + '12' / '22' fill (FIXES_R4 #6).
+        const blockSpans = Array.from({ length: numTracks }, () => [])
+        if (!isNeon) {
+          for (const sub of subtitlesRef.current) {
+            if (sub.hidden) continue
+            const tr = charMap[sub.character || ''] ?? 0
+            blockSpans[tr]?.push([cursor_x + (sub.start - t) * pxSec, cursor_x + (sub.end - t) * pxSec])
+          }
+        }
+        const inBlock = (track, x) => blockSpans[track].some(([l, r]) => x + 1.5 >= l && x <= r)
 
         for (let track = 0; track < numTracks; track++) {
           const trackH = H / numTracks
           const yMid = track * trackH + trackH / 2
-          const maxAmp = trackH * 0.38
+          const maxAmp = Math.min(trackH * 0.38, WAVE_MAX_AMP)
           const color = TRACK_COLORS[track % TRACK_COLORS.length]
 
           if (waveData && waveData.samples.length > 0) {
@@ -789,7 +804,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
               for (let si = 0; si < samples.length; si++) {
                 const sampleTime = si * timePerSample
                 const sx = Math.round(cursor_x + (sampleTime - t) * pxSec)
-                if (sx < 0 || sx > W) continue
+                if (sx < 0 || sx > W || inBlock(track, sx)) continue
                 const amp = Math.max(1, Math.pow(samples[si], 0.5) * maxAmp)
                 ctx.fillRect(sx, yMid - amp, 1.5, amp * 2)
               }
@@ -824,6 +839,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
                   Math.sin(sampleT * 3) * 0.1
                 )
                 const amp = Math.max(1, v * maxAmp)
+                if (inBlock(track, px)) continue
                 ctx.fillRect(px, yMid - amp, 1.5, amp * 2)
               }
             }
@@ -880,18 +896,22 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
           ctx.fillStyle = color.hex; ctx.fillRect(leftX, yTop + 3, 2.5, trackH - 6)
         }
 
+        // Text line — fixed font size; wedges + détection signs hang off it.
+        const yMid = yTop + trackH / 2 + (brFontRef.current === 'cursive' ? 2 : 0)
+
         // Per-word text — each word fills its own time-block [start, end]:
         // squeezed to fit, stretch capped at 1.2 (held words sit left-aligned
         // with a trailing gap). No / stale word data → whole text as one word.
         if (sub.text) {
           const isReact = sub.text.startsWith('(')
+          // Half glyph height: signs sit SIGN_GAP above / below it.
+          const glyphHalf = brFontPx(brFontRef.current, fontScaleRef.current, isReact) * 0.45
           ctx.font = brCanvasFont(brFontRef.current, fontScaleRef.current, isReact)
           // Expose the resolved BR font on the canvas so hit-test helpers
           // (hitTestLetter for click-letter détection) measure glyphs in the
           // same font without redoing the resolution.
           if (canvas && !isReact) canvas._brFontResolved = ctx.font
           ctx.textBaseline = 'middle'
-          const yMid = yTop + trackH / 2 + (brFontRef.current === 'cursive' ? 2 : 0)
 
           const words = (wordByWordRef.current ? validWords(sub) : null)
             || [{ w: sub.text, start: sub.start, end: sub.end }]
@@ -982,7 +1002,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
                       ctx.lineWidth = 2.4
                       ctx.setLineDash([])
                       ctx.beginPath()
-                      const sy = yTop + trackH - Math.max(7, trackH * 0.10)
+                      const sy = yMid + glyphHalf + SIGN_GAP + 1.2
                       ctx.moveTo(Math.max(0, lx), sy)
                       ctx.lineTo(Math.min(W, rx), sy)
                       ctx.stroke()
@@ -991,15 +1011,15 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
                     ctx.lineWidth = 1.6
                     ctx.setLineDash([3, 2])
                     ctx.beginPath()
-                    const sy = yTop + trackH - Math.max(6, trackH * 0.09)
+                    const sy = yMid + glyphHalf + SIGN_GAP + 0.8
                     ctx.moveTo(charX0, sy)
                     ctx.lineTo(charX0 + charW, sy)
                     ctx.stroke()
                     ctx.setLineDash([])
                   } else if (sign.type === 'fricative') {
                     const cx0 = charX0 + charW / 2
-                    const sy = yTop + Math.max(4, trackH * 0.10)
-                    const r = Math.max(3, trackH * 0.06)
+                    const r = SIGN_PX / 2
+                    const sy = yMid - glyphHalf - SIGN_GAP - r
                     ctx.lineWidth = 1.4
                     ctx.beginPath()
                     ctx.moveTo(cx0 - r, sy + r)
@@ -1008,16 +1028,16 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
                     ctx.stroke()
                   } else if (sign.type === 'arrondie') {
                     const cx0 = charX0 + charW / 2
-                    const sy = yTop + Math.max(5, trackH * 0.12)
-                    const r = Math.max(3, trackH * 0.07)
+                    const r = SIGN_PX / 2 - 1
+                    const sy = yMid - glyphHalf - SIGN_GAP - r - 0.8
                     ctx.lineWidth = 1.6
                     ctx.beginPath()
                     ctx.arc(cx0, sy, r, 0, Math.PI * 2)
                     ctx.stroke()
                   } else if (sign.type === 'ouverte') {
                     const cx0 = charX0 + charW / 2
-                    const sy = yTop + Math.max(5, trackH * 0.12)
-                    const r = Math.max(3, trackH * 0.08)
+                    const r = SIGN_PX / 2
+                    const sy = yMid - glyphHalf - SIGN_GAP + r * 0.45
                     ctx.lineWidth = 1.4
                     ctx.beginPath()
                     ctx.arc(cx0, sy, r, Math.PI * 1.15, Math.PI * 1.85)
@@ -1069,21 +1089,21 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
 
         // début/fin wedges at the line's own boundaries — small in-track colour
         if (detTog.startEnd) {
-          const wedge = Math.max(4, trackH * 0.10)
+          const half = WEDGE_H / 2
           ctx.fillStyle = withAlpha(color.hex, isActive ? 1 : 0.55)
           if (leftX > 0 && leftX < W) {
             ctx.beginPath()
-            ctx.moveTo(leftX, yTop + trackH / 2 - wedge)
-            ctx.lineTo(leftX + wedge, yTop + trackH / 2)
-            ctx.lineTo(leftX, yTop + trackH / 2 + wedge)
+            ctx.moveTo(leftX, yMid - half)
+            ctx.lineTo(leftX + WEDGE_D, yMid)
+            ctx.lineTo(leftX, yMid + half)
             ctx.closePath()
             ctx.fill()
           }
           if (rightX > 0 && rightX < W) {
             ctx.beginPath()
-            ctx.moveTo(rightX, yTop + trackH / 2 - wedge)
-            ctx.lineTo(rightX - wedge, yTop + trackH / 2)
-            ctx.lineTo(rightX, yTop + trackH / 2 + wedge)
+            ctx.moveTo(rightX, yMid - half)
+            ctx.lineTo(rightX - WEDGE_D, yMid)
+            ctx.lineTo(rightX, yMid + half)
             ctx.closePath()
             ctx.fill()
           }
@@ -1108,8 +1128,8 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
           ctx.fillStyle = withAlpha(color.hex, 0.7)
           ctx.font = '12px sans-serif'
           ctx.textBaseline = 'middle'
-          if (leftX > 0 && leftX < W) ctx.fillText('▸', leftX + 2, yTop + trackH / 2)
-          if (rightX > 0 && rightX < W) ctx.fillText('◂', rightX - 12, yTop + trackH / 2)
+          if (leftX > 0 && leftX < W) ctx.fillText('▸', leftX + 2, yMid)
+          if (rightX > 0 && rightX < W) ctx.fillText('◂', rightX - 12, yMid)
         }
         if (_dimmed) ctx.globalAlpha = 1
       }

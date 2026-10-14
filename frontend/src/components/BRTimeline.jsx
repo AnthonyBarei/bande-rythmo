@@ -5,7 +5,8 @@ import { TRACK_HEXES as TRACK_COLORS } from '../config/tracks'
 // Shows the WHOLE clip at once (the BR canvas only shows a moving window):
 //   waveform · réplique blocks per track colour · dashed boucle bands ·
 //   scene cuts · the visible-window bracket · the white playhead.
-// Click / drag anywhere to seek.
+// Click / drag anywhere to seek. `labelRowH` px at the top are left empty for
+// the overlay labels: everything is drawn from y = labelRowH down.
 
 // Canvas can't read CSS variables — resolve them (accent is user-swappable).
 function cssVar(name, fallback) {
@@ -49,6 +50,8 @@ export default function BRTimeline({
     const dur = duration || waveform?.duration || 1
     const tToX = t => (t / dur) * w
     const accent = cssVar('--accent', '#F5C518')
+    const top = Math.min(labelRowH, h - 2)
+    const bodyH = h - top
     ctx.clearRect(0, 0, w, h)
 
     // waveform
@@ -56,13 +59,16 @@ export default function BRTimeline({
       const samples = waveform.samples
       const n = samples.length
       const wavDur = waveform.duration || dur
-      // Normalise to the loudest sample so peaks reach the reference ±15px.
+      // Normalise to the loudest sample; centred between the label strip and
+      // the réplique ticks, peaks clamped so they never enter the strip.
       const peak = samples.reduce((m, v) => Math.max(m, Math.abs(v || 0)), 0) || 1
+      const mid = top + (bodyH - 12) / 2
+      const maxA = Math.max(2, Math.min(14, (bodyH - 12) / 2 - 1))
       ctx.fillStyle = cssVar('--border3', '#3f3f4a')
       for (let x = 0; x < w; x += 2) {
         const si = Math.min(n - 1, Math.floor(((x / w) * dur / wavDur) * n))
-        const a = (Math.abs(samples[si] || 0) / peak) * 14 + 1
-        ctx.fillRect(x, h / 2 - a, 1.2, a * 2)
+        const a = (Math.abs(samples[si] || 0) / peak) * (maxA - 1) + 1
+        ctx.fillRect(x, mid - a, 1.2, a * 2)
       }
     }
 
@@ -79,9 +85,9 @@ export default function BRTimeline({
     boucles.forEach(b => {
       const x0 = tToX(b.start)
       const bw = tToX(b.end) - x0
-      ctx.fillStyle = withAA(accent, '18'); ctx.fillRect(x0, 0, bw, h)
+      ctx.fillStyle = withAA(accent, '18'); ctx.fillRect(x0, top, bw, bodyH)
       ctx.strokeStyle = withAA(accent, '88'); ctx.lineWidth = 1; ctx.setLineDash([3, 3])
-      ctx.strokeRect(x0, 1, bw, h - 2); ctx.setLineDash([])
+      ctx.strokeRect(x0, top + 0.5, bw, bodyH - 1); ctx.setLineDash([])
     })
 
     // scene cuts (changements de plan)
@@ -90,16 +96,15 @@ export default function BRTimeline({
     ctx.setLineDash([3, 2])
     sceneCuts.forEach(t => {
       const x = tToX(t)
-      ctx.beginPath(); ctx.moveTo(x + 0.5, 0); ctx.lineTo(x + 0.5, h); ctx.stroke()
+      ctx.beginPath(); ctx.moveTo(x + 0.5, top); ctx.lineTo(x + 0.5, h); ctx.stroke()
     })
     ctx.setLineDash([])
 
     // visible-window bracket (what the BR canvas currently shows) — outline
-    // only, starting below the label row so it never boxes the overlay labels.
+    // only, below the label strip so it never boxes the overlay labels.
     if (viewStart != null && viewEnd != null && viewEnd > viewStart) {
       const x0 = Math.max(0, tToX(viewStart))
       const x1 = Math.min(w, tToX(viewEnd))
-      const top = Math.min(labelRowH, h - 2)
       ctx.strokeStyle = cssVar('--border3', '#3f3f4a')
       ctx.lineWidth = 1
       ctx.strokeRect(x0 + 0.5, top + 0.5, (x1 - x0) - 1, h - top - 1)
@@ -107,8 +112,8 @@ export default function BRTimeline({
 
     // playhead
     const px = tToX(currentTime)
-    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(px, 0); ctx.lineTo(px, h); ctx.stroke()
-    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.moveTo(px - 5, 0); ctx.lineTo(px + 5, 0); ctx.lineTo(px, 6); ctx.fill()
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(px, top); ctx.lineTo(px, h); ctx.stroke()
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.moveTo(px - 5, top); ctx.lineTo(px + 5, top); ctx.lineTo(px, top + 6); ctx.fill()
   }, [duration, currentTime, boucles, waveform, sceneCuts, subtitles, charMap, viewStart, viewEnd, labelRowH])
 
   useEffect(() => { draw() }, [draw])

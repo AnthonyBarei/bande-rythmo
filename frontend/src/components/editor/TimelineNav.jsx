@@ -12,6 +12,8 @@ const MIN_LOOP = 0.3
 // region) are draggable divs over the canvas: body = move, 8px edges = trim.
 // Boucles persist on pointer-up through `onBouclesChange` (the DubbingWorkspace
 // boucles save path); the loop region updates live through `onLoopRegionChange`.
+// The top LABEL_ROW_H strip holds only the labels: canvas marks and the
+// boucle regions all start below it (FIXES_R4 #7/#8).
 export default function TimelineNav({
   bandNow, clipFps, boucles, loopRegion, onBouclesChange, onLoopRegionChange, duration, ...timelineProps
 }) {
@@ -89,7 +91,7 @@ export default function TimelineNav({
           <div key={r.key} onPointerDown={e => startDrag(e, r0, 'move')} onClick={e => e.stopPropagation()}
             title={r.kind === 'boucle' ? `B${r.number} · glisser pour déplacer la boucle · bords pour ajuster` : 'Glisser pour déplacer la boucle · bords pour ajuster'}
             style={{
-              position: 'absolute', top: 0, bottom: 0, touchAction: 'none',
+              position: 'absolute', top: LABEL_ROW_H, bottom: 0, touchAction: 'none',
               left: `${(r.s / dur) * 100}%`, width: `${((r.e - r.s) / dur) * 100}%`,
               background: alpha(T.accent, active ? '26' : '18'),
               borderLeft: `2px solid ${T.accent}`, borderRight: `2px solid ${T.accent}`,
@@ -104,9 +106,14 @@ export default function TimelineNav({
           </div>
         )
       })}
-      <div style={{ position: 'absolute', top: 5, left: 10, fontSize: 9, color: T.text4, letterSpacing: 1, fontWeight: 700, fontFamily: T.fontMono, pointerEvents: 'none' }}>TIMELINE · CLIP ENTIER</div>
+      <div style={{ position: 'absolute', top: 0, left: 10, height: LABEL_ROW_H, lineHeight: `${LABEL_ROW_H}px`, fontSize: 9, color: T.text4, letterSpacing: 1, fontWeight: 700, fontFamily: T.fontMono, pointerEvents: 'none', whiteSpace: 'nowrap' }}>TIMELINE · CLIP ENTIER</div>
       {loopLabel && (
-        <div style={{ position: 'absolute', top: 5, right: 10, fontSize: 9, color: T.accent, fontFamily: T.fontMono, pointerEvents: 'none', display: 'flex', alignItems: 'center', gap: 4 }}>
+        <div style={{
+          position: 'absolute', top: 1, right: 10, height: LABEL_ROW_H - 2, boxSizing: 'border-box',
+          padding: '1px 6px', borderRadius: 4, background: T.bg2, lineHeight: '12px',
+          fontSize: 9, color: T.accent, fontFamily: T.fontMono, pointerEvents: 'none', whiteSpace: 'nowrap',
+          display: 'flex', alignItems: 'center', gap: 4,
+        }}>
           <Icon d={ICONS.loop} size={10} stroke={T.accent} />{loopLabel}
         </div>
       )}
