@@ -26,14 +26,14 @@ export default function TimelineBar({
   const [draft, setDraft] = useState(null)
   const [focusedId, setFocusedId] = useState(null)
   const dragRef = useRef(null)
-  const miniDragRef = useRef(null)
+  const [miniDrag, setMiniDrag] = useState(null)
+  const miniCleanupRef = useRef(null)
 
   const viewDur = duration / zoom
   const maxViewStart = Math.max(0, duration - viewDur)
   const vs = Math.min(Math.max(0, viewStart), maxViewStart)
 
   function trackW() { return trackRef.current?.getBoundingClientRect().width || 1 }
-  function miniW() { return miniRef.current?.getBoundingClientRect().width || 1 }
   function tToX(t, w) { return ((t - vs) / viewDur) * w }
   function xToT(x, w) { return Math.max(0, Math.min(duration, vs + (x / w) * viewDur)) }
 
@@ -128,46 +128,55 @@ export default function TimelineBar({
     setViewStart(Math.max(0, Math.min(duration - ndur, center - ndur / 2)))
   }
 
-  // --- Minimap interactions ---
+  // --- Minimap: drag the viewport window (pan), its edges (zoom), or click elsewhere to center it ---
   function onMiniDown(e) {
-    const w = miniW(); const x = localX(e, miniRef)
+    if (e.button !== 0 || !duration) return
+    e.preventDefault()
+    const box = miniRef.current.getBoundingClientRect()
+    const w = box.width || 1
+    const xAt = ev => Math.max(0, Math.min(w, ev.clientX - box.left))
+    const x = xAt(e)
     const winL = (vs / duration) * w
     const winR = ((vs + viewDur) / duration) * w
-    if (x >= winL - EDGE && x <= winL + EDGE) {
-      miniDragRef.current = { type: 'resize-left' }
-    } else if (x >= winR - EDGE && x <= winR + EDGE) {
-      miniDragRef.current = { type: 'resize-right' }
-    } else if (x > winL && x < winR) {
-      miniDragRef.current = { type: 'pan', offset: x - winL }
-    } else {
-      // recenter
-      const ct = (x / w) * duration
-      setViewStart(Math.max(0, Math.min(maxViewStart, ct - viewDur / 2)))
-      miniDragRef.current = { type: 'pan', offset: viewDur / duration * w / 2 }
+    const start0 = vs, end0 = vs + viewDur, maxStart = maxViewStart
+    const clampStart = t => Math.max(0, Math.min(maxStart, t))
+    let type, offset = 0
+    if (Math.abs(x - winL) <= EDGE && winR - winL > 2 * EDGE) type = 'resize-left'
+    else if (Math.abs(x - winR) <= EDGE && winR - winL > 2 * EDGE) type = 'resize-right'
+    else if (x >= winL && x <= winR) { type = 'pan'; offset = x - winL }
+    else {
+      type = 'pan'; offset = (winR - winL) / 2
+      setViewStart(clampStart((x - offset) / w * duration))
     }
-    e.preventDefault()
+    const move = ev => {
+      const mx = xAt(ev)
+      if (type === 'pan') {
+        setViewStart(clampStart((mx - offset) / w * duration))
+      } else if (type === 'resize-left') {
+        const nd = Math.max(duration / MAX_ZOOM, Math.min(end0, end0 - (mx / w) * duration))
+        setZoom(duration / nd)
+        setViewStart(Math.max(0, end0 - nd))
+      } else {
+        const nd = Math.max(duration / MAX_ZOOM, Math.min(duration - start0, (mx / w) * duration - start0))
+        setZoom(duration / nd)
+        setViewStart(start0)
+      }
+    }
+    const stop = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', stop)
+      window.removeEventListener('pointercancel', stop)
+      miniCleanupRef.current = null
+      setMiniDrag(null)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', stop)
+    window.addEventListener('pointercancel', stop)
+    miniCleanupRef.current = stop
+    setMiniDrag(type)
   }
 
-  function onMiniMove(e) {
-    const md = miniDragRef.current
-    if (!md) return
-    const w = miniW(); const x = localX(e, miniRef)
-    if (md.type === 'pan') {
-      const newL = (x - md.offset) / w * duration
-      setViewStart(Math.max(0, Math.min(maxViewStart, newL)))
-    } else if (md.type === 'resize-left') {
-      const newStart = (x / w) * duration
-      const end = vs + viewDur
-      const nd = Math.max(duration / MAX_ZOOM, Math.min(duration, end - newStart))
-      setZoom(duration / nd)
-      setViewStart(Math.max(0, end - nd))
-    } else if (md.type === 'resize-right') {
-      const newEnd = (x / w) * duration
-      const nd = Math.max(duration / MAX_ZOOM, Math.min(duration - vs, newEnd - vs))
-      setZoom(duration / nd)
-    }
-  }
-  function onMiniUp() { miniDragRef.current = null }
+  useEffect(() => () => miniCleanupRef.current?.(), [])
 
   // React's onWheel is passive → preventDefault is ignored and Alt+wheel also
   // scrolls the page. Attach a non-passive native listener instead.
@@ -284,11 +293,9 @@ export default function TimelineBar({
       {/* minimap */}
       <div
         ref={miniRef}
-        onMouseDown={onMiniDown}
-        onMouseMove={onMiniMove}
-        onMouseUp={onMiniUp}
-        onMouseLeave={onMiniUp}
-        style={{ height: 26, background: T.bg2, borderTop: `1px solid ${T.border}`, position: 'relative', cursor: 'pointer', userSelect: 'none', overflow: 'hidden' }}
+        onPointerDown={onMiniDown}
+        title="Glisser la fenêtre pour naviguer · clic pour centrer"
+        style={{ height: 26, background: T.bg2, borderTop: `1px solid ${T.border}`, position: 'relative', cursor: miniDrag ? (miniDrag === 'pan' ? 'grabbing' : 'ew-resize') : 'pointer', userSelect: 'none', overflow: 'hidden', touchAction: 'none' }}
       >
         {savedClips.map(c => (
           <div key={c.clip_id} style={{ position: 'absolute', left: `${(c.start / duration) * 100}%`, width: `${Math.max(0.4, ((c.end - c.start) / duration) * 100)}%`, top: 6, bottom: 6, background: T.success, opacity: 0.7, borderRadius: 1 }} />
@@ -297,7 +304,14 @@ export default function TimelineBar({
           <div key={c._id} style={{ position: 'absolute', left: `${(c.start / duration) * 100}%`, width: `${Math.max(0.4, ((c.end - c.start) / duration) * 100)}%`, top: 6, bottom: 6, background: T.accent, opacity: 0.7, borderRadius: 1 }} />
         ))}
         <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${(currentTime / duration) * 100}%`, width: 1.5, background: T.text, opacity: 0.6, pointerEvents: 'none' }} />
-        <div style={{ position: 'absolute', left: `${(vs / duration) * 100}%`, width: `${(viewDur / duration) * 100}%`, top: 0, bottom: 0, background: alpha(T.accent, '1a'), border: `1px solid ${T.accent}`, borderRadius: 3 }}>
+        <div style={{
+          position: 'absolute', left: `${(vs / duration) * 100}%`, width: `${(viewDur / duration) * 100}%`, top: 2, bottom: 2,
+          background: alpha(T.accent, miniDrag ? '2e' : '1a'), border: `1px solid ${T.accent}`, borderRadius: 4,
+          cursor: miniDrag === 'pan' ? 'grabbing' : 'grab',
+        }}>
+          <div style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%,-50%)', display: 'flex', gap: 2, pointerEvents: 'none' }}>
+            {[0, 1, 2].map(i => <div key={i} style={{ width: 1.5, height: 8, background: T.accent, borderRadius: 1 }} />)}
+          </div>
           <div style={{ position: 'absolute', left: -3, top: 0, bottom: 0, width: 6, cursor: 'ew-resize' }} />
           <div style={{ position: 'absolute', right: -3, top: 0, bottom: 0, width: 6, cursor: 'ew-resize' }} />
         </div>

@@ -52,6 +52,8 @@ export function alpha(color, aa) {
 // Kbd chips inside a disabled Btn grey out with it.
 const BtnDisabledCtx = createContext(false)
 
+// Disabled (FIXES_R3 #15): readable, not faded — surface2 + border2 + text3,
+// whatever the variant. Pass `title` to say why it is disabled.
 export function Btn({ children, variant = 'ghost', size = 'md', icon, iconR, active, danger, onClick, title, style, full, disabled }) {
   const [hov, setH] = useState(false)
   const h = hov && !disabled
@@ -59,26 +61,27 @@ export function Btn({ children, variant = 'ghost', size = 'md', icon, iconR, act
   const pad = { sm: '0 12px', md: '0 15px', lg: '0 20px' }[size]
   const fz = { sm: T.fs.xs, md: T.fs.sm, lg: T.fs.base }[size]
   let bg = 'transparent', col = T.text2, bord = '1px solid transparent'
-  if (variant === 'primary') { bg = h ? 'var(--accent-hover)' : T.accent; col = '#0b0b0d' }
+  let shadow = 'none'
+  if (variant === 'primary') {
+    bg = h ? 'var(--accent-hover)' : T.accent; col = '#0b0b0d'
+    shadow = `inset 0 1px 0 rgba(255,255,255,.35), inset 0 -1px 0 rgba(0,0,0,.12), 0 ${h ? 8 : 4}px ${h ? 22 : 14}px -6px ${alpha(T.accent, h ? 'aa' : '77')}`
+  }
   else if (variant === 'solid') { bg = h ? T.surface3 : T.surface2; col = T.text; bord = `1px solid ${T.border2}` }
   else if (variant === 'outline') { bg = h ? T.surface : 'transparent'; col = T.text; bord = `1px solid ${T.border2}` }
   else { bg = h ? T.surface2 : 'transparent'; col = active ? T.accent : T.text2 }
   if (active && variant === 'ghost') bg = T.accentDim
   if (danger) { col = T.danger; if (h) bg = 'rgba(232,89,93,.13)' }
-  if (disabled) {
-    col = T.text4
-    if (variant === 'primary' || variant === 'solid') { bg = T.surface2; bord = `1px solid ${T.border}` }
-    else if (variant === 'outline') bord = `1px solid ${T.border}`
-  }
+  if (disabled) { bg = T.surface2; col = T.text3; bord = `1px solid ${T.border2}`; shadow = 'none' }
   return (
     <button data-rd onClick={onClick} title={title} disabled={disabled}
       onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
       style={{
         height: H, minWidth: H, padding: icon && !children ? 0 : pad, borderRadius: T.r.ctl,
-        background: bg, color: col, border: bord, cursor: disabled ? 'not-allowed' : 'pointer',
+        background: bg, color: col, border: bord, cursor: disabled ? 'not-allowed' : 'pointer', opacity: 1,
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
         fontSize: fz, fontWeight: variant === 'primary' ? 600 : 500, fontFamily: T.fontUI,
-        width: full ? '100%' : undefined, transition: 'background .14s, color .14s', flexShrink: 0,
+        width: full ? '100%' : undefined, transition: 'background .14s, color .14s, box-shadow .14s, transform .14s', flexShrink: 0,
+        boxShadow: shadow, transform: variant === 'primary' && h ? 'translateY(-1px)' : 'none', whiteSpace: 'nowrap',
         ...style,
       }}>
       <BtnDisabledCtx.Provider value={!!disabled}>
@@ -144,8 +147,8 @@ export function SectionLabel({ children, style }) {
 export function Kbd({ children }) {
   const off = useContext(BtnDisabledCtx)
   return <span style={{
-    padding: '1px 6px', borderRadius: 5, background: off ? 'transparent' : T.surface2, border: `1px solid ${off ? T.border : T.border2}`,
-    fontFamily: T.fontMono, fontSize: 10.5, color: off ? T.text4 : T.text2, lineHeight: 1.6,
+    padding: '1px 6px', borderRadius: 5, background: off ? 'transparent' : T.surface2, border: `1px solid ${T.border2}`,
+    fontFamily: T.fontMono, fontSize: 10.5, color: off ? T.text3 : T.text2, lineHeight: 1.6,
   }}>{children}</span>
 }
 
@@ -226,7 +229,7 @@ export function MenuItem({ icon, children, onClick, active, danger, color, right
         color: c, textAlign: 'left', fontSize: T.fs.sm, fontFamily: T.fontUI,
       }}>
       {icon && (typeof icon === 'string' && icon.length <= 2 ? <span style={{ width: 16, textAlign: 'center', fontFamily: T.fontMono, fontWeight: 700 }}>{icon}</span> : <Icon d={icon} size={15} stroke={c} />)}
-      <span style={{ flex: 1 }}>{children}{sub && <span style={{ display: 'block', fontSize: 10, color: T.text3, marginTop: 1 }}>{sub}</span>}</span>
+      <span style={{ flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{children}{sub && <span style={{ display: 'block', fontSize: 10, color: T.text3, marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>{sub}</span>}</span>
       {active && <Icon d={ICONS.check} size={14} stroke={T.accent} />}
       {right}
     </button>
@@ -244,16 +247,17 @@ export function Select({ value, options, onChange, width = 'auto', size = 'md', 
   const H = { sm: 30, md: 36 }[size] || 36
   const cur = options.find(o => o.v === value)
   return (
-    <Popover width={typeof width === 'number' ? width : 200} placement={placement}
+    <Popover width={Math.max(220, typeof width === 'number' ? width : 200)} placement={placement}
       trigger={(open, toggle) => (
-        <button data-rd onClick={toggle} style={{
-          height: H, padding: '0 11px', borderRadius: T.r.ctl, cursor: 'pointer',
+        <button data-rd onClick={toggle} title={cur ? cur.l : undefined} style={{
+          height: H, padding: '0 10px 0 12px', borderRadius: T.r.ctl, cursor: 'pointer', whiteSpace: 'nowrap', minWidth: 0, flexShrink: 0,
           background: T.surface, border: `1px solid ${open ? T.accent : T.border2}`, color: T.text,
           display: 'inline-flex', alignItems: 'center', gap: 9, fontSize: T.fs.sm, fontFamily: T.fontUI,
           width: typeof width === 'number' ? width : 'auto', justifyContent: 'space-between',
         }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 8, color: cur ? T.text : T.text3, overflow: 'hidden', whiteSpace: 'nowrap' }}>
-            {cur?.dot && <Dot color={cur.dot} size={7} />}{cur ? cur.l : (placeholder || 'Choisir…')}
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8, color: cur ? T.text : T.text3, overflow: 'hidden', minWidth: 0 }}>
+            {cur?.dot && <Dot color={cur.dot} size={7} />}
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{cur ? cur.l : (placeholder || 'Choisir…')}</span>
           </span>
           <Icon d={ICONS.chevron} size={13} stroke={T.text3} style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />
         </button>
@@ -261,7 +265,7 @@ export function Select({ value, options, onChange, width = 'auto', size = 'md', 
       {close => options.map(o => (
         <MenuItem key={o.v} active={o.v === value} color={o.color} icon={o.dot ? undefined : o.icon}
           onClick={() => { onChange?.(o.v); close() }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>{o.dot && <Dot color={o.dot} size={7} />}{o.l}</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>{o.dot && <Dot color={o.dot} size={7} />}<span style={{ overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{o.l}</span></span>
         </MenuItem>
       ))}
     </Popover>

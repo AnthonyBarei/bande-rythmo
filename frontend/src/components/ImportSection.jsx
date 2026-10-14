@@ -4,30 +4,9 @@ import PlexBrowser from './PlexBrowser'
 import { Btn, Dot, Kbd, Icon, ICONS, T, alpha } from '../ui'
 import { useProgress } from '../ProgressContext'
 import { fmtClockHours } from '../utils/timecode'
+import { sourceTitle, urlFilename } from '../utils/sourceTitle'
 
 const TAB = { LOCAL: 'local', PLEX: 'plex', URL: 'url' }
-
-// Last path segment of a URL, percent-decoded ('' when the path ends with '/').
-function urlFilename(u) {
-  let seg
-  try {
-    seg = new URL(u).pathname.split('/').filter(Boolean).pop() || ''
-  } catch (e) {
-    console.warn('URL illisible, nom brut utilisé', e)
-    seg = u.split(/[?#]/)[0].split('/').filter(Boolean).pop() || ''
-  }
-  try {
-    return decodeURIComponent(seg)
-  } catch (e) {
-    console.warn('Segment d’URL mal encodé, nom brut utilisé', e)
-    return seg
-  }
-}
-
-// Original filename → Plex title → URL segment (already in filename) → fallback.
-function sourceTitle(video) {
-  return (video.filename || '').trim() || (video.plexTitle || '').trim() || 'Vidéo sans titre'
-}
 
 function Spinner({ size = 11, color = T.accent }) {
   return <span style={{ width: size, height: size, borderRadius: '50%', border: `2px solid ${color}`, borderTopColor: 'transparent', animation: 'brspin 0.7s linear infinite', display: 'inline-block', flexShrink: 0 }} />
@@ -278,9 +257,10 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
                 title="1er clic : IN à la tête de lecture · 2e clic : OUT">
                 {marking ? 'Marquer la fin' : 'Marquer un clip'}
               </Btn>
-              <Btn variant="primary" size="lg" onClick={() => editorActions.current?.save()} disabled={saving || count === 0}>
+              <Btn variant="primary" size="lg" onClick={() => editorActions.current?.save()} disabled={saving || count === 0}
+                title={saving ? 'Création des clips en cours…' : count === 0 ? 'Tracez au moins un clip sur la timeline' : 'Créer les clips en attente (Ctrl+S)'}>
                 {saving
-                  ? <><Spinner size={12} color="#0b0b0d" /> Création…</>
+                  ? <><Spinner size={12} color={T.text3} /> Création…</>
                   : <>Créer {count} clip{count > 1 ? 's' : ''} <span style={{ display: 'inline-flex', gap: 3, marginLeft: 4 }}><Kbd>Ctrl</Kbd><Kbd>S</Kbd></span></>}
               </Btn>
             </>
@@ -298,9 +278,9 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
             return (
               <button key={s.id} data-rd onClick={() => setTab(s.id)} style={{
                 display: 'flex', alignItems: 'center', gap: 8, padding: '8px 15px', borderRadius: T.r.chip,
-                border: 'none', cursor: 'pointer', background: active ? T.bg2 : 'transparent',
+                border: `1px solid ${active ? T.border2 : 'transparent'}`, cursor: 'pointer', background: active ? T.surface3 : 'transparent',
                 color: active ? T.text : T.text2, fontSize: T.fs.sm, fontWeight: active ? 600 : 500,
-                boxShadow: active ? `inset 0 -2px 0 ${T.accent}` : 'none', fontFamily: T.fontUI,
+                fontFamily: T.fontUI,
               }}>
                 <Icon d={s.ic} size={15} stroke={active ? T.accent : 'currentColor'} />
                 {s.label}

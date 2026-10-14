@@ -20,15 +20,14 @@ function Item({ it, on, go, accent }) {
   return (
     <button data-rd onClick={() => go(it.id)} onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)} title={it.label}
       style={{
-        width: 52, height: 52, borderRadius: 13, cursor: 'pointer', position: 'relative',
+        width: 62, height: 52, borderRadius: 13, cursor: 'pointer', position: 'relative',
         background: on ? accent + '18' : (h ? T.surface2 : 'transparent'),
         border: `1px solid ${on ? accent + '44' : 'transparent'}`,
         display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3,
         transition: 'background .14s',
       }}>
-      {on && <div style={{ position: 'absolute', left: -9, top: 14, bottom: 14, width: 3, background: accent, borderRadius: 2 }} />}
       <Icon d={it.ic} size={19} stroke={on ? accent : (h ? T.text : T.text3)} />
-      <span style={{ fontSize: 8.5, fontWeight: 600, color: on ? accent : T.text4, letterSpacing: 0.2 }}>{it.label}</span>
+      <span style={{ fontSize: 8.5, fontWeight: 600, color: on ? accent : T.text4, letterSpacing: 0, whiteSpace: 'nowrap', maxWidth: 58, overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.label}</span>
     </button>
   )
 }

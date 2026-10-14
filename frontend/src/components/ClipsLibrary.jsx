@@ -93,7 +93,7 @@ export default function ClipsLibrary({ clips, onDub, onRecord, onMeme, onDelete,
           </span>
           <div style={{ flex: 1 }} />
           <div style={{
-            display: 'flex', alignItems: 'center', gap: 9, padding: '0 14px', height: 40, minWidth: 260,
+            display: 'flex', alignItems: 'center', gap: 9, padding: '0 14px', height: 42, minWidth: 260,
             background: T.surface, border: `1px solid ${T.border}`, borderRadius: 99,
           }}>
             <Icon d={ICONS.search} size={15} stroke={T.text3} />
@@ -102,32 +102,39 @@ export default function ClipsLibrary({ clips, onDub, onRecord, onMeme, onDelete,
               style={{ flex: 1, minWidth: 0, background: 'transparent', border: 'none', outline: 'none', padding: 0, color: T.text, fontSize: T.fs.sm, fontFamily: T.fontUI }} />
             <span style={{ fontSize: 10, color: T.text4, fontFamily: T.fontMono, border: `1px solid ${T.border2}`, borderRadius: 4, padding: '1px 5px' }}>/</span>
           </div>
-          <Btn variant="primary" size="lg" icon={ICONS.plus} onClick={onNewClip}>Nouveau clip</Btn>
+          <Btn variant="primary" size="lg" onClick={onNewClip} title="Importer une vidéo et créer un clip (N)" style={{ padding: '0 8px 0 8px', gap: 10 }}>
+            <span style={{ width: 28, height: 28, borderRadius: 7, background: 'rgba(11,11,13,.14)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Icon d={ICONS.plus} size={16} sw={2.4} stroke="#0b0b0d" />
+            </span>
+            Nouveau clip
+            <span style={{ fontFamily: T.fontMono, fontSize: 11, fontWeight: 600, padding: '2px 6px', borderRadius: 5, background: 'rgba(11,11,13,.14)', color: 'rgba(11,11,13,.7)', marginLeft: 2 }}>N</span>
+          </Btn>
         </div>
 
         {/* Filter tabs */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, borderBottom: `1px solid ${T.border}`, height: 42 }}>
-          <Select size="sm" width={158} value={activeProject} onChange={setProjectFilter} options={projectOptions} />
-          <div style={{ width: 1, height: 20, background: T.border, margin: '0 6px' }} />
-          {FILTERS.map(t => {
-            const active = filter === t.id
-            return (
-              <button data-rd key={t.id} onClick={() => setFilter(t.id)} style={{
-                height: 42, padding: '0 14px', background: 'transparent', border: 'none', cursor: 'pointer',
-                color: active ? T.text : T.text2, fontSize: T.fs.sm, fontWeight: active ? 600 : 500,
-                borderBottom: `2px solid ${active ? T.accent : 'transparent'}`, marginBottom: -1,
-                display: 'flex', alignItems: 'center', gap: 7, fontFamily: T.fontUI,
-              }}>
-                {t.label}
-                <span style={{
-                  fontSize: 10.5, padding: '1px 6px', borderRadius: 99, fontFamily: T.fontMono,
-                  background: active ? alpha(T.accent, '22') : T.surface2, color: active ? T.accent : T.text3,
-                }}>{counts[t.id] || 0}</span>
-              </button>
-            )
-          })}
-          <div style={{ flex: 1 }} />
-          <span style={{ fontSize: T.fs.xs, color: T.text3 }}>Trier</span>
+          <Select size="sm" width={176} value={activeProject} onChange={setProjectFilter} options={projectOptions} />
+          <div style={{ width: 1, height: 20, background: T.border, margin: '0 6px', flexShrink: 0 }} />
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 4, overflowX: 'auto', overflowY: 'hidden', scrollbarWidth: 'none', height: 42 }}>
+            {FILTERS.map(t => {
+              const active = filter === t.id
+              return (
+                <button data-rd key={t.id} onClick={() => setFilter(t.id)} style={{
+                  height: 42, padding: '0 14px', background: 'transparent', border: 'none', cursor: 'pointer',
+                  color: active ? T.text : T.text2, fontSize: T.fs.sm, fontWeight: active ? 600 : 500,
+                  borderBottom: `2px solid ${active ? T.accent : 'transparent'}`, marginBottom: -1,
+                  display: 'flex', alignItems: 'center', gap: 7, fontFamily: T.fontUI, whiteSpace: 'nowrap', flexShrink: 0,
+                }}>
+                  {t.label}
+                  <span style={{
+                    fontSize: 10.5, padding: '1px 6px', borderRadius: 99, fontFamily: T.fontMono,
+                    background: active ? alpha(T.accent, '22') : T.surface2, color: active ? T.accent : T.text3,
+                  }}>{counts[t.id] || 0}</span>
+                </button>
+              )
+            })}
+          </div>
+          <span style={{ fontSize: T.fs.xs, color: T.text3, flexShrink: 0, marginLeft: 8 }}>Trier</span>
           <Select size="sm" width={150} value={sort} onChange={setSort} options={SORT_OPTIONS} />
         </div>
       </div>

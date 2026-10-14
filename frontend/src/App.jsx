@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import Sidebar from './components/Sidebar'
 import ImportSection from './components/ImportSection'
 import ClipsLibrary from './components/ClipsLibrary'
@@ -44,6 +44,15 @@ function saveNav(nav) {
   } catch {
     // storage blocked — reload simply starts on Importer
   }
+}
+
+// Éditeur and Studio own their single-key shortcuts; N stays out of their way.
+const N_KEY_EXCLUDED = new Set(['dub', 'record', 'import'])
+
+function isNewClipKey(e, { section, overlayOpen }) {
+  if (e.ctrlKey || e.metaKey || e.altKey || e.repeat || e.defaultPrevented) return false
+  if (overlayOpen || document.querySelector('[aria-modal="true"]')) return false
+  return !N_KEY_EXCLUDED.has(section)
 }
 
 // Top bar — port of redesign shell.jsx TopBar.
@@ -114,17 +123,28 @@ function AppInner() {
     saveNav({ section, clipId: activeClip?.clip_id || null })
   }, [section, activeClip])
 
-  // Global keys: "?" → shortcuts · ⌘K/Ctrl+K or "/" → command palette.
+  // Read by the global key handler (bound once) for the N guard.
+  const keyCtxRef = useRef({})
+  useEffect(() => {
+    keyCtxRef.current = { section, overlayOpen: cmdOpen || shortcutsOpen }
+  }, [section, cmdOpen, shortcutsOpen])
+
+  // Global keys: "?" → shortcuts · ⌘K/Ctrl+K or "/" → command palette · N → Importer.
   useEffect(() => {
     function onKey(e) {
-      const typing = ['INPUT', 'TEXTAREA'].includes(e.target.tagName) || e.target.isContentEditable
+      const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName) || e.target.isContentEditable
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault(); setCmdOpen(v => !v); return
       }
       if (typing) return
       if (e.key === '/' && !e.shiftKey) { e.preventDefault(); setCmdOpen(true); return }
       if (e.key === '?' || (e.key === '/' && e.shiftKey)) {
-        e.preventDefault(); setShortcutsOpen(v => !v)
+        e.preventDefault(); setShortcutsOpen(v => !v); return
+      }
+      if (e.key.toLowerCase() === 'n' && isNewClipKey(e, keyCtxRef.current)) {
+        e.preventDefault()
+        setDubExportOpen(false)
+        setSection('import')
       }
     }
     window.addEventListener('keydown', onKey)

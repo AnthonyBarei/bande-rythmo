@@ -247,7 +247,7 @@ export default function ClipCard({ clip, onDub, onRecord, onMeme, onDelete, onRe
       </div>
 
       {watching && segmentUrl && createPortal(
-        <div
+        <div role="dialog" aria-modal="true" aria-label={clip.name}
           onClick={e => { e.stopPropagation(); if (e.target === e.currentTarget) setWatching(false) }}
           style={{
             position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)',
