@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
-import { Icon, ICONS } from '../Icons'
-import { Btn, Segmented, ScreenHeader, SectionLabel } from '../ui'
+import { T, Icon, ICONS, Btn, Chip, Segmented, ScreenHeader, alpha } from '../ui'
 import { useProgress } from '../ProgressContext'
 
 const FONTS = [
@@ -36,7 +35,7 @@ function wrapText(ctx, text, maxW) {
 const fmtTime = t => {
   const m = Math.floor(t / 60)
   const s = (t % 60).toFixed(1).padStart(4, '0')
-  return `${m}:${s}`
+  return `${String(m).padStart(2, '0')}:${s}`
 }
 
 export default function MemeGenerator({ clip = null, onBack = null, initialTab = null }) {
@@ -86,11 +85,13 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
   const [gifLoading, setGifLoading] = useState(false)
   const [audioLoading, setAudioLoading] = useState(false)
   const [playing, setPlaying] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
 
   const canvasRef = useRef(null)
   const imgRef = useRef(null)
   const fileInputRef = useRef(null)
-  const dropRef = useRef(null)
+  const stageRef = useRef(null)
+  const canvasWrapRef = useRef(null)
   const videoRef = useRef(null)
   const timelineRef = useRef(null)
   const textsRef = useRef(texts)
@@ -180,14 +181,28 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
     }
   }, [])
 
+  // Fit the canvas inside the editor stage (contain), redraw on resize.
   useEffect(() => {
     if (!imageDims) return
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const maxW = Math.min(canvas.parentElement?.clientWidth || 800, 900)
-    canvas.width = maxW
-    canvas.height = Math.round(maxW * (imageDims.h / imageDims.w))
-    draw()
+    const stage = stageRef.current
+    if (!stage) return
+    const fit = () => {
+      const canvas = canvasRef.current
+      const wrap = canvasWrapRef.current
+      if (!canvas || !wrap) return
+      const ar = imageDims.w / imageDims.h
+      const w = Math.max(1, Math.floor(Math.min(stage.clientWidth, stage.clientHeight * ar)))
+      const h = Math.max(1, Math.round(w / ar))
+      canvas.width = w
+      canvas.height = h
+      wrap.style.width = `${w}px`
+      wrap.style.height = `${h}px`
+      draw()
+    }
+    fit()
+    const ro = new ResizeObserver(fit)
+    ro.observe(stage)
+    return () => ro.disconnect()
   }, [imageDims, draw, resultUrl])
 
   useEffect(() => { draw() }, [texts, selectedId, draw])
@@ -512,401 +527,330 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
     setError(null)
   }
 
+  // Drag along the range track: seek, or move the IN / OUT handles.
+  function trackDrag(e, apply) {
+    e.preventDefault()
+    e.stopPropagation()
+    const el = timelineRef.current
+    if (!el) return
+    const getT = ev => {
+      const rect = el.getBoundingClientRect()
+      return Math.max(0, Math.min(videoDuration, (ev.clientX - rect.left) / rect.width * videoDuration))
+    }
+    apply(getT(e))
+    const onMove = ev => apply(getT(ev))
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }
+
+  const dragIn = t => { const v = Math.max(0, Math.min(t, outPoint - 0.1)); setInPoint(v); seekVideo(v) }
+  const dragOut = t => { const v = Math.min(videoDuration, Math.max(t, inPoint + 0.1)); setOutPoint(v); seekVideo(v) }
+
   const sel = texts.find(t => t.id === selectedId)
+  const selIndex = texts.findIndex(t => t.id === selectedId)
   const gifDuration = Math.max(0, outPoint - inPoint).toFixed(1)
+  const editing = !!imageUrl
+  const isGif = (imageName || '').toLowerCase().endsWith('.gif')
+  const pct = t => `${(t / (videoDuration || 1)) * 100}%`
+  const blue = T.info
+
+  const errorBox = error && (
+    <div style={{ padding: '8px 10px', background: alpha(T.danger, '14'), color: T.danger, borderRadius: T.r.ctl, fontSize: T.fs.xs, border: `1px solid ${alpha(T.danger, '44')}` }}>
+      {error}
+    </div>
+  )
+
+  const transport = (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+      <Btn size="sm" icon={ICONS.skipBack} onClick={() => seekRelative(-1)} title="−1 s (Maj+←)" />
+      <Btn size="sm" icon={ICONS.prevFrame} onClick={() => seekRelative(-0.1)} title="−0,1 s (←)" />
+      <Btn size="sm" variant="solid" icon={playing ? ICONS.pause : ICONS.play} onClick={togglePlay} title="Lecture / pause (Espace)" />
+      <Btn size="sm" icon={ICONS.nextFrame} onClick={() => seekRelative(0.1)} title="+0,1 s (→)" />
+      <Btn size="sm" icon={ICONS.skipFwd} onClick={() => seekRelative(1)} title="+1 s (Maj+→)" />
+    </div>
+  )
+
+  const videoStub = footer => (
+    <div style={{ background: '#000', borderRadius: T.r.card, border: `1px solid ${T.border}`, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      <div onClick={segmentUrl ? togglePlay : undefined} style={{
+        aspectRatio: '16/9', position: 'relative', cursor: segmentUrl ? 'pointer' : 'default',
+        background: segmentUrl ? '#000' : 'repeating-linear-gradient(0deg,#16161c 0 2px,#1b1b22 2px 6px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+        {segmentUrl ? (
+          <video
+            ref={videoRef}
+            src={segmentUrl}
+            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+            onLoadedMetadata={onVideoLoaded}
+            onTimeUpdate={e => sourceTab === 'image' ? setVideoTime(e.target.currentTime) : onGifTimeUpdate(e)}
+            onPlay={() => setPlaying(true)}
+            onPause={() => setPlaying(false)}
+          />
+        ) : (
+          <span style={{ color: T.text4, fontSize: 11, letterSpacing: 4, fontFamily: T.fontMono }}>APERÇU</span>
+        )}
+      </div>
+      {segmentUrl && footer}
+    </div>
+  )
+
+  const imageFooter = (
+    <div style={{ padding: '12px 14px', borderTop: `1px solid ${T.border}`, display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div onMouseDown={e => trackDrag(e, seekVideo)} style={{ padding: '3px 0', cursor: 'pointer' }}>
+        <div ref={timelineRef} style={{ height: 4, background: T.surface3, borderRadius: 2, position: 'relative' }}>
+          <div style={{ width: pct(videoTime), height: '100%', background: T.accent, borderRadius: 2 }} />
+          <div style={{ position: 'absolute', left: pct(videoTime), top: -3, width: 10, height: 10, borderRadius: '50%', background: T.accent, transform: 'translateX(-50%)' }} />
+        </div>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontFamily: T.fontMono, fontSize: 11, color: T.text3 }}>
+        <span>{fmtTime(videoTime)}</span>
+        <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>{transport}</div>
+        <span>{fmtTime(videoDuration)}</span>
+      </div>
+    </div>
+  )
+
+  const rangeFooter = (
+    <div style={{ padding: '14px 16px', borderTop: `1px solid ${T.border}`, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div ref={timelineRef} onMouseDown={e => trackDrag(e, seekVideo)}
+        style={{ position: 'relative', height: 10, background: T.surface3, borderRadius: 3, cursor: 'pointer' }}>
+        <div style={{ position: 'absolute', left: pct(inPoint), width: pct(outPoint - inPoint), top: 0, bottom: 0, background: alpha(T.accent, '44'), borderRadius: 3 }} />
+        <div onMouseDown={e => trackDrag(e, dragIn)} title="Glisser pour régler IN"
+          style={{ position: 'absolute', left: pct(inPoint), top: -4, bottom: -4, width: 11, marginLeft: -4, cursor: 'ew-resize', display: 'flex', justifyContent: 'center' }}>
+          <div style={{ marginTop: 4, height: 10, width: 3, background: blue, borderRadius: 1 }} />
+        </div>
+        <div onMouseDown={e => trackDrag(e, dragOut)} title="Glisser pour régler OUT"
+          style={{ position: 'absolute', left: `calc(${pct(outPoint)} - 3px)`, top: -4, bottom: -4, width: 11, marginLeft: -4, cursor: 'ew-resize', display: 'flex', justifyContent: 'center' }}>
+          <div style={{ marginTop: 4, height: 10, width: 3, background: T.accent, borderRadius: 1 }} />
+        </div>
+        <div style={{ position: 'absolute', left: pct(videoTime), top: -3, bottom: -3, width: 2, background: '#fff', pointerEvents: 'none' }} />
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontFamily: T.fontMono, fontSize: 11 }}>
+        <Chip soft color={blue} onClick={() => setInPoint(Math.min(videoTime, outPoint - 0.1))}>[ IN {fmtTime(inPoint)}</Chip>
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, color: T.text3 }}>
+          {transport}
+          <span>{fmtTime(videoTime)} · {gifDuration}s</span>
+        </div>
+        <Chip soft color={T.accent} onClick={() => setOutPoint(Math.max(videoTime, inPoint + 0.1))}>OUT {fmtTime(outPoint)} ]</Chip>
+      </div>
+    </div>
+  )
+
+  const hint = text => <p style={{ fontSize: T.fs.xs, color: T.text3, lineHeight: 1.6, margin: 0 }}>{text}</p>
+
+  const dropZone = (
+    <div
+      role="button" tabIndex={0}
+      onClick={() => fileInputRef.current?.click()}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInputRef.current?.click() } }}
+      onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={e => { e.preventDefault(); setDragOver(false); handleFile(e.dataTransfer.files?.[0]) }}
+      style={{ padding: 22, border: `2px dashed ${dragOver ? T.accent : T.border2}`, borderRadius: T.r.card, textAlign: 'center', color: T.text3, cursor: 'pointer', transition: 'border-color .2s' }}>
+      <Icon d={ICONS.upload} size={26} stroke={T.text3} style={{ margin: '0 auto' }} />
+      <div style={{ fontSize: T.fs.xs, fontWeight: 600, marginTop: 8, color: T.text2 }}>Glisser une image</div>
+      <div style={{ fontSize: 10.5, marginTop: 2 }}>PNG · JPG · WEBP · GIF</div>
+    </div>
+  )
+
+  let sourcePanel
+  if (sourceTab === 'video' && segmentUrl) {
+    sourcePanel = (<>
+      {errorBox}
+      <Btn variant="primary" size="lg" full icon={ICONS.layers} onClick={createGif} disabled={gifLoading || !videoReady || outPoint <= inPoint}>
+        {gifLoading ? 'Génération GIF…' : 'Créer le GIF'}
+      </Btn>
+      {hint("Réglez IN / OUT puis créez le GIF. Il s'ouvre dans l'éditeur de texte.")}
+    </>)
+  } else if (sourceTab === 'audio' && segmentUrl) {
+    const audioDisabled = audioLoading || !videoReady || outPoint <= inPoint
+    sourcePanel = (<>
+      {errorBox}
+      <Btn variant="primary" size="lg" full icon={ICONS.download} onClick={() => createAudio('mp3')} disabled={audioDisabled}>
+        {audioLoading ? 'Export…' : 'Télécharger MP3'}
+      </Btn>
+      <Btn variant="solid" full icon={ICONS.download} onClick={() => createAudio('wav')} disabled={audioDisabled}>Télécharger WAV</Btn>
+      {hint("Exporte l'audio de la sélection. MP3 compact, WAV lossless.")}
+    </>)
+  } else {
+    sourcePanel = (<>
+      {errorBox}
+      {segmentUrl && <Btn variant="primary" size="lg" full icon={ICONS.film} onClick={captureFrame} disabled={!videoReady}>Capturer ce frame</Btn>}
+      {hint(segmentUrl
+        ? 'Naviguez puis capturez le frame souhaité — ou glissez votre propre image.'
+        : 'Glissez votre propre image — ou ouvrez un clip depuis la bibliothèque pour en capturer un frame.')}
+      {dropZone}
+    </>)
+  }
+
+  const swatches = (colors, value, key) => colors.map(c => (
+    <button data-rd key={c} title={c} onClick={() => updateLayer(selectedId, { [key]: c })} style={{
+      width: 22, height: 22, borderRadius: 5, background: c, padding: 0, cursor: 'pointer', flexShrink: 0,
+      border: value.toLowerCase() === c ? `2px solid ${T.accent}` : '1px solid #444',
+    }} />
+  ))
+
+  const colorInput = (value, key, title) => (
+    <input type="color" value={value} title={title}
+      onChange={e => updateLayer(selectedId, { [key]: e.target.value })}
+      style={{ width: 22, height: 22, border: 'none', background: 'none', cursor: 'pointer', padding: 0, flexShrink: 0 }} />
+  )
+
+  const rowBtn = { height: 22, minWidth: 22 }
 
   return (
-    <div style={{ overflow: 'auto', height: '100%', boxSizing: 'border-box', background: 'var(--bg)' }}>
-      <div style={{ maxWidth: 1100, margin: '0 auto', paddingBottom: 28 }}>
-
-        <ScreenHeader
-          kicker="ATELIER"
-          title="Meme · GIF · Audio"
-          sub={clip ? clip.name : undefined}
-          right={(
-            <div style={{ display: 'flex', gap: 8 }}>
-              {onBack && <Btn variant="outline" size="sm" icon={ICONS.back} onClick={onBack}>Mes clips</Btn>}
-              {imageUrl && <Btn variant="solid" size="sm" icon={ICONS.plus} onClick={resetMeme}>Nouveau</Btn>}
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <ScreenHeader
+        kicker="ATELIER"
+        title="Meme · GIF · Audio"
+        sub={clip ? `clip · ${clip.name}` : undefined}
+        right={(onBack || editing) ? (
+          <div style={{ display: 'flex', gap: 8 }}>
+            {onBack && <Btn variant="outline" icon={ICONS.back} onClick={onBack}>Mes clips</Btn>}
+            {editing && <Btn variant="outline" onClick={resetMeme} icon={ICONS.chevron} style={{ transform: 'none' }}>Sources</Btn>}
+          </div>
+        ) : null}
+      />
+      {!editing && clip && (
+        <div style={{ padding: '0 32px 14px', flexShrink: 0 }}>
+          <Segmented value={sourceTab} onChange={setSourceTab} options={[
+            { v: 'image', l: 'Image', icon: ICONS.film }, { v: 'video', l: 'GIF', icon: ICONS.layers }, { v: 'audio', l: 'Audio', icon: ICONS.volume },
+          ]} />
+        </div>
+      )}
+      <div style={{ flex: 1, minHeight: 0, padding: '0 32px 28px', overflow: 'auto' }}>
+        {!editing ? (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: 22, height: '100%', alignItems: 'start' }}>
+            {videoStub(sourceTab === 'image' ? imageFooter : rangeFooter)}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {sourcePanel}
             </div>
-          )}
-        />
-        <div style={{ padding: '14px 32px 0' }}>
-
-        {!imageUrl ? (
-          <div>
-            {/* Tab switcher — only when clip provided.
-                MEME_PLEX_HANDOFF §2.2: rename by intent + one-line flow hint. */}
-            {clip && (
-              <>
-                <Segmented value={sourceTab} onChange={setSourceTab} options={[
-                  { v: 'image', l: 'Image', icon: ICONS.film },
-                  { v: 'video', l: 'GIF', icon: ICONS.gif },
-                  { v: 'audio', l: 'Extrait audio', icon: ICONS.audio },
-                ]} />
-                <div style={{ fontSize: 11, color: 'var(--text3)', margin: '8px 0 16px' }}>
-                  {sourceTab === 'audio'
-                    ? "L'audio s'exporte directement — pas d'éditeur."
-                    : 'Image & GIF passent par l\'éditeur de texte.'}
-                </div>
-              </>
-            )}
-
-            {/* IMAGE TAB — no clip, show drop zone */}
-            {sourceTab === 'image' && !segmentUrl && (
-              <div
-                ref={dropRef}
-                onClick={() => fileInputRef.current?.click()}
-                onDragOver={e => { e.preventDefault(); dropRef.current.style.borderColor = 'var(--accent)' }}
-                onDragLeave={() => { dropRef.current.style.borderColor = '' }}
-                onDrop={e => { e.preventDefault(); dropRef.current.style.borderColor = ''; handleFile(e.dataTransfer.files?.[0]) }}
-                style={{ border: '2px dashed var(--border2)', borderRadius: 8, padding: 60, textAlign: 'center', background: 'var(--surface)', cursor: 'pointer', transition: 'border-color 0.2s' }}
-              >
-                <div style={{ marginBottom: 10, display: 'flex', justifyContent: 'center', color: 'var(--text3)' }}><Icon d={ICONS.upload} size={38} sw={1.4} /></div>
-                <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4, color: 'var(--text)' }}>Glissez une image ou un GIF</div>
-                <div style={{ fontSize: 12, color: 'var(--text3)' }}>PNG · JPG · WEBP · GIF animé</div>
-              </div>
-            )}
-
-            {/* UNIFIED PLAYER — one transport for Image / GIF / Audio.
-                Image mode hides the IN/OUT range (capture is at the playhead);
-                GIF/Audio show the range. MEME_PLEX_HANDOFF §2.1. */}
-            {segmentUrl && (() => {
-              const imageMode = sourceTab === 'image'
-              const rangePlayer = (
-                <div style={{ background: '#000', borderRadius: 6, border: '1px solid var(--border)' }}>
-                  <div style={{ position: 'relative', cursor: 'pointer', overflow: 'hidden', borderRadius: '6px 6px 0 0' }} onClick={togglePlay}>
-                    <video
-                      ref={videoRef}
-                      src={segmentUrl}
-                      style={{ display: 'block', width: '100%' }}
-                      onLoadedMetadata={onVideoLoaded}
-                      onTimeUpdate={e => imageMode ? setVideoTime(e.target.currentTime) : onGifTimeUpdate(e)}
-                      onPlay={() => setPlaying(true)}
-                      onPause={() => setPlaying(false)}
-                    />
-                    <div style={{
-                      position: 'absolute', top: 8, left: 8,
-                      background: 'rgba(0,0,0,0.55)', borderRadius: 4,
-                      padding: '5px', color: '#fff', pointerEvents: 'none',
-                    }}>
-                      <Icon d={playing ? ICONS.pause : ICONS.play} size={12} />
-                    </div>
-                  </div>
-                  <div style={{ padding: '12px 14px', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {/* Timeline click/drag to seek */}
-                    <div
-                      ref={timelineRef}
-                      style={{ position: 'relative', height: 10, background: 'var(--surface3)', borderRadius: 3, cursor: 'pointer' }}
-                      onMouseDown={e => {
-                        e.preventDefault()
-                        const el = timelineRef.current
-                        if (!el) return
-                        const dur = videoDuration
-                        const getT = ev => {
-                          const rect = el.getBoundingClientRect()
-                          return Math.max(0, Math.min(dur, (ev.clientX - rect.left) / rect.width * dur))
-                        }
-                        seekVideo(getT(e))
-                        const onMove = ev => seekVideo(getT(ev))
-                        const onUp = () => {
-                          document.removeEventListener('mousemove', onMove)
-                          document.removeEventListener('mouseup', onUp)
-                        }
-                        document.addEventListener('mousemove', onMove)
-                        document.addEventListener('mouseup', onUp)
-                      }}
-                    >
-                      {!imageMode && <>
-                        <div style={{ position: 'absolute', top: 0, height: '100%', background: 'var(--accent-glow)', borderRadius: 3, left: `${(inPoint / (videoDuration || 1)) * 100}%`, width: `${((outPoint - inPoint) / (videoDuration || 1)) * 100}%` }} />
-                        <div style={{ position: 'absolute', top: 0, width: 3, height: '100%', background: 'var(--info)', borderRadius: 1, left: `${(inPoint / (videoDuration || 1)) * 100}%` }} />
-                        <div style={{ position: 'absolute', top: 0, width: 3, height: '100%', background: 'var(--accent)', borderRadius: 1, left: `calc(${(outPoint / (videoDuration || 1)) * 100}% - 3px)` }} />
-                      </>}
-                      <div style={{ position: 'absolute', top: -3, width: 2, height: 'calc(100% + 6px)', background: '#fff', borderRadius: 1, left: `${(videoTime / (videoDuration || 1)) * 100}%`, boxShadow: '0 0 4px rgba(255,255,255,0.6)', pointerEvents: 'none' }} />
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'center' }}>
-                      <Btn variant="solid" size="sm" onClick={() => seekRelative(-1)} title="−1s (Shift+←)">«</Btn>
-                      <Btn variant="solid" size="sm" onClick={() => seekRelative(-0.1)} title="−0.1s (←)">‹</Btn>
-                      <Btn variant="solid" size="sm" icon={playing ? ICONS.pause : ICONS.play} onClick={togglePlay} title="Play/Pause (Space)" style={{ minWidth: 48 }} />
-                      <Btn variant="solid" size="sm" onClick={() => seekRelative(0.1)} title="+0.1s (→)">›</Btn>
-                      <Btn variant="solid" size="sm" onClick={() => seekRelative(1)} title="+1s (Shift+→)">»</Btn>
-                    </div>
-                    {imageMode ? (
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text3)' }}>
-                        <span>{fmtTime(videoTime)}</span>
-                        <span>{fmtTime(videoDuration)}</span>
-                      </div>
-                    ) : (<>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'var(--font-mono)', fontSize: 11 }}>
-                        <button onClick={() => setInPoint(Math.min(videoTime, outPoint - 0.1))} style={{ padding: '3px 7px', minHeight: 32, background: 'var(--info-soft)', color: 'var(--info)', border: '1px solid color-mix(in srgb, var(--info) 30%, transparent)', borderRadius: 3, fontSize: 11, cursor: 'pointer', fontFamily: 'var(--font-mono)' }}>[ IN</button>
-                        <span style={{ color: 'var(--info)' }}>{fmtTime(inPoint)}</span>
-                        <div style={{ flex: 1, textAlign: 'center', color: 'var(--text3)' }}>{fmtTime(videoTime)} · {gifDuration}s</div>
-                        <span style={{ color: 'var(--accent)' }}>{fmtTime(outPoint)}</span>
-                        <button onClick={() => setOutPoint(Math.max(videoTime, inPoint + 0.1))} style={{ padding: '3px 7px', minHeight: 32, background: 'var(--accent-soft)', color: 'var(--accent)', border: '1px solid var(--accent-ring)', borderRadius: 3, fontSize: 11, cursor: 'pointer', fontFamily: 'var(--font-mono)' }}>OUT ]</button>
-                      </div>
-                      <input type="range" min={0} max={videoDuration || 1} step={0.05} value={inPoint} onChange={e => { const v = Math.min(+e.target.value, outPoint - 0.1); setInPoint(v); seekVideo(v) }} style={{ width: '100%', margin: 0, color: 'var(--info)', '--pct': `${(inPoint / (videoDuration || 1)) * 100}%` }} />
-                      <input type="range" min={0} max={videoDuration || 1} step={0.05} value={outPoint} onChange={e => { const v = Math.max(+e.target.value, inPoint + 0.1); setOutPoint(v); seekVideo(v) }} style={{ width: '100%', margin: 0, color: 'var(--accent)', '--pct': `${(outPoint / (videoDuration || 1)) * 100}%` }} />
-                    </>)}
-                  </div>
-                </div>
-              )
-
-              if (imageMode) return (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 240px', gap: 20, alignItems: 'start' }}>
-                  {rangePlayer}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {error && <div style={{ padding: '8px 10px', background: 'var(--danger-soft)', color: 'var(--danger)', borderRadius: 4, fontSize: 12, border: '1px solid color-mix(in srgb, var(--danger) 30%, transparent)' }}>{error}</div>}
-                    <Btn variant="primary" size="lg" full icon={ICONS.rec} onClick={captureFrame} disabled={!videoReady}>Capturer ce frame</Btn>
-                    <p style={{ fontSize: 11, color: 'var(--text3)', lineHeight: 1.6, margin: 0 }}>Naviguez puis capturez le frame souhaité — il s'ouvrira dans l'éditeur.</p>
-                  </div>
-                </div>
-              )
-
-              if (sourceTab === 'video') return (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 240px', gap: 20, alignItems: 'start' }}>
-                  {rangePlayer}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {error && <div style={{ padding: '8px 10px', background: 'var(--danger-soft)', color: 'var(--danger)', borderRadius: 4, fontSize: 12, border: '1px solid color-mix(in srgb, var(--danger) 30%, transparent)' }}>{error}</div>}
-                    <Btn variant="primary" size="lg" full icon={ICONS.rec} onClick={createGif} disabled={gifLoading || !videoReady || outPoint <= inPoint}>{gifLoading ? 'Génération GIF…' : 'Créer GIF'}</Btn>
-                    <p style={{ fontSize: 11, color: 'var(--text3)', lineHeight: 1.6, margin: 0 }}>Réglez IN/OUT puis créez le GIF. Il s'ouvrira dans l'éditeur.</p>
-                  </div>
-                </div>
-              )
-
-              if (sourceTab === 'audio') return (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 240px', gap: 20, alignItems: 'start' }}>
-                  {rangePlayer}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {error && <div style={{ padding: '8px 10px', background: 'var(--danger-soft)', color: 'var(--danger)', borderRadius: 4, fontSize: 12, border: '1px solid color-mix(in srgb, var(--danger) 30%, transparent)' }}>{error}</div>}
-                    <Btn variant="primary" size="lg" full icon={audioLoading ? ICONS.rec : undefined}
-                      onClick={() => createAudio('mp3')}
-                      disabled={audioLoading || !videoReady || outPoint <= inPoint}
-                    >{audioLoading ? 'Export…' : 'Télécharger MP3'}</Btn>
-                    <Btn variant="solid" size="lg" full
-                      onClick={() => createAudio('wav')}
-                      disabled={audioLoading || !videoReady || outPoint <= inPoint}
-                    >Télécharger WAV</Btn>
-                    <p style={{ fontSize: 11, color: 'var(--text3)', lineHeight: 1.6, margin: 0 }}>Réglez IN/OUT puis exportez l'audio de la sélection. MP3 = compact, WAV = lossless.</p>
-                  </div>
-                </div>
-              )
-            })()}
           </div>
         ) : (
-          /* Canvas editor */
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 290px', gap: 20, alignItems: 'start' }}>
-
-            {/* Left column: result REPLACES the editor canvas once generated
-                (MEME_PLEX_HANDOFF §2.3 — never show source + result stacked). */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 22, height: '100%' }}>
+            {/* Result REPLACES the editor canvas once generated — never source + result stacked. */}
             {resultUrl ? (
-              <div style={{ background: '#000', borderRadius: 6, overflow: 'hidden', border: '1px solid var(--accent)' }}>
-                <div style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)', fontSize: 11, color: 'var(--accent)', fontWeight: 600 }}>
-                  Résultat
+              <div style={{ background: '#000', borderRadius: T.r.card, border: `1px solid ${T.accent}`, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                <div style={{ padding: '8px 14px', borderBottom: `1px solid ${T.border}`, fontSize: T.fs.xs, color: T.accent, fontWeight: 600 }}>Résultat</div>
+                <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'repeating-linear-gradient(0deg,#16161c 0 2px,#1b1b22 2px 6px)' }}>
+                  <img src={resultUrl} alt="meme" style={{ display: 'block', maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
                 </div>
-                <img src={resultUrl} alt="meme" style={{ display: 'block', width: '100%' }} />
-                <div style={{ display: 'flex', gap: 8, padding: 10, borderTop: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', gap: 8, padding: 10, borderTop: `1px solid ${T.border}` }}>
                   <Btn variant="solid" icon={ICONS.undo} onClick={() => setResultUrl(null)} style={{ flex: 1 }}>Refaire</Btn>
-                  <Btn icon={ICONS.download} onClick={download} style={{ flex: 1, background: 'var(--success)', color: '#fff', fontWeight: 700 }}>Télécharger</Btn>
+                  <Btn variant="primary" icon={ICONS.download} onClick={download} style={{ flex: 1 }}>Télécharger</Btn>
                 </div>
               </div>
             ) : (
-            <div style={{ background: '#000', borderRadius: 6, overflow: 'hidden', border: '1px solid var(--border)' }}>
-              <div style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)', fontSize: 11, color: 'var(--text3)' }}>
-                Glissez le texte pour le repositionner
+              <div style={{ background: '#000', borderRadius: T.r.card, border: `1px solid ${T.border}`, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                <div style={{ padding: '8px 14px', borderBottom: `1px solid ${T.border}`, fontSize: T.fs.xs, color: T.text3 }}>Glissez le texte pour le repositionner</div>
+                <div ref={stageRef} style={{ flex: 1, minHeight: 0, position: 'relative', background: 'repeating-linear-gradient(0deg,#16161c 0 2px,#1b1b22 2px 6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                  <div ref={canvasWrapRef} style={{ position: 'relative', flexShrink: 0 }}>
+                    {isGif && <img src={imageUrl} alt="" style={{ display: 'block', width: '100%', height: '100%', pointerEvents: 'none', userSelect: 'none' }} />}
+                    <canvas
+                      ref={canvasRef}
+                      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', display: 'block', cursor: dragging ? 'grabbing' : 'grab', userSelect: 'none' }}
+                      onMouseDown={onMouseDown}
+                      onMouseMove={onMouseMove}
+                      onMouseUp={onMouseUp}
+                      onMouseLeave={onMouseUp}
+                    />
+                  </div>
+                </div>
               </div>
-              <div style={{ position: 'relative' }}>
-                {imageName?.toLowerCase().endsWith('.gif') && imageUrl && (
-                  <img
-                    src={imageUrl}
-                    alt=""
-                    style={{ display: 'block', width: '100%', pointerEvents: 'none', userSelect: 'none' }}
-                  />
-                )}
-                <canvas
-                  ref={canvasRef}
-                  style={{
-                    display: 'block', width: '100%',
-                    cursor: dragging ? 'grabbing' : 'grab', userSelect: 'none',
-                    ...(imageName?.toLowerCase().endsWith('.gif') && imageUrl
-                      ? { position: 'absolute', inset: 0, height: '100%' }
-                      : {}),
-                  }}
-                  onMouseDown={onMouseDown}
-                  onMouseMove={onMouseMove}
-                  onMouseUp={onMouseUp}
-                  onMouseLeave={onMouseUp}
-                />
-              </div>
-            </div>
             )}
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16, overflow: 'auto', minHeight: 0 }}>
               <div>
-                <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
-                  <SectionLabel>TEXTES</SectionLabel>
+                <div style={{ display: 'flex', alignItems: 'center', marginBottom: 9 }}>
+                  <span style={{ fontSize: T.fs.micro, fontWeight: 700, letterSpacing: 1.2, color: T.text3 }}>TEXTES</span>
                   <div style={{ flex: 1 }} />
-                  <Btn size="sm" active icon={ICONS.plus} onClick={addLayer}>Ajouter</Btn>
+                  <Btn size="sm" active icon={ICONS.plus} onClick={addLayer} style={{ height: 22, padding: '0 6px', background: 'transparent' }}>Ajouter</Btn>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  {texts.map((t, i) => (
-                    <div
-                      key={t.id}
-                      onClick={() => setSelectedId(t.id)}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: 6,
-                        padding: '5px 8px',
-                        background: selectedId === t.id ? 'var(--accent-dim)' : 'var(--surface3)',
-                        border: `1px solid ${selectedId === t.id ? 'var(--accent-ring)' : 'var(--border)'}`,
-                        borderRadius: 4, cursor: 'pointer',
-                      }}
-                    >
-                      <span style={{ fontSize: 11, color: 'var(--text4)', width: 14, textAlign: 'center', flexShrink: 0 }}>{i + 1}</span>
+                {texts.map((t, i) => {
+                  const on = t.id === selectedId
+                  return (
+                    <div key={t.id} onClick={() => setSelectedId(t.id)} style={{
+                      display: 'flex', alignItems: 'center', gap: 6, padding: '8px 10px', marginBottom: 6, borderRadius: T.r.ctl, cursor: 'pointer',
+                      background: on ? alpha(T.accent, '14') : T.surface2, border: `1px solid ${on ? alpha(T.accent, '55') : T.border}`,
+                    }}>
+                      <span style={{ fontSize: 10, color: T.text4, width: 12, textAlign: 'center', flexShrink: 0 }}>{i + 1}</span>
                       <input
                         value={t.content}
                         onChange={e => updateLayer(t.id, { content: e.target.value })}
                         onClick={e => e.stopPropagation()}
+                        onFocus={() => setSelectedId(t.id)}
                         placeholder={i === 0 ? 'WHEN YOU…' : i === 1 ? '…IT\'S FRIDAY' : 'Texte…'}
                         style={{
-                          flex: 1, background: 'transparent', border: 'none', outline: 'none',
-                          fontSize: 12, color: 'var(--text)',
+                          flex: 1, minWidth: 0, background: 'transparent', border: 'none', outline: 'none', padding: 0,
+                          fontSize: T.fs.xs, color: T.text, letterSpacing: 0.3,
                           fontFamily: (FONTS.find(f => f.id === t.fontId) || FONTS[0]).css,
-                          letterSpacing: 0.5,
                         }}
                       />
-                      {/* Layer affordances: duplicate, ↑↓ reorder, delete. */}
-                      <button
-                        onClick={e => { e.stopPropagation(); duplicateLayer(t.id) }}
-                        title="Dupliquer"
-                        style={{ ...ROW_BTN, fontSize: 11, color: 'var(--text3)', cursor: 'pointer' }}
-                      >⎘</button>
-                      <button
-                        onClick={e => { e.stopPropagation(); reorderLayer(t.id, -1) }}
-                        disabled={i === 0}
-                        title="Monter"
-                        style={{ ...ROW_BTN, fontSize: 11, color: i === 0 ? 'var(--text4)' : 'var(--text3)', cursor: i === 0 ? 'default' : 'pointer' }}
-                      >↑</button>
-                      <button
-                        onClick={e => { e.stopPropagation(); reorderLayer(t.id, 1) }}
-                        disabled={i === texts.length - 1}
-                        title="Descendre"
-                        style={{ ...ROW_BTN, fontSize: 11, color: i === texts.length - 1 ? 'var(--text4)' : 'var(--text3)', cursor: i === texts.length - 1 ? 'default' : 'pointer' }}
-                      >↓</button>
+                      <Btn size="sm" icon={ICONS.chevron} title="Monter" disabled={i === 0}
+                        onClick={e => { e.stopPropagation(); reorderLayer(t.id, -1) }} style={{ ...rowBtn, transform: 'rotate(180deg)' }} />
+                      <Btn size="sm" icon={ICONS.chevron} title="Descendre" disabled={i === texts.length - 1}
+                        onClick={e => { e.stopPropagation(); reorderLayer(t.id, 1) }} style={rowBtn} />
+                      <Btn size="sm" icon={ICONS.layers} title="Dupliquer"
+                        onClick={e => { e.stopPropagation(); duplicateLayer(t.id) }} style={rowBtn} />
                       {texts.length > 1 && (
-                        <button
-                          onClick={e => { e.stopPropagation(); removeLayer(t.id) }}
-                          style={{ ...ROW_BTN, color: 'var(--danger)', cursor: 'pointer' }}
-                          title="Supprimer"
-                        ><Icon d={ICONS.close} size={13} /></button>
+                        <Btn size="sm" danger icon={ICONS.trash} title="Supprimer"
+                          onClick={e => { e.stopPropagation(); removeLayer(t.id) }} style={rowBtn} />
                       )}
                     </div>
-                  ))}
-                </div>
-                <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6 }}>
-                  ↑↓ ← → flèches : déplacer le texte sélectionné · ⇧ pour 5×
-                </div>
+                  )
+                })}
+                <div style={{ fontSize: 9.5, color: T.text4, marginTop: 2 }}>↑↓ réordonner · ⎘ dupliquer · flèches pour ajuster la position</div>
               </div>
 
               {sel && (
-                <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  <SectionLabel>STYLE — TEXTE {texts.findIndex(t => t.id === selectedId) + 1}</SectionLabel>
-
-                  <div>
-                    <SectionLabel style={LBL}>POLICE</SectionLabel>
-                    <div style={{ display: 'flex', gap: 4 }}>
-                      {FONTS.map(f => (
-                        <button key={f.id} onClick={() => updateLayer(selectedId, { fontId: f.id })} style={{
-                          flex: 1, padding: '5px 4px', minHeight: 32,
-                          background: sel.fontId === f.id ? 'var(--accent-soft)' : 'var(--surface3)',
-                          color: sel.fontId === f.id ? 'var(--accent)' : 'var(--text3)',
-                          border: `1px solid ${sel.fontId === f.id ? 'var(--accent-ring)' : 'var(--border2)'}`,
-                          borderRadius: 3, fontSize: 11, cursor: 'pointer', fontFamily: f.css,
-                        }}>{f.label}</button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
-                    <div style={{ flex: 1 }}>
-                      <SectionLabel style={LBL}>TAILLE — {sel.fontSize}PX</SectionLabel>
-                      <input type="range" min={16} max={120} value={sel.fontSize}
+                <div>
+                  <div style={{ fontSize: T.fs.micro, fontWeight: 700, letterSpacing: 1.2, color: T.text3, marginBottom: 9 }}>STYLE — TEXTE {selIndex + 1}</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <Field label="POLICE">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <Segmented value={sel.fontId} onChange={v => updateLayer(selectedId, { fontId: v })}
+                          options={FONTS.map(f => ({ v: f.id, l: f.label }))} />
+                        <Btn size="sm" active={sel.bold} title="Gras" onClick={() => updateLayer(selectedId, { bold: !sel.bold })}
+                          style={{ fontWeight: 700 }}>B</Btn>
+                      </div>
+                    </Field>
+                    <Field label={`TAILLE — ${sel.fontSize}px`}>
+                      <input type="range" min={16} max={120} value={sel.fontSize} aria-label="Taille"
                         onChange={e => updateLayer(selectedId, { fontSize: +e.target.value })}
-                        style={{ width: '100%', color: 'var(--accent)' }}
-                      />
-                    </div>
-                    <button
-                      onClick={() => updateLayer(selectedId, { bold: !sel.bold })}
-                      style={{
-                        padding: '4px 12px', marginBottom: 1, minHeight: 32,
-                        background: sel.bold ? 'var(--accent-soft)' : 'var(--surface3)',
-                        color: sel.bold ? 'var(--accent)' : 'var(--text3)',
-                        border: `1px solid ${sel.bold ? 'var(--accent-ring)' : 'var(--border2)'}`,
-                        borderRadius: 3, fontSize: 14, fontWeight: 700, cursor: 'pointer',
-                      }}
-                    >B</button>
-                  </div>
-
-                  <div>
-                    <SectionLabel style={LBL}>COULEUR TEXTE</SectionLabel>
-                    <div style={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-                      <input type="color" value={sel.color}
-                        onChange={e => updateLayer(selectedId, { color: e.target.value })}
-                        style={{ width: 32, height: 32, border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}
-                      />
-                      {QUICK_COLORS_TEXT.map(c => (
-                        <div key={c} onClick={() => updateLayer(selectedId, { color: c })} style={SWATCH_HIT}>
-                          <div style={{ width: 24, height: 24, background: c, borderRadius: 3,
-                            border: sel.color.toLowerCase() === c ? '2px solid var(--accent)' : '1px solid var(--border2)' }} />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <SectionLabel style={LBL}>CONTOUR — ÉPAISSEUR {sel.strokeWidth}</SectionLabel>
-                    <div style={{ display: 'flex', gap: 2, alignItems: 'center', marginBottom: 6 }}>
-                      <input type="color" value={sel.strokeColor}
-                        onChange={e => updateLayer(selectedId, { strokeColor: e.target.value })}
-                        style={{ width: 32, height: 32, border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}
-                      />
-                      {QUICK_COLORS_STROKE.map(c => (
-                        <div key={c} onClick={() => updateLayer(selectedId, { strokeColor: c })} style={SWATCH_HIT}>
-                          <div style={{ width: 24, height: 24, background: c, borderRadius: 3,
-                            border: sel.strokeColor.toLowerCase() === c ? '2px solid var(--accent)' : '1px solid var(--border2)' }} />
-                        </div>
-                      ))}
-                    </div>
-                    <input type="range" min={0} max={8} value={sel.strokeWidth}
-                      onChange={e => updateLayer(selectedId, { strokeWidth: +e.target.value })}
-                      style={{ width: '100%', color: 'var(--accent)' }}
-                    />
-                  </div>
-
-                  <div>
-                    <SectionLabel style={LBL}>ALIGNEMENT</SectionLabel>
-                    <div style={{ display: 'flex', gap: 4 }}>
-                      {[['left', '⟵ Gauche'], ['center', '⊣ Centre'], ['right', 'Droite ⟶']].map(([v, lbl]) => (
-                        <button key={v} onClick={() => updateLayer(selectedId, { align: v })}
-                          style={{
-                            flex: 1, padding: '5px 4px', minHeight: 32,
-                            background: sel.align === v ? 'var(--accent-soft)' : 'var(--surface3)',
-                            color: sel.align === v ? 'var(--accent)' : 'var(--text3)',
-                            border: `1px solid ${sel.align === v ? 'var(--accent-ring)' : 'var(--border2)'}`,
-                            borderRadius: 3, fontSize: 11, cursor: 'pointer',
-                          }}
-                        >{lbl}</button>
-                      ))}
-                    </div>
+                        style={{ width: '100%', color: T.accent, '--pct': `${((sel.fontSize - 16) / (120 - 16)) * 100}%` }} />
+                    </Field>
+                    <Field label="COULEUR">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {swatches(QUICK_COLORS_TEXT, sel.color, 'color')}
+                        {colorInput(sel.color, 'color', 'Couleur personnalisée')}
+                      </div>
+                    </Field>
+                    <Field label={`CONTOUR — ÉPAISSEUR ${sel.strokeWidth}`}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                        {swatches(QUICK_COLORS_STROKE, sel.strokeColor, 'strokeColor')}
+                        {colorInput(sel.strokeColor, 'strokeColor', 'Contour personnalisé')}
+                      </div>
+                      <input type="range" min={0} max={8} value={sel.strokeWidth} aria-label="Épaisseur du contour"
+                        onChange={e => updateLayer(selectedId, { strokeWidth: +e.target.value })}
+                        style={{ width: '100%', color: T.accent, '--pct': `${(sel.strokeWidth / 8) * 100}%` }} />
+                    </Field>
+                    <Field label="ALIGNEMENT">
+                      <Segmented value={sel.align} onChange={v => updateLayer(selectedId, { align: v })} options={[
+                        { v: 'left', l: 'Gauche' }, { v: 'center', l: 'Centre' }, { v: 'right', l: 'Droite' },
+                      ]} />
+                    </Field>
                   </div>
                 </div>
               )}
 
-              {error && (
-                <div style={{ padding: '8px 10px', background: 'var(--danger-soft)', color: 'var(--danger)', borderRadius: 4, fontSize: 12, border: '1px solid color-mix(in srgb, var(--danger) 30%, transparent)' }}>
-                  {error}
-                </div>
-              )}
+              {errorBox}
 
-              <Btn variant="primary" size="lg" full icon={ICONS.rec} onClick={generate} disabled={loading || !imageUrl}>
+              <Btn variant="primary" size="lg" full icon={ICONS.sparkle} onClick={generate} disabled={loading || !imageUrl}>
                 {loading ? 'Génération…' : resultUrl ? 'Régénérer' : 'Générer'}
               </Btn>
             </div>
@@ -915,12 +859,17 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
 
         <input ref={fileInputRef} type="file" accept=".png,.jpg,.jpeg,.webp,.gif"
           onChange={e => handleFile(e.target.files?.[0])} style={{ display: 'none' }} />
-        </div>
       </div>
     </div>
   )
 }
 
-const LBL = { marginBottom: 4 }
-const ROW_BTN = { background: 'none', border: 'none', padding: 0, minWidth: 28, minHeight: 32, margin: '-6px 0', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }
-const SWATCH_HIT = { width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }
+function Field({ label, children }) {
+  return (
+    <div>
+      <div style={{ fontSize: 10, color: T.text3, marginBottom: 6 }}>{label}</div>
+      {children}
+    </div>
+  )
+}
+

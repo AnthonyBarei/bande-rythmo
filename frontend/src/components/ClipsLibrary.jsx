@@ -1,23 +1,22 @@
 import React, { useState, useMemo } from 'react'
 import ClipCard from './ClipCard'
-import { Icon, ICONS } from '../Icons'
-import { Btn, Select, ScreenHeader } from '../ui'
+import { T, Icon, ICONS, Btn, Select, alpha } from '../ui'
 import { TRACK_HEXES } from '../config/tracks'
 import { useToast } from '../ToastContext'
 
 const FILTERS = [
-  { key: 'all',     label: 'Tous' },
-  { key: 'todo',    label: 'À faire' },
-  { key: 'dubbing', label: 'Doublage' },
-  { key: 'review',  label: 'À revoir' },
-  { key: 'done',    label: 'Validé' },
+  { id: 'all',     label: 'Tous' },
+  { id: 'todo',    label: 'À faire' },
+  { id: 'dubbing', label: 'Doublage' },
+  { id: 'review',  label: 'À revoir' },
+  { id: 'done',    label: 'Validé' },
 ]
 
-const SORTS = [
-  { key: 'recent',   label: 'Récents' },
-  { key: 'name',     label: 'Nom' },
-  { key: 'duration', label: 'Durée' },
+const SORT_OPTIONS = [
+  { v: 'recent', l: 'Récents' }, { v: 'name', l: 'Nom A→Z' }, { v: 'dur', l: 'Durée' }, { v: 'status', l: 'Statut' },
 ]
+
+const STATUS_ORDER = ['todo', 'dubbing', 'review', 'done']
 
 function fmtTotal(sec) {
   const m = Math.round(sec / 60)
@@ -26,7 +25,7 @@ function fmtTotal(sec) {
   return `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}`
 }
 
-export default function ClipsLibrary({ clips, onDub, onMeme, onDelete, onRename, onStatusChange, onNewClip, onSetProject }) {
+export default function ClipsLibrary({ clips, onDub, onRecord, onMeme, onDelete, onRename, onStatusChange, onNewClip, onSetProject }) {
   const toast = useToast()
   const [filter, setFilter] = useState('all')
   const [sort, setSort] = useState('recent')
@@ -38,7 +37,7 @@ export default function ClipsLibrary({ clips, onDub, onMeme, onDelete, onRename,
     for (const c of clips) if (c.project) set.add(c.project)
     return [...set].sort((a, b) => a.localeCompare(b))
   }, [clips])
-  // A project that lost its last clip falls back to "all" (its Select may be gone).
+  // A project that lost its last clip falls back to "all".
   const activeProject = projectFilter === '__all' || projectFilter === '__none' || projects.includes(projectFilter)
     ? projectFilter : '__all'
 
@@ -66,7 +65,8 @@ export default function ClipsLibrary({ clips, onDub, onMeme, onDelete, onRename,
     }
     list = [...list]
     if (sort === 'name') list.sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-    else if (sort === 'duration') list.sort((a, b) => (b.end - b.start) - (a.end - a.start))
+    else if (sort === 'dur') list.sort((a, b) => (b.end - b.start) - (a.end - a.start))
+    else if (sort === 'status') list.sort((a, b) => STATUS_ORDER.indexOf(a.status || 'todo') - STATUS_ORDER.indexOf(b.status || 'todo'))
     else list.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
     return list
   }, [clips, filter, search, sort, activeProject])
@@ -74,97 +74,101 @@ export default function ClipsLibrary({ clips, onDub, onMeme, onDelete, onRename,
   const totalDur = useMemo(() => clips.reduce((s, c) => s + (c.end - c.start), 0), [clips])
 
   const projectOptions = useMemo(() => [
-    { v: '__all', l: 'Tous les projets', icon: ICONS.grid },
+    { v: '__all', l: 'Tous les projets' },
     ...projects.map((p, i) => ({ v: p, l: p, dot: TRACK_HEXES[i % TRACK_HEXES.length] })),
     { v: '__none', l: 'Sans projet' },
   ], [projects])
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <ScreenHeader
-        kicker="BIBLIOTHÈQUE"
-        title="Mes clips"
-        sub={`${clips.length} clip${clips.length !== 1 ? 's' : ''} · ${fmtTotal(totalDur)}`}
-        right={(
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '0 14px', height: 40, minWidth: 240, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 99 }}>
-              <Icon d={ICONS.search} size={15} stroke="var(--text3)" />
-              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Rechercher un clip…"
-                style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: 'var(--text)', fontSize: 13, fontFamily: 'var(--font-ui)', padding: 0, minWidth: 0 }} />
-            </div>
-            <Btn variant="primary" size="lg" icon={ICONS.plus} onClick={onNewClip}>Nouveau clip</Btn>
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      {/* Header */}
+      <div style={{ padding: '26px 32px 0', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 16, marginBottom: 22 }}>
+          <div>
+            <div style={{ fontSize: T.fs.micro, color: T.text3, letterSpacing: 1.4, fontWeight: 600, marginBottom: 4 }}>BIBLIOTHÈQUE</div>
+            <div style={{ fontSize: T.fs.xxl, fontWeight: 600, letterSpacing: -0.6 }}>Mes clips</div>
           </div>
-        )}
-      />
+          <span style={{ fontSize: T.fs.sm, color: T.text3, fontFamily: T.fontMono, paddingBottom: 7 }}>
+            {clips.length} clip{clips.length !== 1 ? 's' : ''} · {fmtTotal(totalDur)}
+          </span>
+          <div style={{ flex: 1 }} />
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 9, padding: '0 14px', height: 40, minWidth: 260,
+            background: T.surface, border: `1px solid ${T.border}`, borderRadius: 99,
+          }}>
+            <Icon d={ICONS.search} size={15} stroke={T.text3} />
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Rechercher un clip…"
+              aria-label="Rechercher un clip"
+              style={{ flex: 1, minWidth: 0, background: 'transparent', border: 'none', outline: 'none', padding: 0, color: T.text, fontSize: T.fs.sm, fontFamily: T.fontUI }} />
+            <span style={{ fontSize: 10, color: T.text4, fontFamily: T.fontMono, border: `1px solid ${T.border2}`, borderRadius: 4, padding: '1px 5px' }}>/</span>
+          </div>
+          <Btn variant="primary" size="lg" icon={ICONS.plus} onClick={onNewClip}>Nouveau clip</Btn>
+        </div>
 
-      {/* Filter row — project select · status tabs · sort */}
-      <div style={{ padding: '14px 32px 0', flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4, borderBottom: '1px solid var(--border)', height: 44 }}>
-          {projects.length > 0 && (
-            <>
-              <Select size="sm" width={170} value={activeProject} onChange={setProjectFilter} options={projectOptions} />
-              <div style={{ width: 1, height: 20, background: 'var(--border)', margin: '0 6px' }} />
-            </>
-          )}
-          {FILTERS.map(f => {
-            const active = filter === f.key
+        {/* Filter tabs */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, borderBottom: `1px solid ${T.border}`, height: 42 }}>
+          <Select size="sm" width={158} value={activeProject} onChange={setProjectFilter} options={projectOptions} />
+          <div style={{ width: 1, height: 20, background: T.border, margin: '0 6px' }} />
+          {FILTERS.map(t => {
+            const active = filter === t.id
             return (
-              <button key={f.key} onClick={() => setFilter(f.key)} style={{
-                height: 44, padding: '0 14px', background: 'transparent', border: 'none', cursor: 'pointer',
-                color: active ? 'var(--text)' : 'var(--text2)', fontSize: 13, fontWeight: active ? 600 : 500,
-                borderBottom: `2px solid ${active ? 'var(--accent)' : 'transparent'}`, marginBottom: -1,
-                display: 'flex', alignItems: 'center', gap: 7, fontFamily: 'var(--font-ui)',
+              <button data-rd key={t.id} onClick={() => setFilter(t.id)} style={{
+                height: 42, padding: '0 14px', background: 'transparent', border: 'none', cursor: 'pointer',
+                color: active ? T.text : T.text2, fontSize: T.fs.sm, fontWeight: active ? 600 : 500,
+                borderBottom: `2px solid ${active ? T.accent : 'transparent'}`, marginBottom: -1,
+                display: 'flex', alignItems: 'center', gap: 7, fontFamily: T.fontUI,
               }}>
-                {f.label}
+                {t.label}
                 <span style={{
-                  fontSize: 11, padding: '1px 6px', borderRadius: 99, fontFamily: 'var(--font-mono)',
-                  background: active ? 'var(--accent-soft)' : 'var(--surface2)', color: active ? 'var(--accent)' : 'var(--text3)',
-                }}>{counts[f.key] || 0}</span>
+                  fontSize: 10.5, padding: '1px 6px', borderRadius: 99, fontFamily: T.fontMono,
+                  background: active ? alpha(T.accent, '22') : T.surface2, color: active ? T.accent : T.text3,
+                }}>{counts[t.id] || 0}</span>
               </button>
             )
           })}
           <div style={{ flex: 1 }} />
-          <span style={{ fontSize: 12, color: 'var(--text3)' }}>Trier</span>
-          <Select size="sm" width={140} value={sort} onChange={setSort}
-            options={SORTS.map(s => ({ v: s.key, l: s.label }))} />
+          <span style={{ fontSize: T.fs.xs, color: T.text3 }}>Trier</span>
+          <Select size="sm" width={150} value={sort} onChange={setSort} options={SORT_OPTIONS} />
         </div>
       </div>
 
       {/* Grid */}
-      <div style={{ flex: 1, overflow: 'auto', padding: 28 }}>
-        {visible.length === 0 ? (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60%', gap: 14, color: 'var(--text3)' }}>
-            <Icon d={ICONS.grid} size={40} style={{ opacity: 0.25 }} />
-            <div style={{ fontSize: 14, color: 'var(--text2)' }}>
-              {clips.length === 0 ? 'Aucun clip encore' : 'Aucun clip dans ce filtre'}
-            </div>
-            {clips.length === 0 && (
-              <>
-                <div style={{ fontSize: 12 }}>Importez une vidéo et découpez des segments</div>
-                <Btn variant="primary" size="lg" icon={ICONS.plus} onClick={onNewClip} style={{ marginTop: 4 }}>
-                  Importer une vidéo
-                </Btn>
-              </>
-            )}
+      {visible.length === 0 ? (
+        <div style={{ flex: 1, overflow: 'auto', padding: 28, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, color: T.text3 }}>
+          <Icon d={ICONS.grid} size={40} stroke={T.text4} />
+          <div style={{ fontSize: T.fs.base, color: T.text2 }}>
+            {clips.length === 0 ? 'Aucun clip encore' : 'Aucun clip dans ce filtre'}
           </div>
-        ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gridAutoRows: 'max-content', gap: 18, alignContent: 'flex-start' }}>
-            {visible.map(clip => (
-              <ClipCard
-                key={clip.clip_id}
-                clip={clip}
-                onDub={onDub}
-                onMeme={onMeme}
-                onDelete={onDelete}
-                onRename={onRename}
-                onStatusChange={onStatusChange}
-                onAssignProject={assignProject}
-              />
-            ))}
-          </div>
-        )}
-      </div>
-
+          {clips.length === 0 && (
+            <>
+              <div style={{ fontSize: T.fs.xs }}>Importez une vidéo et découpez des segments</div>
+              <Btn variant="primary" size="lg" icon={ICONS.plus} onClick={onNewClip} style={{ marginTop: 4 }}>
+                Importer une vidéo
+              </Btn>
+            </>
+          )}
+        </div>
+      ) : (
+        <div style={{
+          flex: 1, overflow: 'auto', padding: 28,
+          display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gridAutoRows: 'max-content', gap: 18,
+          alignContent: 'flex-start',
+        }}>
+          {visible.map(clip => (
+            <ClipCard
+              key={clip.clip_id}
+              clip={clip}
+              onDub={onDub}
+              onRecord={onRecord}
+              onMeme={onMeme}
+              onDelete={onDelete}
+              onRename={onRename}
+              onStatusChange={onStatusChange}
+              onAssignProject={assignProject}
+            />
+          ))}
+        </div>
+      )}
     </div>
   )
 }
