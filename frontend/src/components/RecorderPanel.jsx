@@ -23,6 +23,8 @@ import { METER_FLOOR, levelOf, trimToWav, takePeaks } from '../utils/takeAudio'
 const PREROLL_SEC = 3
 const AUTO_STOP_TAIL = 0.6
 const PREROLL_KEY = 'br-recorder-preroll'
+const NOTICE_MS = 3000
+const CANCEL_NOTICE = 'Prise annulée pendant le pré-roll.'
 const DENIED_MSG = 'Accès au micro refusé — autorisez-le dans le navigateur puis réessayez.'
 const STAGE_KEYFRAMES = '@keyframes stCount{0%{transform:scale(1.5);opacity:0}25%{opacity:1}100%{transform:scale(.9);opacity:.15}}'
   + '@keyframes stBlink{50%{opacity:0}}'
@@ -63,6 +65,7 @@ const RecorderPanel = forwardRef(function RecorderPanel({
   const [leadTotal, setLeadTotal] = useState(0)
   const [elapsed, setElapsed] = useState(0)
   const [error, setError] = useState(null)
+  const [notice, setNotice] = useState(null)          // { text } — transient, non-error status (3 s)
   const [abOpen, setAbOpen] = useState(false)
   const [abA, setAbA] = useState(null)
   const [abB, setAbB] = useState(null)
@@ -176,6 +179,12 @@ const RecorderPanel = forwardRef(function RecorderPanel({
       detachMeter()
     }
   }, [studio, attachMeter, detachMeter])
+
+  useEffect(() => {
+    if (!notice) return
+    const id = setTimeout(() => setNotice(null), NOTICE_MS)
+    return () => clearTimeout(id)
+  }, [notice])
 
   useEffect(() => {
     if (phase !== 'recording') return
@@ -321,6 +330,7 @@ const RecorderPanel = forwardRef(function RecorderPanel({
     if (startingRef.current || recRef.current) return
     startingRef.current = true
     setError(null)
+    setNotice(null)
     stopSync()
     if (playing != null) { audioRef.current?.pause(); setPlaying(null) }
     const sub = activeIndex != null ? subtitles[activeIndex] : null
@@ -390,7 +400,7 @@ const RecorderPanel = forwardRef(function RecorderPanel({
     releaseMedia(rec)
     setPhase('idle')
     setCountdown(0)
-    if (!keep) setError('Prise annulée pendant le pré-roll.')
+    if (!keep) setNotice({ text: CANCEL_NOTICE })
   }
 
   // Unmount: drop an in-flight take, release everything.
@@ -566,7 +576,9 @@ const RecorderPanel = forwardRef(function RecorderPanel({
     || null
   const takeA = takes.find(t => t.id === abA)
   const takeB = takes.find(t => t.id === abB)
-  const showAB = abOpen || !!takeA || !!takeB
+  // Studio: comparing needs two takes of the réplique (#6).
+  const canAB = !studio || shown.length >= 2
+  const showAB = canAB && (abOpen || !!takeA || !!takeB)
   const hasSub = activeIndex != null && subtitles[activeIndex]
   const hasVideo = !!videoRef?.current
   const recording = phase !== 'idle'
@@ -599,13 +611,15 @@ const RecorderPanel = forwardRef(function RecorderPanel({
 
   const takesHeader = (
     <>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, minHeight: 24 }}>
         <span style={{ fontSize: T.fs.micro, letterSpacing: 1.4, color: T.text3, fontWeight: 700 }}>PRISES</span>
         <span style={{ fontSize: T.fs.micro, color: T.text3, fontFamily: T.fontMono }}>{shown.length}</span>
         <div style={{ flex: 1 }} />
-        <button data-rd onClick={toggleAB} style={{ background: 'transparent', padding: 0 }}>
-          <Chip soft={!showAB} active={showAB} color={T.info}>A/B comparer</Chip>
-        </button>
+        {canAB && (
+          <button data-rd onClick={toggleAB} style={{ background: 'transparent', padding: 0 }}>
+            <Chip soft={!showAB} active={showAB} color={T.info}>A/B comparer</Chip>
+          </button>
+        )}
       </div>
       {showAB && (
         <div style={{ background: T.surface, border: `1px solid ${alpha(T.info, '44')}`, borderRadius: T.r.ctl, padding: 12, display: 'flex', flexDirection: 'column', gap: 9, flexShrink: 0 }}>
@@ -680,7 +694,7 @@ const RecorderPanel = forwardRef(function RecorderPanel({
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: 14 }}>
         {audio}
-        <MicStage analyser={analyser} phase={phase} countdown={countdown} elapsed={elapsed}
+        <MicStage analyser={analyser} phase={phase} countdown={countdown} elapsed={elapsed} notice={notice?.text}
           onToggle={recording ? stopRec : startRec}
           chips={<>{prerollChip}{hasSub && hasVideo && <Chip soft color={T.text3}><Icon d={ICONS.film} size={11} stroke={T.text3} /> réplique {activeIndex + 1}</Chip>}</>} />
         {takesHeader}
@@ -737,19 +751,23 @@ const RecorderPanel = forwardRef(function RecorderPanel({
               : <Icon d={ICONS.mic} size={20} stroke="#0b0b0d" />}
           </button>
           <div style={{ flex: 1, minWidth: 0, fontSize: T.fs.xs, fontFamily: T.fontMono, color: T.text2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {phase === 'idle' && <>Appuyer pour enregistrer · <span style={{ color: T.accent }}>R</span></>}
+            {phase === 'idle' && (notice
+              ? <span role="status" style={{ color: T.text2 }}>{notice.text}</span>
+              : <>Appuyer pour enregistrer · <span style={{ color: T.accent }}>R</span></>)}
             {phase === 'preroll' && <span style={{ color: T.accent }}>Pré-roll · bip {Math.max(1, leadTotal - countdown + 1)}/{leadTotal}</span>}
             {recLive && <span style={{ color: T.danger }}>● Prise en cours · {elapsed.toFixed(1)}s{target ? ` / ${recDur.toFixed(1)}s` : ''}</span>}
           </div>
         </div>
       </div>
-      {/* Right: take queue + A/B */}
+      {/* Right: take queue + A/B — Valider sits 12px under the last card (#5), hidden with no take (#6) */}
       <div style={{ width: 340, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 14, minHeight: 0, paddingBottom: 'var(--toast-safe-bottom, 0px)' }}>
         {takesHeader}
-        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {takesList}
+        <div style={{ flex: '0 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ flex: '0 1 auto', minHeight: 0, overflowY: 'auto', overflowX: 'hidden', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {takesList}
+          </div>
+          {shown.length > 0 && <div style={{ flexShrink: 0 }}>{validerBtn}</div>}
         </div>
-        {validerBtn}
       </div>
     </div>
   )
@@ -811,7 +829,7 @@ function StageClock({ videoRef, fps }) {
   return <span>{fmtSMPTE(t, fps)}</span>
 }
 
-function MicStage({ analyser, phase, countdown, elapsed, onToggle, chips }) {
+function MicStage({ analyser, phase, countdown, elapsed, notice, onToggle, chips }) {
   const btn = 68
   const recording = phase === 'recording'
   const prerolling = phase === 'preroll'
@@ -837,7 +855,7 @@ function MicStage({ analyser, phase, countdown, elapsed, onToggle, chips }) {
           ? <span style={{ color: T.danger, display: 'inline-flex', alignItems: 'center', gap: 8 }}><Dot color={T.danger} pulse />ENREGISTREMENT · {fmtClock(elapsed)}</span>
           : prerolling
             ? <span style={{ color: T.accent }}>PRÉ-ROLL · réplique dans {countdown}…</span>
-            : 'Appuyer pour enregistrer · R'}
+            : notice ? <span role="status">{notice}</span> : 'Appuyer pour enregistrer · R'}
       </div>
       {chips && (
         <div style={{ position: 'absolute', top: 12, right: 12, display: 'flex', gap: 8 }}>

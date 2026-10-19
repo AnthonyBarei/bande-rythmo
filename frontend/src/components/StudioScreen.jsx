@@ -128,6 +128,7 @@ export default function StudioScreen({ clip, onBack }) {
         clipFps={clipFps}
         loopRegion={null}
         charFilter={null}
+        focusChar={target ? (target.character || '') : null}
       />
     </div>
   )
