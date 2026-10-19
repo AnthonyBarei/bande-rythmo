@@ -3,7 +3,15 @@ import { T, alpha, Btn, ICONS, Popover, Select } from '../../ui'
 import { activeIndexAt } from '../../utils/band'
 import { RespMenu, ReactMenu, StateMenu, PlansMenu, NoteMenu } from './BandMenus'
 import StylePanel from './StylePanel'
+import useElementWidth from './useElementWidth'
 import { fontOptions as bandFontOptions } from '../../config/fonts'
+
+// Natural one-row widths (14px padding included), measured at 1440×900:
+// full = reference toolbar with the font Select; labelled = font Select moved
+// into Affichage. Below that, Resp. / Réact. / Détection go icon-only (≈590px,
+// fits the 1100px window with the 392px inspector open).
+const FULL_W = 956
+const LABELLED_W = 820
 
 function Cluster({ children }) {
   return (
@@ -23,6 +31,9 @@ export default function BandToolbar({
 }) {
   const [showStyle, setShowStyle] = useState(false)
   const [styleAnchor, setStyleAnchor] = useState({ bottom: 60, left: 200 })
+  const [barRef, barW] = useElementWidth()
+  const fontInBar = barW >= FULL_W
+  const labelled = barW >= LABELLED_W
   const liveIdx = activeIndexAt(subtitles, getBandTime())
   const targetIdx = selectedIdx != null ? selectedIdx : (liveIdx >= 0 ? liveIdx : null)
   const target = targetIdx != null ? subtitles[targetIdx] : null
@@ -75,7 +86,7 @@ export default function BandToolbar({
   const fontOptions = bandFontOptions(uploadedFonts, brFont)
 
   return (
-    <div style={{ minHeight: 48, flexShrink: 0, padding: '5px 14px', display: 'flex', alignItems: 'center', gap: 8, rowGap: 6, background: T.surface, borderTop: `1px solid ${T.border}`, flexWrap: 'wrap', overflow: 'visible' }}>
+    <div ref={barRef} data-band-toolbar style={{ minHeight: 48, flexShrink: 0, padding: '4px 14px', display: 'flex', alignItems: 'center', gap: 8, rowGap: 6, background: T.surface, borderTop: `1px solid ${T.border}`, flexWrap: 'wrap', overflow: 'visible' }}>
       {/* edit cluster */}
       <Cluster>
         <Btn size="sm" icon={ICONS.plus} title="Ajouter une réplique (⇧↵)" onClick={onAddSub} />
@@ -84,10 +95,14 @@ export default function BandToolbar({
       </Cluster>
       {/* insert cluster */}
       <Cluster>
-        <Popover placement="top" width={250} trigger={(o, tog) => <Btn size="sm" active={o} onClick={tog} icon={ICONS.breath} iconR={ICONS.chevron}>Resp.</Btn>}>
+        <Popover placement="top" width={250} trigger={(o, tog) => labelled
+          ? <Btn size="sm" active={o} onClick={tog} icon={ICONS.breath} iconR={ICONS.chevron}>Resp.</Btn>
+          : <Btn size="sm" active={o} onClick={tog} icon={ICONS.breath} title="Respirations — insérer au curseur" />}>
           {close => <RespMenu close={close} onInsert={insertTagSub} />}
         </Popover>
-        <Popover placement="top" width={230} trigger={(o, tog) => <Btn size="sm" active={o} onClick={tog} icon={ICONS.sparkle} iconR={ICONS.chevron}>Réact.</Btn>}>
+        <Popover placement="top" width={230} trigger={(o, tog) => labelled
+          ? <Btn size="sm" active={o} onClick={tog} icon={ICONS.sparkle} iconR={ICONS.chevron}>Réact.</Btn>
+          : <Btn size="sm" active={o} onClick={tog} icon={ICONS.sparkle} title="Réactions — insérer au curseur" />}>
           {close => <ReactMenu close={close} onInsert={insertTagSub} />}
         </Popover>
       </Cluster>
@@ -112,26 +127,30 @@ export default function BandToolbar({
       </Cluster>
       {/* détection */}
       <Cluster>
-        <Btn size="sm" active={detection.layer} onClick={() => setDetection(d => ({ ...d, layer: !d.layer }))} icon={ICONS.eye} title="Calque détection">Détection</Btn>
+        <Btn size="sm" active={detection.layer} onClick={() => setDetection(d => ({ ...d, layer: !d.layer }))} icon={ICONS.eye} title="Calque détection">{labelled ? 'Détection' : null}</Btn>
       </Cluster>
 
-      {/* font select — marginLeft:auto right-aligns it on whichever row it wraps to */}
-      <span style={{ display: 'inline-flex', marginLeft: 'auto' }}>
-        <Select size="sm" width={132} menuWidth={260} placement="top" value={brFont} onChange={setBrFont} options={fontOptions} />
-      </span>
-      {/* view cluster */}
-      <Cluster>
-        <Btn size="sm" icon={locked ? ICONS.lock : ICONS.unlock} active={locked} onClick={() => setLocked(l => !l)}
-          title={locked ? 'Déverrouiller la BR' : 'Verrouiller la BR (empêche les éditions accidentelles)'} />
-        <Btn size="sm" icon={ICONS.zoomOut} onClick={() => setPxPerSec(p => Math.max(40, p - 20))} title="Zoom arrière" />
-        <span style={{ fontSize: T.fs.xs, color: T.text3, fontFamily: T.fontMono, minWidth: 44, textAlign: 'center' }}>{pxPerSec}px/s</span>
-        <Btn size="sm" icon={ICONS.zoomIn} onClick={() => setPxPerSec(p => Math.min(600, p + 20))} title="Zoom avant" />
-        <Btn size="sm" icon={ICONS.sliders} active={showStyle} onClick={openStyle}
-          title="Affichage : style, décalage, taille, police importée, sous-titre dans le player" />
-      </Cluster>
+      {/* font select + view cluster — marginLeft:auto right-aligns them on whichever row they land */}
+      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
+        {/* font select — in the Affichage panel when the bar is too narrow */}
+        {fontInBar && (
+          <Select size="sm" width={132} menuWidth={260} placement="top" value={brFont} onChange={setBrFont} options={fontOptions} />
+        )}
+        {/* view cluster */}
+        <Cluster>
+          <Btn size="sm" icon={locked ? ICONS.lock : ICONS.unlock} active={locked} onClick={() => setLocked(l => !l)}
+            title={locked ? 'Déverrouiller la BR' : 'Verrouiller la BR (empêche les éditions accidentelles)'} />
+          <Btn size="sm" icon={ICONS.zoomOut} onClick={() => setPxPerSec(p => Math.max(40, p - 20))} title="Zoom arrière" />
+          <span style={{ fontSize: T.fs.xs, color: T.text3, fontFamily: T.fontMono, minWidth: 44, textAlign: 'center' }}>{pxPerSec}px/s</span>
+          <Btn size="sm" icon={ICONS.zoomIn} onClick={() => setPxPerSec(p => Math.min(600, p + 20))} title="Zoom avant" />
+          <Btn size="sm" icon={ICONS.sliders} active={showStyle} onClick={openStyle}
+            title={fontInBar ? 'Affichage : style, décalage, taille, police importée, sous-titre dans le player' : 'Affichage : style, police, décalage, taille, sous-titre dans le player'} />
+        </Cluster>
+      </div>
 
       {showStyle && (
-        <StylePanel anchor={styleAnchor} onClose={() => setShowStyle(false)} brFont={brFont} {...styleProps} />
+        <StylePanel anchor={styleAnchor} onClose={() => setShowStyle(false)} brFont={brFont} {...styleProps}
+          fontSelect={fontInBar ? null : { options: fontOptions, onChange: setBrFont }} />
       )}
     </div>
   )

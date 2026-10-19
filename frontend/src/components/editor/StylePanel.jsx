@@ -1,6 +1,6 @@
 import React from 'react'
 import { createPortal } from 'react-dom'
-import { T, Btn, ICONS, MenuLabel, Segmented, Toggle } from '../../ui'
+import { T, Btn, ICONS, MenuLabel, Segmented, Select, Toggle } from '../../ui'
 
 const STYLE_OPTIONS = [{ v: 'classique', l: 'Classique' }, { v: 'neon', l: 'Neon' }, { v: 'minimal', l: 'Minimal' }]
 const PLAYER_OPTIONS = [{ v: 'never', l: 'Masqué' }, { v: 'play', l: 'À la lecture' }, { v: 'always', l: 'Toujours' }]
@@ -14,13 +14,26 @@ function RowLabel({ children }) {
 
 // Affichage panel (view cluster) — set-once band knobs the reference toolbar
 // has no slot for: style · décalage · taille · rythmo · sous-titres · police importée.
+// `fontSelect` ({ options, onChange }): the band font Select, hosted here when
+// the toolbar is too narrow to show it (FINAL_REVIEW #4).
 // Portaled with position:fixed so it opens upward above the band toolbar.
 export default function StylePanel({
   anchor, onClose,
   rythmoStyle, setRythmoStyle, brFont, onUploadFont, onDeleteFont,
   brOffset, setBrOffset, fontScale, setFontScale,
   wordByWord, setWordByWord, brInPlayer, setBrInPlayer,
+  fontSelect = null,
 }) {
+  const importFont = (
+    <label style={{ flex: 1, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: T.fs.xs, color: T.accent, cursor: 'pointer', padding: '0 8px', border: `1px dashed ${T.border2}`, borderRadius: T.r.ctl }}>
+      Importer TTF / OTF…
+      <input type="file" accept=".ttf,.otf" style={{ display: 'none' }}
+        onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) onUploadFont(f) }} />
+    </label>
+  )
+  const deleteFont = brFont.startsWith('u-') && (
+    <Btn size="sm" danger icon={ICONS.trash} onClick={() => onDeleteFont(brFont)} title="Supprimer cette police" />
+  )
   return createPortal(
     <div data-popover="affichage" style={{
       position: 'fixed', bottom: anchor.bottom, left: anchor.left, zIndex: 'var(--z-dropdown)', width: 360,
@@ -37,17 +50,23 @@ export default function StylePanel({
         <Segmented size="sm" value={rythmoStyle} onChange={setRythmoStyle} options={STYLE_OPTIONS} />
       </div>
 
-      <div style={row}>
-        <RowLabel>Police</RowLabel>
-        <label style={{ flex: 1, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: T.fs.xs, color: T.accent, cursor: 'pointer', padding: '0 8px', border: `1px dashed ${T.border2}`, borderRadius: T.r.ctl }}>
-          Importer TTF / OTF…
-          <input type="file" accept=".ttf,.otf" style={{ display: 'none' }}
-            onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) onUploadFont(f) }} />
-        </label>
-        {brFont.startsWith('u-') && (
-          <Btn size="sm" danger icon={ICONS.trash} onClick={() => onDeleteFont(brFont)} title="Supprimer cette police" />
-        )}
-      </div>
+      {fontSelect ? (<>
+        <div style={row}>
+          <RowLabel>Police</RowLabel>
+          <Select size="sm" width={244} value={brFont} onChange={fontSelect.onChange} options={fontSelect.options} />
+        </div>
+        <div style={row}>
+          <RowLabel />
+          {importFont}
+          {deleteFont}
+        </div>
+      </>) : (
+        <div style={row}>
+          <RowLabel>Police</RowLabel>
+          {importFont}
+          {deleteFont}
+        </div>
+      )}
 
       <div style={row}>
         <RowLabel>Décalage</RowLabel>
