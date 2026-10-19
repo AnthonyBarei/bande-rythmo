@@ -238,7 +238,7 @@ def probe_streams(path: str) -> dict:
         if codec_type == "video":
             video_streams.append({"relative_index": len(video_streams), "label": label, "fps": _rate(s.get("avg_frame_rate") or s.get("r_frame_rate"))})
         elif codec_type == "audio":
-            audio_streams.append({"relative_index": len(audio_streams), "label": label})
+            audio_streams.append({"relative_index": len(audio_streams), "label": label, "codec": codec_name, "channels": s.get("channels"), "sample_rate": int(s["sample_rate"]) if str(s.get("sample_rate", "")).isdigit() else None, "language": tags.get("language")})
     return {"video_streams": video_streams, "audio_streams": audio_streams}
 
 
