@@ -9,6 +9,7 @@ const MIN_ZOOM = 1
 const MAX_ZOOM = 20
 const LABEL_STEPS = [5, 10, 30, 60, 120, 300, 600, 1800, 3600]
 const MAX_LABELS = 10
+const TIMELINE_HINTS = ['glisser pour créer', 'Alt + molette pour zoomer', 'Suppr retire le bloc']
 
 export default function TimelineBar({
   duration, currentTime,
@@ -214,8 +215,16 @@ export default function TimelineBar({
       <div style={{ height: 38, padding: '0 12px', display: 'flex', alignItems: 'center', gap: 8, background: T.bg2, borderBottom: `1px solid ${T.border}` }}>
         <span style={{ fontSize: T.fs.micro, letterSpacing: 1.2, color: T.text3, fontWeight: 700 }}>TIMELINE</span>
         <span style={{ fontSize: T.fs.xs, color: T.text3, fontFamily: T.fontMono, whiteSpace: 'nowrap' }}>{fmtHMS(vs)} – {fmtHMS(vs + viewDur)} sur {fmtHMS(duration)}</span>
-        <span style={{ fontSize: 10.5, color: T.text4, marginLeft: 6, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>glisser pour créer · Alt + molette pour zoomer · Suppr retire le bloc</span>
-        <div style={{ flex: 1 }} />
+        {/* One line, whole phrases only: a phrase that doesn't fit wraps onto the
+            hidden 2nd line instead of being cut to "g…" (narrow windows). The
+            leading empty span lets even the first phrase wrap away. */}
+        <span data-fit-hints title={TIMELINE_HINTS.join(' · ')} style={{
+          flex: 1, minWidth: 0, height: 14, overflow: 'hidden', display: 'flex', flexWrap: 'wrap', columnGap: 4,
+          fontSize: 10.5, lineHeight: '14px', color: T.text4, marginLeft: 6,
+        }}>
+          <span aria-hidden="true" style={{ width: 0, height: 14 }} />
+          {TIMELINE_HINTS.map((h, i) => <span key={h} style={{ whiteSpace: 'nowrap' }}>{i ? '· ' : ''}{h}</span>)}
+        </span>
         <Btn size="sm" icon={ICONS.zoomOut} title="Dézoomer" onClick={() => zoomTo(zoom - 0.5)} />
         <input type="range" min={MIN_ZOOM} max={MAX_ZOOM} step={0.5} value={zoom} onChange={e => zoomTo(Number(e.target.value))}
           style={{ width: 110, color: T.accent, '--pct': `${((zoom - MIN_ZOOM) / (MAX_ZOOM - MIN_ZOOM)) * 100}%` }} />

@@ -75,7 +75,7 @@ export default function BandToolbar({
   const fontOptions = bandFontOptions(uploadedFonts, brFont)
 
   return (
-    <div style={{ height: 48, flexShrink: 0, padding: '0 14px', display: 'flex', alignItems: 'center', gap: 8, background: T.surface, borderTop: `1px solid ${T.border}`, flexWrap: 'wrap', overflow: 'visible' }}>
+    <div style={{ minHeight: 48, flexShrink: 0, padding: '5px 14px', display: 'flex', alignItems: 'center', gap: 8, rowGap: 6, background: T.surface, borderTop: `1px solid ${T.border}`, flexWrap: 'wrap', overflow: 'visible' }}>
       {/* edit cluster */}
       <Cluster>
         <Btn size="sm" icon={ICONS.plus} title="Ajouter une réplique (⇧↵)" onClick={onAddSub} />
@@ -115,10 +115,10 @@ export default function BandToolbar({
         <Btn size="sm" active={detection.layer} onClick={() => setDetection(d => ({ ...d, layer: !d.layer }))} icon={ICONS.eye} title="Calque détection">Détection</Btn>
       </Cluster>
 
-      <div style={{ flex: 1 }} />
-
-      {/* font select */}
-      <Select size="sm" width={132} menuWidth={260} placement="top" value={brFont} onChange={setBrFont} options={fontOptions} />
+      {/* font select — marginLeft:auto right-aligns it on whichever row it wraps to */}
+      <span style={{ display: 'inline-flex', marginLeft: 'auto' }}>
+        <Select size="sm" width={132} menuWidth={260} placement="top" value={brFont} onChange={setBrFont} options={fontOptions} />
+      </span>
       {/* view cluster */}
       <Cluster>
         <Btn size="sm" icon={locked ? ICONS.lock : ICONS.unlock} active={locked} onClick={() => setLocked(l => !l)}

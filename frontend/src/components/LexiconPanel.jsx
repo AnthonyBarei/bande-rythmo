@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { T, Btn, Icon, ICONS } from '../ui'
+import { T, Btn, Icon, ICONS, pressable } from '../ui'
 
 const NO_PROVIDER_TIP = 'Aucun fournisseur de traduction configuré — voir Réglages › Auto-traduction'
 
@@ -159,9 +159,9 @@ function LexiconRow({ entry, onRemove, onSavePhonetic }) {
             placeholder="prononciation" aria-label="Prononciation"
             style={{ ...phStyle, width: '100%', boxSizing: 'border-box', padding: '1px 4px', background: T.bg2, border: `1px solid ${T.border2}`, borderRadius: 4, outline: 'none' }} />
         ) : entry.phonetic ? (
-          <div onClick={startEdit} title="Modifier la prononciation" style={{ ...phStyle, cursor: 'text' }}>/{entry.phonetic}/</div>
+          <div onClick={startEdit} {...pressable(true)} title="Modifier la prononciation" style={{ ...phStyle, cursor: 'text' }}>/{entry.phonetic}/</div>
         ) : hover && (
-          <div onClick={startEdit} title="Ajouter la prononciation" style={{ ...phStyle, color: T.text4, cursor: 'text' }}>/…/</div>
+          <div onClick={startEdit} {...pressable(true)} title="Ajouter la prononciation" style={{ ...phStyle, color: T.text4, cursor: 'text' }}>/…/</div>
         )}
       </div>
       <Btn size="sm" icon={ICONS.trash} title="Supprimer" onClick={onRemove} />

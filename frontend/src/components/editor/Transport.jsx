@@ -7,6 +7,8 @@ const SPEEDS = [{ v: 0.5, l: '0.5×' }, { v: 1, l: '1×' }, { v: 1.5, l: '1.5×'
 // The only transport on screen — reference screen-editor.jsx › Transport.
 // FIXES_R6 #4: current TC only (the total is in the video overlay) and a
 // compact speed Select, so the scrub keeps ≥ 240px with the inspector open.
+// Narrow windows (final pass, 1100px): the scrub wraps to a second row
+// (with speed + volume) instead of collapsing to 0px.
 export default function Transport({
   currentTime, duration, playing, speed, muted,
   onTogglePlay, onSeek, onSeekEnd, onStepFrame, onPrevSub, onNextSub,
@@ -31,7 +33,7 @@ export default function Transport({
   }
 
   return (
-    <div style={{ height: 50, flexShrink: 0, padding: '0 16px', display: 'flex', alignItems: 'center', gap: 8, background: T.surface, borderTop: `1px solid ${T.border}` }}>
+    <div style={{ minHeight: 50, flexShrink: 0, padding: '7px 16px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, rowGap: 6, background: T.surface, borderTop: `1px solid ${T.border}` }}>
       <Btn size="sm" icon={ICONS.skipBack} title="Début (Home)" onClick={() => onSeek(0)} />
       <Btn size="sm" icon={ICONS.prevFrame} title="Image −1 (⇧←)" onClick={() => onStepFrame(-1)} />
       <button onClick={onTogglePlay} title="Lecture / pause (Espace)" style={{ width: 40, height: 36, borderRadius: T.r.ctl, background: T.accent, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -46,7 +48,7 @@ export default function Transport({
       <Btn size="sm" icon={ICONS.out} onClick={onSetOut} disabled={!hasTarget} title="OUT de la réplique au temps courant (O)" />
       <span style={{ fontFamily: T.fontMono, fontSize: 11, color: T.text2, marginLeft: 6, whiteSpace: 'nowrap' }}>{fmtSMPTE(currentTime, clipFps)}</span>
       <div ref={trackRef} onPointerDown={onPointerDown}
-        data-transport-scrub style={{ flex: 1, height: 6, background: T.surface3, borderRadius: 3, margin: '0 8px', position: 'relative', cursor: 'pointer', touchAction: 'none' }}>
+        data-transport-scrub style={{ flex: '1 1 140px', minWidth: 140, height: 6, background: T.surface3, borderRadius: 3, margin: '0 8px', position: 'relative', cursor: 'pointer', touchAction: 'none' }}>
         <div style={{ width: `${pct}%`, height: '100%', background: T.accent, borderRadius: 3 }} />
         <div style={{ position: 'absolute', left: `${pct}%`, top: -3, width: 12, height: 12, borderRadius: '50%', background: T.accent, transform: 'translateX(-50%)', boxShadow: '0 1px 4px rgba(0,0,0,.4)' }} />
       </div>

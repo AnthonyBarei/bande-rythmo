@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
-import { T, Icon, ICONS, Btn, Chip, Segmented, Select, ScreenHeader, alpha } from '../ui'
+import { T, Icon, ICONS, Btn, Chip, Segmented, Select, ScreenHeader, alpha, pressable } from '../ui'
 import { useProgress } from '../ProgressContext'
 import { TRACK_HEXES } from '../config/tracks'
 import { fmtSMPTE } from '../utils/timecode'
@@ -943,7 +943,6 @@ export default function MemeGenerator({
       style={{ width: 22, height: 22, border: 'none', background: 'none', cursor: 'pointer', padding: 0, flexShrink: 0 }} />
   )
 
-  const rowBtn = { height: 22, minWidth: 22 }
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -1015,12 +1014,12 @@ export default function MemeGenerator({
                 <div style={{ display: 'flex', alignItems: 'center', marginBottom: 9 }}>
                   <span style={{ fontSize: T.fs.micro, fontWeight: 700, letterSpacing: 1.2, color: T.text3 }}>TEXTES</span>
                   <div style={{ flex: 1 }} />
-                  <Btn size="sm" active icon={ICONS.plus} onClick={addLayer} style={{ height: 22, padding: '0 6px', background: 'transparent' }}>Ajouter</Btn>
+                  <Btn size="xs" active icon={ICONS.plus} onClick={addLayer} style={{ background: 'transparent' }}>Ajouter</Btn>
                 </div>
                 {texts.map((t, i) => {
                   const on = t.id === selectedId
                   return (
-                    <div key={t.id} onClick={() => setSelectedId(t.id)} style={{
+                    <div key={t.id} onClick={() => setSelectedId(t.id)} {...pressable(true)} style={{
                       display: 'flex', alignItems: 'center', gap: 6, padding: '8px 10px', marginBottom: 6, borderRadius: T.r.ctl, cursor: 'pointer',
                       background: on ? alpha(T.accent, '14') : T.surface2, border: `1px solid ${on ? alpha(T.accent, '55') : T.border}`,
                     }}>
@@ -1037,20 +1036,22 @@ export default function MemeGenerator({
                           fontFamily: (FONTS.find(f => f.id === t.fontId) || FONTS[0]).css,
                         }}
                       />
-                      <Btn size="sm" icon={ICONS.chevron} title={i === 0 ? 'Déjà en première position' : 'Monter'} disabled={i === 0}
-                        onClick={e => { e.stopPropagation(); reorderLayer(t.id, -1) }} style={{ ...rowBtn, transform: 'rotate(180deg)' }} />
-                      <Btn size="sm" icon={ICONS.chevron} title={i === texts.length - 1 ? 'Déjà en dernière position' : 'Descendre'} disabled={i === texts.length - 1}
-                        onClick={e => { e.stopPropagation(); reorderLayer(t.id, 1) }} style={rowBtn} />
-                      <Btn size="sm" icon={ICONS.layers} title="Dupliquer"
-                        onClick={e => { e.stopPropagation(); duplicateLayer(t.id) }} style={rowBtn} />
+                      <Btn size="xs" icon={ICONS.chevron} title={i === 0 ? 'Déjà en première position' : 'Monter'} disabled={i === 0}
+                        onClick={e => { e.stopPropagation(); reorderLayer(t.id, -1) }} style={{ transform: 'rotate(180deg)' }} />
+                      <Btn size="xs" icon={ICONS.chevron} title={i === texts.length - 1 ? 'Déjà en dernière position' : 'Descendre'} disabled={i === texts.length - 1}
+                        onClick={e => { e.stopPropagation(); reorderLayer(t.id, 1) }} />
+                      <Btn size="xs" icon={ICONS.layers} title="Dupliquer"
+                        onClick={e => { e.stopPropagation(); duplicateLayer(t.id) }} />
                       {texts.length > 1 && (
-                        <Btn size="sm" danger icon={ICONS.trash} title="Supprimer"
-                          onClick={e => { e.stopPropagation(); removeLayer(t.id) }} style={rowBtn} />
+                        <Btn size="xs" danger icon={ICONS.trash} title="Supprimer"
+                          onClick={e => { e.stopPropagation(); removeLayer(t.id) }} />
                       )}
                     </div>
                   )
                 })}
-                <div style={{ fontSize: 9.5, color: T.text4, marginTop: 2 }}>↑↓ réordonner · ⎘ dupliquer · flèches pour ajuster la position</div>
+                <div style={{ fontSize: 9.5, color: T.text4, marginTop: 2, display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+                  ↑↓ réordonner · <Icon d={ICONS.layers} size={11} stroke="currentColor" /> dupliquer · flèches pour ajuster la position
+                </div>
               </div>
 
               {sel && (

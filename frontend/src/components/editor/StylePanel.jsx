@@ -72,7 +72,7 @@ export default function StylePanel({
       <div style={row}>
         <RowLabel>Rythmo</RowLabel>
         <span style={{ flex: 1, fontSize: T.fs.xs, color: T.text2 }}>Rendu mot par mot</span>
-        <Toggle on={wordByWord} onClick={() => setWordByWord(v => !v)} />
+        <Toggle on={wordByWord} onClick={() => setWordByWord(v => !v)} label="Rendu mot par mot" />
       </div>
 
       <div style={{ ...row, marginBottom: 6 }}>

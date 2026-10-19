@@ -1,6 +1,6 @@
 import { classifyChar, DEFAULT_SIGN_TOGGLES } from '../../detection'
 import { TRACK_COLORS } from '../../config/tracks'
-import { fmtClock, fmtSMPTE as fmtTC } from '../../utils/timecode'
+import { fmtSMPTE as fmtTC } from '../../utils/timecode'
 import { flagLines } from '../../utils/lineRate'
 
 // Bande rythmo renderer — shared by the Éditeur (interactive) and the Studio
@@ -741,7 +741,7 @@ export function drawBand(canvas, t, o, hover = null, dragging = false) {
     ctx.beginPath(); ctx.moveTo(hov.x, 0); ctx.lineTo(hov.x, H); ctx.stroke()
     ctx.setLineDash([])
     ctx.fillStyle = 'rgba(0,0,0,0.7)'
-    const lbl = fmtClock(Math.max(0, hov.time))
+    const lbl = fmtTC(Math.max(0, hov.time), clipFps)
     ctx.font = '10px monospace'
     const lblW = ctx.measureText(lbl).width + 8
     ctx.fillRect(Math.min(W - lblW, hov.x + 4), 2, lblW, 14)

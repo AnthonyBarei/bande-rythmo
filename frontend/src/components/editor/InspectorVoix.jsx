@@ -1,5 +1,5 @@
 import React from 'react'
-import { T, alpha, Avatar, Btn, Icon, ICONS, SectionLabel } from '../../ui'
+import { T, alpha, Avatar, Btn, Icon, ICONS, SectionLabel, pressable } from '../../ui'
 import { TRACK_COLORS } from '../../config/tracks'
 
 const hexOf = (charMap, char) => TRACK_COLORS[(charMap[char || ''] ?? 0) % TRACK_COLORS.length].hex
@@ -57,7 +57,7 @@ function FocusCharacter({
       {queue.length === 0 ? (
         <div style={{ fontSize: T.fs.xs, color: T.text3 }}>Aucune réplique à venir.</div>
       ) : queue.map(({ s, i }, qi) => (
-        <div key={i} onClick={() => { onSeek(s.start); setSelectedIdx(i) }}
+        <div key={i} onClick={() => { onSeek(s.start); setSelectedIdx(i) }} {...pressable(true)}
           style={{ display: 'flex', alignItems: 'center', gap: 8, height: 32, boxSizing: 'border-box', padding: '0 10px', marginBottom: 4, background: T.surface2, border: `1px solid ${recorded.has(i) ? alpha(hex, '44') : T.border}`, borderRadius: T.r.ctl, cursor: 'pointer' }}>
           <span style={{ fontSize: 10, fontFamily: T.fontMono, color: T.text3, flexShrink: 0 }}>{String(i + 1).padStart(2, '0')}</span>
           {qi === 0 && <span style={{ fontSize: 9.5, fontWeight: 700, color: hex, letterSpacing: 1 }}>SUIVANT</span>}

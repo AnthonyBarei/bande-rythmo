@@ -80,7 +80,7 @@ export default function EditorHeader({
       <div style={{ width: 1, height: 22, background: T.border, margin: '0 4px' }} />
       <input ref={importRef} type="file" accept=".srt,.ass,.ssa,.vtt,.detx" style={{ display: 'none' }}
         onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) onImportFile(f) }} />
-      <Popover align="right" width={210} trigger={(o, tog) => <Btn size="sm" variant="solid" active={o} onClick={tog} icon={ICONS.sub} iconR={ICONS.chevron}>Sous-titres</Btn>}>
+      <Popover align="right" width={236} trigger={(o, tog) => <Btn size="sm" variant="solid" active={o} onClick={tog} icon={ICONS.sub} iconR={ICONS.chevron}>Sous-titres</Btn>}>
         {(close) => (<>
           <MenuLabel>Transcription & import</MenuLabel>
           <MenuItem icon={ICONS.sparkle} onClick={() => { if (transcribing) return; close(); onTranscribe() }}>

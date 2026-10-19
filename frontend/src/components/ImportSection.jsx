@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import VideoEditor from './VideoEditor'
 import PlexBrowser from './PlexBrowser'
-import { Btn, Dot, Kbd, Icon, ICONS, T, alpha } from '../ui'
+import { Btn, Dot, Kbd, Icon, ICONS, T, alpha, pressable } from '../ui'
 import { useProgress } from '../ProgressContext'
-import { fmtClockHours } from '../utils/timecode'
+import { fmtSMPTE } from '../utils/timecode'
 import { sourceTitle, urlFilename } from '../utils/sourceTitle'
 import { streamLabel } from '../utils/streamLabel'
 
@@ -239,7 +239,7 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
   const sourceFps = videoOptions[videoStream ?? 0]?.fps
 
   const meta = video ? [
-    duration ? fmtClockHours(duration) : null,
+    duration ? fmtSMPTE(duration, sourceFps) : null,
     streamLabel(videoOptions[0]),
   ].filter(Boolean).join(' · ') : 'Fichier local, bibliothèque Plex ou URL directe'
 
@@ -250,7 +250,7 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
         <div style={{ display: 'flex', alignItems: 'flex-end', gap: 14, marginBottom: 18 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: T.fs.micro, color: T.text3, letterSpacing: 1.4, fontWeight: 600, marginBottom: 4 }}>IMPORTER</div>
-            <div style={{ fontSize: T.fs.xxl, fontWeight: 600, letterSpacing: -0.6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <div title={video ? sourceTitle(video) : undefined} style={{ fontSize: T.fs.xxl, fontWeight: 600, letterSpacing: -0.6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {video ? sourceTitle(video) : tab === TAB.PLEX ? 'Choisir un fichier dans Plex' : 'Importer une vidéo'}
             </div>
             <div style={{ fontSize: T.fs.xs, color: T.text3, fontFamily: T.fontMono, marginTop: 6, display: 'flex', gap: 8, alignItems: 'center', minWidth: 0, whiteSpace: 'nowrap' }}>
@@ -360,7 +360,7 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
 
 function EmptySource({ icon, title, hint, onClick, children }) {
   return (
-    <div onClick={onClick} style={{
+    <div onClick={onClick} {...pressable(onClick)} style={{
       flex: 1, minHeight: 0, background: T.surface, border: `1px dashed ${T.border2}`, borderRadius: T.r.card,
       display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, padding: 24,
       cursor: onClick ? 'pointer' : 'default',

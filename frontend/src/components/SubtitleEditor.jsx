@@ -18,7 +18,6 @@ const NOTATION_TAGS = [
 ]
 
 const RATE_COLOR = { ok: T.text4, warn: T.accent, danger: T.danger }
-const ROW_BTN = { height: 20, minWidth: 22 }
 
 function TCInput({ value, onCommit, fps = 25, color = 'var(--text2)', compact = false }) {
   const [editing, setEditing] = useState(false)
@@ -316,13 +315,13 @@ function SubtitleRow({ sub, idx, rate, active, selected, compact, fps, charMap, 
                 line only, bottom-anchored 1px above the text line, which is never
                 covered (FIXES_R6 #2). */}
             <div className="row-actions" onClick={e => e.stopPropagation()} style={{ position: 'absolute', right: -4, bottom: -2, display: 'flex', alignItems: 'center', gap: 0, background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.r.ctl, padding: 1, boxShadow: T.shadow }}>
-              <Btn size="sm" icon={ICONS.play} title="Aller au timecode" onClick={() => onSeek?.(sub.start)} style={ROW_BTN} />
+              <Btn size="xs" icon={ICONS.play} title="Aller au timecode" onClick={() => onSeek?.(sub.start)} />
               <span data-notation-trigger style={{ display: 'inline-flex' }}>
-                <Btn size="sm" icon={ICONS.breath} active={showNotations} title="Notations de doublage" onClick={() => setShowNotations(n => !n)} style={ROW_BTN} />
+                <Btn size="xs" icon={ICONS.breath} active={showNotations} title="Notations de doublage" onClick={() => setShowNotations(n => !n)} />
               </span>
-              <Btn size="sm" icon={ICONS.note} active={!!sub.note} title={sub.note ? `Note : ${sub.note}` : 'Ajouter une note'} onClick={() => setEditingNote(true)} style={ROW_BTN} />
-              <Btn size="sm" icon={ICONS.eye} active={!!sub.hidden} title={sub.hidden ? 'Masquée sur la bande — cliquer pour afficher' : 'Masquer sur la bande'} onClick={() => onChange({ ...sub, hidden: !sub.hidden })} style={ROW_BTN} />
-              <Btn size="sm" icon={ICONS.trash} danger title="Supprimer" onClick={onDelete} style={ROW_BTN} />
+              <Btn size="xs" icon={ICONS.note} active={!!sub.note} title={sub.note ? `Note : ${sub.note}` : 'Ajouter une note'} onClick={() => setEditingNote(true)} />
+              <Btn size="xs" icon={ICONS.eye} active={!!sub.hidden} title={sub.hidden ? 'Masquée sur la bande — cliquer pour afficher' : 'Masquer sur la bande'} onClick={() => onChange({ ...sub, hidden: !sub.hidden })} />
+              <Btn size="xs" icon={ICONS.trash} danger title="Supprimer" onClick={onDelete} />
             </div>
           </div>
 

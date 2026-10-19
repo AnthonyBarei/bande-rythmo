@@ -57,9 +57,10 @@ const BtnDisabledCtx = createContext(false)
 export function Btn({ children, variant = 'ghost', size = 'md', icon, iconR, active, danger, onClick, title, style, full, disabled }) {
   const [hov, setH] = useState(false)
   const h = hov && !disabled
-  const H = { sm: 30, md: 36, lg: 42 }[size]
-  const pad = { sm: '0 12px', md: '0 15px', lg: '0 20px' }[size]
-  const fz = { sm: T.fs.xs, md: T.fs.sm, lg: T.fs.base }[size]
+  // xs (22px): dense per-row actions (réplique rows, meme layers) — replaces the old ROW_BTN overrides.
+  const H = { xs: 22, sm: 30, md: 36, lg: 42 }[size]
+  const pad = { xs: '0 8px', sm: '0 12px', md: '0 15px', lg: '0 20px' }[size]
+  const fz = { xs: T.fs.micro, sm: T.fs.xs, md: T.fs.sm, lg: T.fs.base }[size]
   let bg = 'transparent', col = T.text2, bord = '1px solid transparent'
   let shadow = 'none'
   if (variant === 'primary') {
@@ -103,10 +104,27 @@ export function Btn({ children, variant = 'ghost', size = 'md', icon, iconR, act
   )
 }
 
+// Keyboard activation for a clickable element that isn't a <button>:
+// focusable, and Enter / Space on the element itself fire its click
+// (keyboard-only pass). Keys from nested inputs / buttons are left alone.
+// `enabled`: usually the element's onClick (no handler → not focusable).
+export function pressable(enabled) {
+  if (!enabled) return {}
+  return {
+    role: 'button', tabIndex: 0,
+    onKeyDown: e => {
+      if (e.target !== e.currentTarget || (e.key !== 'Enter' && e.key !== ' ')) return
+      e.preventDefault()
+      e.stopPropagation()
+      e.currentTarget.click()
+    },
+  }
+}
+
 export function Chip({ children, color, soft, active, onClick, style }) {
   const c = color || T.accent
   return (
-    <span onClick={onClick} style={{
+    <span onClick={onClick} {...pressable(onClick)} style={{
       display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 9px',
       borderRadius: 99, fontSize: T.fs.xs, fontWeight: 600, cursor: onClick ? 'pointer' : 'default',
       background: active ? c : (soft ? alpha(c, '1c') : T.surface2),
@@ -128,7 +146,7 @@ export function Dot({ color = T.accent, size = 8, pulse }) {
 export function Card({ children, pad = 16, style, hover, onClick }) {
   const [h, setH] = useState(false)
   return (
-    <div onClick={onClick}
+    <div onClick={onClick} {...pressable(onClick)}
       onMouseEnter={() => hover && setH(true)} onMouseLeave={() => hover && setH(false)}
       style={{
         background: T.surface, border: `1px solid ${h ? T.border2 : T.border}`,
@@ -162,10 +180,12 @@ export function Kbd({ children }) {
   }}>{children}</span>
 }
 
-export function Toggle({ on, onClick, color, title }) {
+export function Toggle({ on, onClick, color, title, label }) {
   const c = color || T.accent
   return (
-    <div onClick={onClick} title={title} role="switch" aria-checked={!!on} style={{
+    // Always focusable: inside a clickable <label> (Exporter) the keyboard
+    // click bubbles to the label's handler.
+    <div onClick={onClick} title={title} {...pressable(true)} role="switch" aria-checked={!!on} aria-label={label} style={{
       width: 38, height: 22, borderRadius: 99, flexShrink: 0, position: 'relative', cursor: 'pointer',
       background: on ? c : T.surface3, border: `1px solid ${on ? c : T.border2}`, transition: 'background .15s',
     }}>

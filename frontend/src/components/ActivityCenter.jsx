@@ -171,7 +171,7 @@ function RunRow({ j, clip, onCancel }) {
       <div style={{ width: 38, height: 38, flexShrink: 0, borderRadius: 9, background: alpha(T.accent, '14'), border: `1px solid ${alpha(T.accent, '33')}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon d={iconFor(j.kind)} size={18} stroke={T.accent} /></div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}><span style={{ fontSize: T.fs.base, fontWeight: 600, whiteSpace: 'nowrap' }}>{j.title}</span>{clip && <span style={{ fontSize: T.fs.xs, color: T.text3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{clip}</span>}</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}><ProgressBar pct={pct} /><span style={{ fontSize: 11, color: T.text2, fontFamily: T.fontMono, minWidth: 100, whiteSpace: 'nowrap' }}>{j.stage || '…'}</span></div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}><ProgressBar pct={pct} /><span style={{ fontSize: 11, color: T.text2, fontFamily: T.fontMono, minWidth: 100, flexShrink: 0, whiteSpace: 'nowrap' }}>{j.stage || '…'}</span></div>
       </div>
       <div style={{ textAlign: 'right', minWidth: 60 }}><div style={{ fontSize: T.fs.md, fontWeight: 700, fontFamily: T.fontMono, color: T.accent }}>{pct}%</div>{eta && <div style={{ fontSize: 10, color: T.text3, fontFamily: T.fontMono }}>~{eta}</div>}</div>
       <Btn size="sm" variant="outline" onClick={onCancel}>Annuler</Btn>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { T, Icon, ICONS, Avatar, Btn, Dot, alpha } from '../ui'
+import { T, Icon, ICONS, Avatar, Btn, Dot, alpha, pressable } from '../ui'
 import { TRACK_HEXES } from '../config/tracks'
 import { useToast } from '../ToastContext'
 import { fmtDuration } from '../utils/duration'
@@ -211,10 +211,12 @@ export default function ClipCard({ clip, onDub, onRecord, onMeme, onDelete, onRe
             }}
           />
         ) : (
-          <div onClick={startRename} title="Cliquez pour renommer"
+          <div onClick={startRename} {...pressable(true)} title="Cliquez pour renommer"
             style={{ fontSize: T.fs.base, fontWeight: 600, lineHeight: 1.35, textWrap: 'pretty' }}>{clip.name}</div>
         )}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        {/* minHeight = avatar size: every body is as tall, so the 44px hover row
+            only ever covers the meta row, never the title (final pass). */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minHeight: 22 }}>
           <span style={{ fontSize: T.fs.xs, color: T.text3, fontFamily: T.fontMono }}>{replCount} répl.</span>
           {chars.length > 0 && <Dot color={T.border3} size={3} />}
           {chars.length > 0 && (
@@ -241,7 +243,7 @@ export default function ClipCard({ clip, onDub, onRecord, onMeme, onDelete, onRe
         transform: showActions ? 'none' : 'translateY(8px)',
         transition: 'opacity .15s, transform .15s, visibility .15s',
       }}>
-        <button data-rd onClick={e => { e.stopPropagation(); onDub(clip) }} title="Doublage" style={{
+        <button data-rd className="focus-inset" onClick={e => { e.stopPropagation(); onDub(clip) }} title="Doublage" style={{
           height: 44, padding: '0 14px', background: 'transparent', border: 'none', borderRight: `1px solid ${T.border}`,
           color: T.accent, fontWeight: 600, fontSize: T.fs.sm, cursor: 'pointer', fontFamily: T.fontUI,
           display: 'flex', alignItems: 'center', gap: 7,
@@ -249,7 +251,7 @@ export default function ClipCard({ clip, onDub, onRecord, onMeme, onDelete, onRe
           <Icon d={ICONS.edit} size={15} stroke={T.accent} /> Doubler
         </button>
         {cells.map((a, i) => (
-          <button data-rd key={i} title={a.title} disabled={a.busy}
+          <button data-rd key={i} className="focus-inset" title={a.title} disabled={a.busy}
             onClick={e => { e.stopPropagation(); a.fn() }} style={{
               width: 44, height: 44, background: 'transparent', border: 'none',
               borderRight: i < 3 ? `1px solid ${T.border}` : 'none',

@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { T, alpha, Icon, ICONS, Btn, Chip, Segmented, Select, Toggle, ProgressBar, ScreenHeader } from '../ui'
 import { useProgress } from '../ProgressContext'
 import { useSettings } from '../SettingsContext'
-import { fmtClock } from '../utils/timecode'
+import { fmtSMPTE } from '../utils/timecode'
 import { downloadUrl, saveBlob } from '../download'
 import { useExportScreen } from './exportScreen'
 import { primaryRowKey } from '../utils/primaryRow'
@@ -96,7 +96,7 @@ export default function ExportPanel(props) {
   return host?.slot ? createPortal(screen, host.slot) : screen
 }
 
-function ExportScreen({ segmentId, subtitles, boucles = [], pxPerSec = 180, brOffset = 0, canvasH = 64, getCanvasWidth, brFont = 'atkinson', brStyle = 'classique', duration = 0, getCurrentTime, loopRegion = null, onBack, onActivity, clipName, fill, initialFormat }) {
+function ExportScreen({ segmentId, subtitles, boucles = [], pxPerSec = 180, brOffset = 0, canvasH = 64, getCanvasWidth, brFont = 'atkinson', brStyle = 'classique', duration = 0, getCurrentTime, loopRegion = null, clipFps = 25, onBack, onActivity, clipName, fill, initialFormat }) {
   const [sel, setSel] = useState(initialFormat || 'mp4')
   // Sync (non-job) exports in flight, one queue row each. The launch button
   // never blocks (FIXES_R5 #12); `launching` is its 600 ms click feedback.
@@ -104,6 +104,8 @@ function ExportScreen({ segmentId, subtitles, boucles = [], pxPerSec = 180, brOf
   const [launching, setLaunching] = useState(false)
   const launchTimerRef = useRef(null)
   const runSeqRef = useRef(0)
+  const queueRef = useRef(null)
+  const compactQueue = useWidthBelow(queueRef, 460)
   const [error, setError] = useState(null)
   const [lastExport, setLastExport] = useState(null)
   const { settings } = useSettings()
@@ -371,7 +373,7 @@ function ExportScreen({ segmentId, subtitles, boucles = [], pxPerSec = 180, brOf
                 <RangeField
                   on={rangeOn} setOn={setRangeOn}
                   rangeIn={rangeIn} setRangeIn={setRangeIn} rangeOut={rangeOut} setRangeOut={setRangeOut}
-                  duration={duration} getCurrentTime={getCurrentTime} loopRegion={loopRegion}
+                  duration={duration} getCurrentTime={getCurrentTime} loopRegion={loopRegion} fps={clipFps}
                 />
                 <ExportOptions
                   sel={sel}
@@ -395,33 +397,36 @@ function ExportScreen({ segmentId, subtitles, boucles = [], pxPerSec = 180, brOf
             <div style={{ fontSize: 10, color: T.text4, textAlign: 'center', marginTop: 8 }}>apparaît dans la liste → téléchargez quand prêt</div>
           </div>
 
-          {/* queue */}
-          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: T.bg }}>
+          {/* queue — compact (icon-only downloads) when the column is narrow (1100px window) */}
+          <div ref={queueRef} style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: T.bg }}>
             <div style={{ padding: '13px 18px', borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ fontSize: T.fs.base, fontWeight: 600 }}>File d'attente & téléchargements</span>
-              {runningCount > 0 && <Chip soft color={T.accent}>{runningCount} en cours</Chip>}
+              <span style={{ fontSize: T.fs.base, fontWeight: 600, minWidth: 0 }}>File d'attente & téléchargements</span>
+              {runningCount > 0 && <span style={{ display: 'inline-flex', flexShrink: 0 }}><Chip soft color={T.accent}>{runningCount} en cours</Chip></span>}
               <div style={{ flex: 1 }} />
               <Btn size="sm" icon={ICONS.loop} title="Rafraîchir la liste" onClick={refreshHistory} />
-              <Btn size="sm" variant="outline" icon={ICONS.download} disabled={!history.length} title={history.length ? undefined : 'Aucun export à télécharger'} onClick={downloadAll}>Tout télécharger</Btn>
+              <Btn size="sm" variant="outline" icon={ICONS.download} disabled={!history.length}
+                title={history.length ? (compactQueue ? 'Tout télécharger' : undefined) : 'Aucun export à télécharger'} onClick={downloadAll}>
+                {compactQueue ? null : 'Tout télécharger'}
+              </Btn>
             </div>
             <div style={{ flex: 1, overflow: 'auto', padding: 14, paddingBottom: 'calc(14px + var(--toast-safe-bottom, 0px))', display: 'flex', flexDirection: 'column', gap: 8 }}>
               {jobs.map(j => (
-                <JobRow key={j.key} job={j} meta={JOB_META.get(j.key)}
+                <JobRow key={j.key} job={j} meta={JOB_META.get(j.key)} compact={compactQueue}
                   onCancel={() => progress.cancelByKey(j.key)}
                   onRetry={() => progress.retry(j.key)}
                   onDismiss={() => progress.dismiss(j.key)} />
               ))}
               {syncRuns.map(r => {
                 const f = fmtOf(r.format)
-                return <QueueRow key={r.id} q={{ ext: f.ext, c: f.c, file: `${f.ext} · ${clipName || segmentId}`, status: 'render', stage: 'Génération…' }} />
+                return <QueueRow key={r.id} compact={compactQueue} q={{ ext: f.ext, c: f.c, file: `${f.ext} · ${clipName || segmentId}`, status: 'render', stage: 'Génération…' }} />
               })}
               {mix.busy && (
-                <QueueRow q={{ ext: 'MP4 doublé', c: fmtOf('mp4-dubbed').c, file: 'clip_double.mp4', status: 'render', stage: 'Mixage…' }} />
+                <QueueRow compact={compactQueue} q={{ ext: 'MP4 doublé', c: fmtOf('mp4-dubbed').c, file: 'clip_double.mp4', status: 'render', stage: 'Mixage…' }} />
               )}
               {(showAll ? history : history.slice(0, QUEUE_CAP)).map(h => {
                 const f = fmtOf(h.format)
                 return (
-                  <QueueRow key={h.id} primary={h.id === primaryId}
+                  <QueueRow key={h.id} primary={h.id === primaryId} compact={compactQueue}
                     q={{ ext: f.ext, c: f.c, file: h.filename, status: 'ready', size: fmtBytes(h.size_bytes), when: fmtTime(h.created_at), quality: h.quality }}
                     onDownload={() => redownload(h.id, h.filename)}
                     onDelete={() => removeExport(h.id)} />
@@ -453,6 +458,18 @@ function ExportScreen({ segmentId, subtitles, boucles = [], pxPerSec = 180, brOf
 
 // FIXES_R6 #14: a 24px surface → transparent fade at the bottom while more
 // content is below; hidden once scrolled to the end.
+function useWidthBelow(ref, px) {
+  const [below, setBelow] = useState(false)
+  useEffect(() => {
+    const el = ref.current
+    if (!el || typeof ResizeObserver === 'undefined') return undefined
+    const ro = new ResizeObserver(([entry]) => setBelow(entry.contentRect.width < px))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [ref, px])
+  return below
+}
+
 function ScrollFade({ children, style, innerStyle }) {
   const ref = useRef(null)
   const [more, setMore] = useState(false)
@@ -490,15 +507,15 @@ function Spinner() {
   return <span aria-hidden style={{ width: 13, height: 13, borderRadius: '50%', border: '2px solid currentColor', borderTopColor: 'transparent', animation: 'brspin 0.7s linear infinite', display: 'inline-block', flexShrink: 0 }} />
 }
 
-function QueueRow({ q, onCancel, onDownload, onDelete, actions, primary = false }) {
+function QueueRow({ q, onCancel, onDownload, onDelete, actions, primary = false, compact = false }) {
   const rend = q.status === 'render'
   const failed = q.status === 'error'
   const hasPct = q.pct != null
   return (
     <div style={{ background: T.surface, border: `1px solid ${failed ? alpha(T.danger, '44') : rend ? alpha(T.accent, '44') : T.border}`, borderRadius: T.r.ctl, padding: '11px 14px', display: 'flex', alignItems: 'center', gap: 12 }}>
-      <span style={{ fontSize: 10, fontWeight: 700, color: q.c, padding: '3px 8px', minWidth: 76, textAlign: 'center', background: q.c + '14', border: `1px solid ${q.c}33`, borderRadius: 5 }}>{q.ext}</span>
+      <span style={{ fontSize: 10, fontWeight: 700, color: q.c, padding: '3px 8px', minWidth: compact ? 0 : 76, flexShrink: 0, whiteSpace: 'nowrap', textAlign: 'center', background: q.c + '14', border: `1px solid ${q.c}33`, borderRadius: 5 }}>{q.ext}</span>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: T.fs.sm, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{q.file}</div>
+        <div title={q.file} style={{ fontSize: T.fs.sm, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{q.file}</div>
         {rend ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginTop: 6 }}>
             <ProgressBar pct={hasPct ? q.pct : 100} h={4} color={hasPct ? undefined : T.border3} />
@@ -507,7 +524,7 @@ function QueueRow({ q, onCancel, onDownload, onDelete, actions, primary = false 
         ) : failed ? (
           <div style={{ fontSize: 10.5, color: T.danger, fontFamily: T.fontMono, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{q.stage}</div>
         ) : (
-          <div style={{ fontSize: 10.5, color: T.text3, fontFamily: T.fontMono, marginTop: 2 }}>
+          <div title={`${q.size} · ${q.when}${q.quality ? ` · ${q.quality}` : ''}`} style={{ fontSize: 10.5, color: T.text3, fontFamily: T.fontMono, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {q.size} · {q.when}{q.quality ? ` · ${q.quality}` : ''}
           </div>
         )}
@@ -519,7 +536,7 @@ function QueueRow({ q, onCancel, onDownload, onDelete, actions, primary = false 
         </>
       ) : (
         <>
-          <Btn size="sm" variant={primary ? 'primary' : 'outline'} icon={ICONS.download} onClick={onDownload}>Télécharger</Btn>
+          <Btn size="sm" variant={primary ? 'primary' : 'outline'} icon={ICONS.download} onClick={onDownload} title={compact ? 'Télécharger' : undefined}>{compact ? null : 'Télécharger'}</Btn>
           <Btn size="sm" icon={ICONS.trash} title="Supprimer" onClick={onDelete} />
         </>
       ))}
@@ -527,15 +544,15 @@ function QueueRow({ q, onCancel, onDownload, onDelete, actions, primary = false 
   )
 }
 
-function JobRow({ job, meta, onCancel, onRetry, onDismiss }) {
+function JobRow({ job, meta, onCancel, onRetry, onDismiss, compact }) {
   const f = fmtOf(meta?.fmt)
   const base = { ext: f.ext, c: f.c, file: meta?.file || job.title }
   if (job.status === 'running') {
-    return <QueueRow q={{ ...base, status: 'render', pct: Math.round((job.pct || 0) * 100), stage: job.stage || '…' }} onCancel={onCancel} />
+    return <QueueRow compact={compact} q={{ ...base, status: 'render', pct: Math.round((job.pct || 0) * 100), stage: job.stage || '…' }} onCancel={onCancel} />
   }
   if (job.status === 'error') {
     return (
-      <QueueRow q={{ ...base, status: 'error', stage: job.error || 'Erreur' }} actions={(
+      <QueueRow compact={compact} q={{ ...base, status: 'error', stage: job.error || 'Erreur' }} actions={(
         <>
           {job.retry && <Btn size="sm" variant="outline" onClick={onRetry}>Réessayer</Btn>}
           <Btn size="sm" icon={ICONS.close} title="Fermer" onClick={onDismiss} />
@@ -545,7 +562,7 @@ function JobRow({ job, meta, onCancel, onRetry, onDismiss }) {
   }
   const label = job.status === 'done' ? 'Terminé' : 'Annulé'
   return (
-    <QueueRow q={{ ...base, status: 'render', pct: job.status === 'done' ? 100 : 0, stage: label }} actions={(
+    <QueueRow compact={compact} q={{ ...base, status: 'render', pct: job.status === 'done' ? 100 : 0, stage: label }} actions={(
       <span style={{ fontSize: T.fs.xs, fontWeight: 600, color: job.status === 'done' ? T.success : T.text3 }}>{label}</span>
     )} />
   )
@@ -563,7 +580,7 @@ function Row({ label, children }) {
 function Tg({ label, on, desc, onToggle }) {
   return (
     <label onClick={onToggle} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', marginBottom: 14 }}>
-      <Toggle on={on} />
+      <Toggle on={on} label={label} />
       <div>
         <div style={{ fontSize: T.fs.xs, color: T.text }}>{label}</div>
         {desc && <div style={{ fontSize: 10, color: T.text3, marginTop: 2, lineHeight: 1.4 }}>{desc}</div>}
@@ -581,19 +598,22 @@ function Slider({ value, min, max, step, onChange, color, title }) {
   )
 }
 
-function RangeField({ on, setOn, rangeIn, setRangeIn, rangeOut, setRangeOut, duration, getCurrentTime, loopRegion }) {
+function RangeField({ on, setOn, rangeIn, setRangeIn, rangeOut, setRangeOut, duration, getCurrentTime, loopRegion, fps }) {
   const max = duration || 1
   return (
     <div style={{ marginBottom: 16 }}>
-      <div style={{ fontSize: T.fs.xs, fontWeight: 600, color: T.text2, marginBottom: 7 }}>Plage</div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, fontSize: T.fs.xs, fontWeight: 600, color: T.text2, marginBottom: 7 }}>
+        Plage
+        {on && <span style={{ marginLeft: 'auto', fontFamily: T.fontMono, fontWeight: 400, color: T.text3 }}>{Math.max(0, rangeOut - rangeIn).toFixed(1)}s</span>}
+      </div>
       <Segmented value={on ? 'custom' : 'full'} onChange={v => setOn(v === 'custom')}
         options={[{ v: 'full', l: 'Clip entier' }, { v: 'custom', l: 'Personnalisée' }]} />
       {on && (
         <>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, fontFamily: T.fontMono, fontSize: 11 }}>
-            <Chip soft color={T.info}>[ IN {fmtClock(rangeIn)}</Chip>
-            <div style={{ flex: 1, textAlign: 'center', color: T.text3 }}>{Math.max(0, rangeOut - rangeIn).toFixed(1)}s</div>
-            <Chip soft color={T.accent}>OUT {fmtClock(rangeOut)} ]</Chip>
+          {/* SMPTE IN / OUT on one line in the 300px column: duration sits on the label row. */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 8 }}>
+            <Chip soft color={T.info} style={{ fontFamily: T.fontMono, fontSize: T.fs.micro, whiteSpace: 'nowrap' }}>IN {fmtSMPTE(rangeIn, fps)}</Chip>
+            <Chip soft color={T.accent} style={{ fontFamily: T.fontMono, fontSize: T.fs.micro, whiteSpace: 'nowrap' }}>OUT {fmtSMPTE(rangeOut, fps)}</Chip>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
             <Slider value={rangeIn} min={0} max={max} step={0.05} color={T.info} title="Point IN"
@@ -841,7 +861,7 @@ function MixOptions({ mix, subtitles }) {
               <div key={t.id} style={{ padding: '8px 10px', background: T.bg2, border: `1px solid ${on ? alpha(T.accent, '55') : T.border}`, borderRadius: T.r.ctl }}>
                 <label onClick={() => setSel(s => ({ ...s, [t.id]: { on: !on, gain } }))}
                   style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
-                  <Toggle on={on} />
+                  <Toggle on={on} label={takeLabel(t)} />
                   <span style={{ flex: 1, minWidth: 0, fontSize: T.fs.xs, color: on ? T.text : T.text2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{takeLabel(t)}</span>
                   <span style={{ fontSize: 10.5, color: T.text3, fontFamily: T.fontMono }}>{(t.duration || 0).toFixed(1)}s</span>
                 </label>

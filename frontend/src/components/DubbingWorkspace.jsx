@@ -17,7 +17,7 @@ import { mergeTranslations } from '../utils/mergeTranslations'
 
 // Character track colors — hex for label/text/border, soft for fills, bg for legacy callers
 import { TRACK_COLORS } from '../config/tracks'
-import { fmtClock } from '../utils/timecode'
+import { fmtSMPTE } from '../utils/timecode'
 import BandCanvas from './band/BandCanvas'
 import {
   CURSOR_X_RATIO, bandAccent, bandCanvasHeight, buildCharMap, autoFitPxPerSec,
@@ -25,7 +25,6 @@ import {
 } from './band/bandRender'
 import { bandCoords, hitTestBand, hitTestBandLetter } from './band/bandHit'
 
-const fmt = fmtClock
 
 // Resizable panes (reference screen-editor.jsx › Editor bandH / inspW / inspOpen).
 const LAYOUT_KEY = 'br.editor.layout'
@@ -1239,6 +1238,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
       duration={duration}
       getCurrentTime={() => videoRef.current?.currentTime || 0}
       loopRegion={loopRegion}
+      clipFps={clipFps}
     />
   )
 
@@ -1418,7 +1418,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
             {loopRegion && (
               <div style={{ position: 'absolute', top: 6, right: 8, zIndex: 5 }}>
                 <Chip color={T.accent} soft style={{ fontFamily: T.fontMono, fontSize: 11, padding: '0 0 0 9px', gap: 4 }}>
-                  <Icon d={ICONS.loop} size={12} stroke={T.accent} /> {fmt(loopRegion.start)}–{fmt(loopRegion.end)}
+                  <Icon d={ICONS.loop} size={12} stroke={T.accent} /> {fmtSMPTE(loopRegion.start, clipFps)}–{fmtSMPTE(loopRegion.end, clipFps)}
                   <Btn size="sm" icon={ICONS.close} onClick={() => setLoopRegion(null)} title="Effacer la boucle (Échap)" style={{ height: 24, minWidth: 24 }} />
                 </Chip>
               </div>
@@ -1471,10 +1471,10 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
                     background: T.surface, border: `1px solid ${T.border2}`, borderRadius: T.r.card, boxShadow: T.shadowL, padding: 6 }}>
                     <div style={menuHeader}>{sub.character || '(défaut)'} · {sub.text.slice(0, 30) || '∅'}</div>
                     <MenuItem icon={ICONS.edit} onClick={() => ctxAction('edit')}>Éditer le texte</MenuItem>
-                    {canSplit && <MenuItem icon={ICONS.scissors} onClick={() => ctxAction('split')}>Couper ici ({fmt(ctxMenu.time)})</MenuItem>}
+                    {canSplit && <MenuItem icon={ICONS.scissors} onClick={() => ctxAction('split')}>Couper ici ({fmtSMPTE(ctxMenu.time, clipFps)})</MenuItem>}
                     <MenuItem icon={ICONS.plus} onClick={() => ctxAction('duplicate')}>Dupliquer après</MenuItem>
-                    <MenuItem icon={ICONS.start} onClick={() => ctxAction('seekStart')}>Aller au début ({fmt(sub.start)})</MenuItem>
-                    <MenuItem icon={ICONS.end} onClick={() => ctxAction('seekEnd')}>Aller à la fin ({fmt(sub.end)})</MenuItem>
+                    <MenuItem icon={ICONS.start} onClick={() => ctxAction('seekStart')}>Aller au début ({fmtSMPTE(sub.start, clipFps)})</MenuItem>
+                    <MenuItem icon={ICONS.end} onClick={() => ctxAction('seekEnd')}>Aller à la fin ({fmtSMPTE(sub.end, clipFps)})</MenuItem>
                     <MenuSep />
                     <MenuLabel>Personnage</MenuLabel>
                     {charList.map(c => {

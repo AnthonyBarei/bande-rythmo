@@ -141,7 +141,9 @@ input:focus, textarea:focus { border-color: var(--accent); }
    :focus-visible, so this stays invisible for mouse users but gives keyboard
    navigators a clear accent ring on every interactive element. box-shadow
    (not outline) so it isn't suppressed by the many inline `outline:none`s and
-   doesn't shift layout. */
+   doesn't shift layout. !important: the ui.jsx primitives set an inline
+   box-shadow (Btn: 'none' or the primary glow, swatches, cards…), which would
+   otherwise win over this rule and hide the ring (final acceptance pass). */
 button:focus-visible,
 select:focus-visible,
 a:focus-visible,
@@ -149,8 +151,18 @@ a:focus-visible,
 [tabindex]:focus-visible,
 input:focus-visible,
 textarea:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+  outline: none !important;
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent) !important;
+}
+/* Visually hidden native inputs (Réglages custom-accent swatch: opacity 0
+   colour input inside a label) — draw the ring on the visible label. */
+label:has(> input:focus-visible) {
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent) !important;
+}
+/* Flush controls inside an overflow-clipped strip (library filter tabs, card
+   action cells): the outer ring would be cut, so draw it inside the box. */
+.focus-inset:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--accent) !important;
 }
 
 @keyframes brspin { to { transform: rotate(360deg); } }

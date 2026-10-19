@@ -146,7 +146,7 @@ export default function Preferences() {
 
         <Section title="Export" desc="Valeurs par défaut.">
           <Field label="Incruster la détection (MP4)">
-            <Toggle on={!!settings.exportDetectionBurn} onClick={() => update({ exportDetectionBurn: !settings.exportDetectionBurn })} />
+            <Toggle on={!!settings.exportDetectionBurn} onClick={() => update({ exportDetectionBurn: !settings.exportDetectionBurn })} label="Incruster la détection (MP4)" />
           </Field>
         </Section>
 

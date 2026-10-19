@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react'
-import { T, alpha, Icon, ICONS, Btn, Chip, Dot, Avatar, Kbd } from '../ui'
+import { T, alpha, Icon, ICONS, Btn, Chip, Dot, Avatar, Kbd, pressable } from '../ui'
 import { TRACK_HEXES } from '../config/tracks'
-import { fmtClock, fmtSMPTE } from '../utils/timecode'
+import { fmtSMPTE } from '../utils/timecode'
 import { METER_FLOOR, levelOf, trimToWav, takePeaks } from '../utils/takeAudio'
 import { adjacentLine, characterProgress, listenVoVolume } from '../utils/studio'
 
@@ -929,7 +929,7 @@ const RecorderPanel = forwardRef(function RecorderPanel({
             {recLive
               ? <><span style={{ width: 8, height: 8, borderRadius: '50%', background: T.danger, animation: 'stBlink 1s steps(2) infinite' }} /><span style={{ color: T.danger, fontWeight: 700 }}>REC</span></>
               : ctxTake
-                ? <><span style={{ color: T.accent, fontWeight: 700 }}>▶ {takeLabel(ctxTake).toUpperCase()}</span><span style={{ color: T.text3 }}>·</span></>
+                ? <><Icon d={ICONS.play} size={10} fill={T.accent} /><span style={{ color: T.accent, fontWeight: 700 }}>{takeLabel(ctxTake).toUpperCase()}</span><span style={{ color: T.text3 }}>·</span></>
                 : <Dot color={phase === 'preroll' ? T.accent : T.text4} size={6} />}
             <StageClock videoRef={videoRef} fps={fps} />
           </div>
@@ -956,7 +956,7 @@ const RecorderPanel = forwardRef(function RecorderPanel({
               ? <span role="status" style={{ color: T.text2 }}>{notice.text}</span>
               : <>Appuyer pour enregistrer · <span style={{ color: T.accent }}>R</span></>)}
             {phase === 'preroll' && <span style={{ color: T.accent }}>Pré-roll · bip {Math.max(1, leadTotal - countdown + 1)}/{leadTotal}</span>}
-            {recLive && <span style={{ color: T.danger }}>● Prise en cours · {elapsed.toFixed(1)}s{target ? ` / ${recDur.toFixed(1)}s` : ''}</span>}
+            {recLive && <span style={{ color: T.danger, display: 'inline-flex', alignItems: 'center', gap: 6 }}><Dot color={T.danger} size={7} />Prise en cours · {elapsed.toFixed(1)}s{target ? ` / ${recDur.toFixed(1)}s` : ''}</span>}
           </div>
         </div>
       </div>
@@ -1053,7 +1053,7 @@ function MicStage({ analyser, phase, countdown, elapsed, notice, onToggle, chips
       </button>
       <div style={{ fontSize: T.fs.sm, color: T.text2, fontFamily: T.fontMono }}>
         {recording
-          ? <span style={{ color: T.danger, display: 'inline-flex', alignItems: 'center', gap: 8 }}><Dot color={T.danger} pulse />ENREGISTREMENT · {fmtClock(elapsed)}</span>
+          ? <span style={{ color: T.danger, display: 'inline-flex', alignItems: 'center', gap: 8 }}><Dot color={T.danger} pulse />ENREGISTREMENT · {elapsed.toFixed(1)}s</span>
           : prerolling
             ? <span style={{ color: T.accent }}>PRÉ-ROLL · réplique dans {countdown}…</span>
             : notice ? <span role="status">{notice}</span> : 'Appuyer pour enregistrer · R'}
@@ -1179,7 +1179,7 @@ function AbBar({ takeA, takeB, slot, onSlot, canSwap }) {
       <div style={{ flex: 1 }} />
       <span title={canSwap ? 'Basculer A ⇄ B à la même position' : 'Choisissez une prise A et une prise B'}
         style={{ fontSize: T.fs.xs, color: canSwap ? T.text2 : T.text3, display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap', paddingRight: 4 }}>
-        ⇄ basculer <Kbd>Tab</Kbd>
+        <Icon d={ICONS.loop} size={13} stroke="currentColor" /> basculer <Kbd>Tab</Kbd>
       </span>
     </div>
   )
@@ -1259,7 +1259,7 @@ function TakeCard({ take, label, selected, fresh, isPlaying, progress, clock, on
   const durRef = useRef(null)
   const durFits = useDurationFits(rowRef, spacerRef, durRef)
   return (
-    <div onClick={onSelect} style={{
+    <div onClick={onSelect} {...pressable(onSelect)} className="focus-inset" style={{
       background: isSyncing ? T.accentDim : T.surface,
       border: `1px solid ${selected ? T.accent : best ? alpha(T.accent, '55') : ab ? T.border3 : isSyncing ? alpha(T.accent, '44') : T.border}`,
       borderRadius: T.r.ctl, padding: 12, flexShrink: 0, cursor: 'pointer',
