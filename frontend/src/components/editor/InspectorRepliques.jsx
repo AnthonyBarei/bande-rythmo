@@ -7,7 +7,7 @@ import { T, Btn, ICONS } from '../../ui'
 export default function InspectorRepliques({
   subtitles, transcribing, onTranscribe, onSubtitlesChange, onDelete,
   bandNow, onSeek, selectedIdx, setSelectedIdx, charFilter, charMap,
-  showRecorder, recorderRef, activeSubtitle, videoRef, clipId,
+  showRecorder, recorderRef, activeSubtitle, videoRef, clipId, clipFps,
 }) {
   return (
     <>
@@ -19,7 +19,7 @@ export default function InspectorRepliques({
           </div>
         ) : (
           <SubtitleEditor subtitles={subtitles} onChange={onSubtitlesChange} onDelete={onDelete} currentTime={bandNow} onSeek={onSeek}
-            selectedIdx={selectedIdx} setSelectedIdx={setSelectedIdx} compact={true} charFilter={charFilter} charMap={charMap} />
+            selectedIdx={selectedIdx} setSelectedIdx={setSelectedIdx} compact={true} charFilter={charFilter} charMap={charMap} fps={clipFps} />
         )}
       </div>
       {showRecorder && (

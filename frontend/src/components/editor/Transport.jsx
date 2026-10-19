@@ -1,5 +1,6 @@
 import React, { useRef } from 'react'
-import { T, Icon, ICONS, Btn, Segmented, fmt } from '../../ui'
+import { T, Icon, ICONS, Btn, Segmented } from '../../ui'
+import { fmtSMPTE } from '../../utils/timecode'
 
 const SPEEDS = [{ v: 0.5, l: '0.5×' }, { v: 1, l: '1×' }, { v: 1.5, l: '1.5×' }, { v: 2, l: '2×' }]
 
@@ -8,7 +9,7 @@ export default function Transport({
   currentTime, duration, playing, speed, muted,
   onTogglePlay, onSeek, onSeekEnd, onStepFrame, onPrevSub, onNextSub,
   loopActive, onToggleLoopActive, onChangeSpeed, onToggleMute,
-  hasTarget, onSetIn, onSetOut,
+  hasTarget, onSetIn, onSetOut, clipFps = 25,
 }) {
   const trackRef = useRef(null)
   const pct = duration > 0 ? Math.max(0, Math.min(100, (currentTime / duration) * 100)) : 0
@@ -41,7 +42,7 @@ export default function Transport({
       <Btn size="sm" icon={ICONS.loop} active={loopActive} onClick={onToggleLoopActive} title="Boucler sur la réplique active/sélectionnée" />
       <Btn size="sm" icon={ICONS.in} onClick={onSetIn} disabled={!hasTarget} title="IN de la réplique au temps courant (I)" />
       <Btn size="sm" icon={ICONS.out} onClick={onSetOut} disabled={!hasTarget} title="OUT de la réplique au temps courant (O)" />
-      <span style={{ fontFamily: T.fontMono, fontSize: 11, color: T.text2, marginLeft: 6, whiteSpace: 'nowrap' }}>{fmt(currentTime)} / {fmt(duration)}</span>
+      <span style={{ fontFamily: T.fontMono, fontSize: 11, color: T.text2, marginLeft: 6, whiteSpace: 'nowrap' }}>{fmtSMPTE(currentTime, clipFps)} / {fmtSMPTE(duration, clipFps)}</span>
       <div ref={trackRef} onPointerDown={onPointerDown}
         style={{ flex: 1, height: 6, background: T.surface3, borderRadius: 3, margin: '0 8px', position: 'relative', cursor: 'pointer', touchAction: 'none' }}>
         <div style={{ width: `${pct}%`, height: '100%', background: T.accent, borderRadius: 3 }} />

@@ -1,5 +1,5 @@
 import React from 'react'
-import { T, Icon, ICONS, Segmented, Toggle } from '../../ui'
+import { T, Icon, ICONS, Toggle } from '../../ui'
 
 const SIGNS = [
   { k: 'labiale', label: 'Labiale', desc: 'b p m · lèvres fermées', col: '#c7ccd4', glyph: '▬' },
@@ -8,11 +8,6 @@ const SIGNS = [
   { k: 'arrondie', label: 'Arrondie', desc: 'o u œ · cercle', col: '#c7ccd4', glyph: '○' },
   { k: 'ouverte', label: 'Ouverte', desc: 'a e i · arc', col: '#888', glyph: '◡' },
   { k: 'startEnd', label: 'Début / Fin', desc: 'coins aux bornes de la réplique', col: '#c7ccd4', glyph: '▸' },
-]
-
-const FONTS = [
-  { v: 'atkinson', l: 'Atkinson' }, { v: 'lisible', l: 'Lisible' }, { v: 'cursive', l: 'Manuscrite' },
-  { v: 'inter', l: 'Inter' }, { v: 'jetbrains', l: 'Mono' },
 ]
 
 const sectionLabel = { fontSize: T.fs.micro, color: T.text3, letterSpacing: 1.2, fontWeight: 700, marginBottom: 9 }
@@ -30,7 +25,7 @@ function ToggleRow({ label, desc, on, onClick }) {
 }
 
 // Détection tab — reference Inspector › DetPanel.
-export default function InspectorDetection({ detection, setDetection, detectionAuto, setDetectionAuto, wordByWord, setWordByWord, brFont, setBrFont }) {
+export default function InspectorDetection({ detection, setDetection, detectionAuto, setDetectionAuto, wordByWord, setWordByWord }) {
   return (
     <div style={{ padding: 14 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 13px', background: T.bg2, border: `1px solid ${T.border}`, borderRadius: T.r.ctl, marginBottom: 14 }}>
@@ -57,9 +52,7 @@ export default function InspectorDetection({ detection, setDetection, detectionA
           <Toggle on={!!detection[s.k]} onClick={() => setDetection(d => ({ ...d, [s.k]: !d[s.k] }))} color={T.accent} />
         </div>
       ))}
-      <div style={{ ...sectionLabel, marginTop: 16, marginBottom: 8 }}>POLICE DE LA BANDE</div>
-      <Segmented value={brFont} onChange={setBrFont} options={FONTS} />
-      <div style={{ marginTop: 10, padding: 11, background: T.bg2, border: `1px dashed ${T.border2}`, borderRadius: T.r.ctl, fontSize: 11, color: T.text3, lineHeight: 1.5 }}>
+      <div style={{ marginTop: 14, padding: 11, background: T.bg2, border: `1px dashed ${T.border2}`, borderRadius: T.r.ctl, fontSize: 11, color: T.text3, lineHeight: 1.5 }}>
         Clic sur une lettre dans la bande pour cycler son signe manuellement.
       </div>
     </div>

@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { TRACK_COLORS } from '../config/tracks'
-import { fmtClockPrecise, parseTC } from '../utils/timecode'
+import { fmtSMPTE } from '../utils/timecode'
+import { parseTimecodeInput } from '../utils/tcInput'
+import { lineRate } from '../utils/lineRate'
 import { isActiveAt, activeIndexAt } from '../utils/band'
 import { T, alpha, Icon, ICONS, Btn, Dot, Chip, Popover, MenuItem, MenuLabel, MenuSep } from '../ui'
 
@@ -15,17 +17,18 @@ const NOTATION_TAGS = [
   { label: '*',          title: 'Repère BR (respiration)',color: '#7ec0ff' },
 ]
 
-const fmtTC = fmtClockPrecise
+const RATE_COLOR = { ok: T.text4, warn: T.accent, danger: T.danger }
 
-function TCInput({ value, onCommit, color = 'var(--text2)', compact = false }) {
+function TCInput({ value, onCommit, fps = 25, color = 'var(--text2)', compact = false }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
   const inputRef = useRef(null)
+  const fmtTC = t => fmtSMPTE(t, fps)
 
   useEffect(() => { if (editing) inputRef.current?.select() }, [editing])
 
   function commit() {
-    const t = parseTC(draft)
+    const t = parseTimecodeInput(draft, fps)
     if (t != null) onCommit(t)
     setEditing(false)
   }
@@ -40,13 +43,13 @@ function TCInput({ value, onCommit, color = 'var(--text2)', compact = false }) {
           if (e.key === 'Enter') { e.preventDefault(); commit() }
           if (e.key === 'Escape') { e.preventDefault(); setEditing(false) }
         }}
-        style={{ width: compact ? 62 : 72, fontFamily: 'var(--font-mono)', fontSize: compact ? 9.5 : 11, background: 'var(--bg)', color, border: '1px solid var(--accent)', borderRadius: 2, padding: compact ? '0 2px' : '2px 4px', outline: 'none' }}
+        style={{ width: compact ? 74 : 92, fontFamily: 'var(--font-mono)', fontSize: compact ? 9.5 : 11, background: 'var(--bg)', color, border: '1px solid var(--accent)', borderRadius: 2, padding: compact ? '0 2px' : '2px 4px', outline: 'none' }}
       />
     )
   }
   return (
     <button onClick={e => { e.stopPropagation(); setDraft(fmtTC(value)); setEditing(true) }} title="Modifier le timecode" style={{
-      width: compact ? 'auto' : 72, fontFamily: 'var(--font-mono)', fontSize: compact ? 9.5 : 11, color, background: 'transparent',
+      width: compact ? 'auto' : 92, fontFamily: 'var(--font-mono)', fontSize: compact ? 9.5 : 11, color, background: 'transparent',
       border: '1px solid transparent', borderRadius: 2, padding: compact ? '0 2px' : '2px 4px', textAlign: 'left', cursor: 'text',
       transition: 'border-color 0.12s',
     }}
@@ -158,10 +161,65 @@ const ROW_ICONS = {
   goto:   <><polygon points="7 4 20 12 7 20 7 4"/></>,
 }
 
-function SubtitleRow({ sub, idx, active, selected, compact, charMap, charList, onChange, onDelete, onSelect, onSeek, onNewCharacter }) {
+// Réplique note (FIXES_R5 #17): a read-only line at rest, an input on click.
+// Enter / blur save once, Escape drops the draft.
+function NoteEditor({ note, onSave, onClose }) {
+  const [draft, setDraft] = useState(note || '')
+  const doneRef = useRef(false)
+
+  function finish(save, value = draft) {
+    if (doneRef.current) return
+    doneRef.current = true
+    const next = value.trim()
+    if (save && next !== (note || '')) onSave(next)
+    onClose()
+  }
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
+      <Icon d={ICONS.note} size={11} stroke={T.accent} />
+      <input
+        value={draft}
+        autoFocus
+        onChange={e => setDraft(e.target.value)}
+        onClick={e => e.stopPropagation()}
+        onBlur={() => finish(true)}
+        onKeyDown={e => {
+          if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); finish(true) }
+          if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(false) }
+        }}
+        placeholder="Note — intention, intonation, didascalie…"
+        style={{
+          flex: 1, fontFamily: T.fontUI, fontSize: 12,
+          padding: '2px 6px', background: 'var(--accent-dim)',
+          border: '1px solid var(--accent-ring)', borderRadius: 4,
+          color: T.text, outline: 'none', minWidth: 0,
+        }}
+      />
+      {note && (
+        <span onMouseDown={e => e.preventDefault()}>
+          <Btn size="sm" icon={ICONS.close} title="Effacer la note"
+            onClick={e => { e.stopPropagation(); finish(true, '') }} />
+        </span>
+      )}
+    </div>
+  )
+}
+
+function NoteLine({ note, onEdit }) {
+  return (
+    <button onClick={e => { e.stopPropagation(); onEdit() }} title="Modifier la note"
+      style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, padding: 0, width: '100%', minWidth: 0, background: 'transparent', border: 'none', cursor: 'text', textAlign: 'left' }}>
+      <Icon d={ICONS.note} size={11} stroke={T.text3} style={{ flexShrink: 0 }} />
+      <span style={{ flex: 1, minWidth: 0, fontFamily: T.fontUI, fontSize: 12, color: T.text2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{note}</span>
+    </button>
+  )
+}
+
+function SubtitleRow({ sub, idx, active, selected, compact, fps, charMap, charList, onChange, onDelete, onSelect, onSeek, onNewCharacter }) {
   const textInputRef = useRef(null)
   const [showNotations, setShowNotations] = useState(false)
-  const [showNote, setShowNote] = useState(false)
+  const [editingNote, setEditingNote] = useState(false)
   const notationRef = useRef(null)
   const mouseDownPos = useRef(null)
 
@@ -202,10 +260,10 @@ function SubtitleRow({ sub, idx, active, selected, compact, charMap, charList, o
   }
 
   const dur = sub.end - sub.start
-  const visibleText = (sub.text || '').replace(/\*/g, '')
-  const cps = dur > 0 ? visibleText.length / dur : 0
-  const cpsHigh = cps > 20
-  const c = TRACK_COLORS[(charMap[sub.character || ''] ?? 0) % TRACK_COLORS.length]
+  const rate = lineRate(sub)
+  const rateFlag = rate.level !== 'ok'
+  const rateStyle = { color: RATE_COLOR[rate.level], fontWeight: rateFlag ? 700 : 400 }
+  const c =TRACK_COLORS[(charMap[sub.character || ''] ?? 0) % TRACK_COLORS.length]
 
   const icBtn = (title, color, onClick, children) => (
     <button title={title} onClick={e => { e.stopPropagation(); onClick() }} style={{
@@ -246,14 +304,14 @@ function SubtitleRow({ sub, idx, active, selected, compact, charMap, charList, o
               compact
             />
             <span style={{ display: 'inline-flex', alignItems: 'center', fontSize: 9.5, color: T.text3, fontFamily: T.fontMono }}>
-              <TCInput compact value={sub.start} color={T.text3}
-                onCommit={t => onChange({ ...sub, start: Math.min(t, sub.end - 0.1) })} />→<TCInput compact value={sub.end} color={T.text3}
+              <TCInput compact fps={fps} value={sub.start} color={T.text3}
+                onCommit={t => onChange({ ...sub, start: Math.min(t, sub.end - 0.1) })} /> → <TCInput compact fps={fps} value={sub.end} color={T.text3}
                 onCommit={t => onChange({ ...sub, end: Math.max(t, sub.start + 0.1) })} />
             </span>
             {sub.note && <Icon d={ICONS.note} size={11} stroke={T.accent} />}
             {sub.take && <Dot color={T.danger} size={6} />}
             <div style={{ flex: 1 }} />
-            <span title={`${cps.toFixed(1)} c/s`} style={{ fontSize: 9.5, color: cpsHigh ? T.danger : T.text4, fontWeight: cpsHigh ? 700 : 400, fontFamily: T.fontMono }}>{dur.toFixed(1)}s</span>
+            <span data-line-rate={rate.level} title={rate.reason} style={{ fontSize: 9.5, fontFamily: T.fontMono, cursor: 'help', ...rateStyle }}>{dur.toFixed(1)}s</span>
           </div>
 
           <div ref={notationRef} style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 2 }}>
@@ -271,39 +329,19 @@ function SubtitleRow({ sub, idx, active, selected, compact, charMap, charList, o
             {showNotations && <NotationPopover tags={NOTATION_TAGS} onInsert={insertNotation} />}
           </div>
 
-          {/* Note line — free-text annotation, shown when toggled or present */}
-          {(showNote || sub.note) && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
-              <Icon d={ICONS.note} size={11} stroke={T.accent} />
-              <input
-                value={sub.note || ''}
-                autoFocus={showNote && !sub.note}
-                onChange={e => onChange({ ...sub, note: e.target.value }, 'note')}
-                onClick={e => e.stopPropagation()}
-                onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') { e.stopPropagation(); setShowNote(false); e.target.blur() } }}
-                placeholder="Note — intention, intonation, didascalie…"
-                style={{
-                  flex: 1, fontFamily: 'var(--font-ui)', fontSize: 11.5, fontStyle: 'italic',
-                  padding: '2px 6px', background: 'var(--accent-dim)',
-                  border: '1px solid var(--accent-ring)', borderRadius: 4,
-                  color: 'var(--accent)', outline: 'none', minWidth: 0,
-                }}
-              />
-              {sub.note && (
-                <Btn size="sm" icon={ICONS.close} title="Effacer la note"
-                  onClick={e => { e.stopPropagation(); onChange({ ...sub, note: '' }); setShowNote(false) }} />
-              )}
-            </div>
-          )}
+          {editingNote
+            ? <NoteEditor note={sub.note} onSave={note => onChange({ ...sub, note }, 'note')} onClose={() => setEditingNote(false)} />
+            : sub.note && <NoteLine note={sub.note} onEdit={() => setEditingNote(true)} />}
         </div>
 
-        {/* Actions — reveal on row hover (prototype: clean rows) */}
-        <div className="row-actions" onClick={e => e.stopPropagation()} style={{ position: 'absolute', top: 5, right: 6, display: 'flex', alignItems: 'center', gap: 1, background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.r.ctl, padding: 2, boxShadow: T.shadow }}>
+        {/* Actions — reveal on row hover (prototype: clean rows). Kept left of
+            the duration so its débit tooltip stays reachable. */}
+        <div className="row-actions" onClick={e => e.stopPropagation()} style={{ position: 'absolute', top: 5, right: 44, display: 'flex', alignItems: 'center', gap: 1, background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.r.ctl, padding: 2, boxShadow: T.shadow }}>
           <Btn size="sm" icon={ICONS.play} title="Aller au timecode" onClick={() => onSeek?.(sub.start)} />
           <span data-notation-trigger>
             <Btn size="sm" icon={ICONS.breath} active={showNotations} title="Notations de doublage" onClick={() => setShowNotations(n => !n)} />
           </span>
-          <Btn size="sm" icon={ICONS.note} active={!!sub.note} title={sub.note ? `Note : ${sub.note}` : 'Ajouter une note'} onClick={() => setShowNote(v => !v)} />
+          <Btn size="sm" icon={ICONS.note} active={!!sub.note} title={sub.note ? `Note : ${sub.note}` : 'Ajouter une note'} onClick={() => setEditingNote(true)} />
           <Btn size="sm" icon={ICONS.eye} active={!!sub.hidden} title={sub.hidden ? 'Masquée sur la bande — cliquer pour afficher' : 'Masquer sur la bande'} onClick={() => onChange({ ...sub, hidden: !sub.hidden })} />
           <Btn size="sm" icon={ICONS.trash} danger title="Supprimer" onClick={onDelete} />
         </div>
@@ -335,10 +373,10 @@ function SubtitleRow({ sub, idx, active, selected, compact, charMap, charList, o
 
       {/* Timecodes */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '0 6px', flexShrink: 0, borderLeft: '1px solid var(--border)', borderRight: '1px solid var(--border)' }}>
-        <TCInput value={sub.start} color="var(--accent)"
+        <TCInput fps={fps} value={sub.start} color="var(--accent)"
           onCommit={t => onChange({ ...sub, start: Math.min(t, sub.end - 0.1) })} />
         <span style={{ color: 'var(--text4)', fontSize: 11 }}>→</span>
-        <TCInput value={sub.end} color="var(--accent)"
+        <TCInput fps={fps} value={sub.end} color="var(--accent)"
           onCommit={t => onChange({ ...sub, end: Math.max(t, sub.start + 0.1) })} />
       </div>
 
@@ -375,13 +413,11 @@ function SubtitleRow({ sub, idx, active, selected, compact, charMap, charList, o
       {/* Stats + actions */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 2, padding: '0 8px', flexShrink: 0 }}>
         <span style={{
-          fontSize: 11, color: cpsHigh ? 'var(--danger)' : 'var(--text4)',
-          fontFamily: 'var(--font-mono)', fontWeight: cpsHigh ? 700 : 400,
-          marginRight: 4, minWidth: 32,
-        }} title={`${cps.toFixed(1)} c/s`}>{dur.toFixed(2)}s</span>
+          fontSize: 11, fontFamily: 'var(--font-mono)', marginRight: 4, minWidth: 32, ...rateStyle,
+        }} title={rate.reason}>{dur.toFixed(2)}s</span>
         {icBtn('Aller au timecode', 'var(--info)', () => onSeek?.(sub.start), <Ic d={ROW_ICONS.goto} />)}
         {icBtn(sub.hidden ? 'Masqué' : 'Visible', sub.hidden ? 'var(--text4)' : 'var(--success)', () => onChange({ ...sub, hidden: !sub.hidden }), <Ic d={sub.hidden ? ROW_ICONS.eyeOff : ROW_ICONS.eye} />)}
-        {icBtn(sub.note ? `Note : ${sub.note}` : 'Ajouter une note', sub.note ? 'var(--accent)' : 'var(--text4)', () => setShowNote(v => !v), <Ic d={ROW_ICONS.note} />)}
+        {icBtn(sub.note ? `Note : ${sub.note}` : 'Ajouter une note', sub.note ? 'var(--accent)' : 'var(--text4)', () => setEditingNote(true), <Ic d={ROW_ICONS.note} />)}
         {icBtn('Supprimer', 'var(--danger)', onDelete, <Ic d={ROW_ICONS.trash} />)}
       </div>
     </div>
@@ -409,7 +445,7 @@ function NotationPopover({ tags, onInsert }) {
   )
 }
 
-export default function SubtitleEditor({ subtitles, onChange, currentTime = 0, onSeek, selectedIdx, setSelectedIdx, compact = false, onDelete, charFilter, clipId, charMap: charMapProp }) {
+export default function SubtitleEditor({ subtitles, onChange, currentTime = 0, onSeek, selectedIdx, setSelectedIdx, compact = false, onDelete, charFilter, clipId, charMap: charMapProp, fps = 25 }) {
   // charFilter (optional Set of character names): when non-empty, hide rows whose
   // character isn't in the set. Indices stay aligned with the unfiltered array
   // so update/delete callbacks still work.
@@ -553,7 +589,7 @@ export default function SubtitleEditor({ subtitles, onChange, currentTime = 0, o
             <div key={i} ref={active ? activeRef : null} style={{ opacity: sub.hidden ? 0.45 : 1 }}>
               <SubtitleRow
                 sub={sub} idx={i} active={active} selected={selectedIdx === i}
-                compact={compact}
+                compact={compact} fps={fps}
                 charMap={charMap} charList={charList}
                 onChange={(next, field) => update(i, next, field)}
                 onDelete={() => del(i)}

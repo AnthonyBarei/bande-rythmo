@@ -94,7 +94,7 @@ export default function Inspector({
       </div>
 
       <div style={{ flex: 1, overflow: 'auto', minHeight: 0, display: 'flex', flexDirection: 'column', paddingBottom: 'var(--toast-safe-bottom, 0px)' }}>
-        {rightTab === 'repliques' && <InspectorRepliques {...repliquesProps} />}
+        {rightTab === 'repliques' && <InspectorRepliques clipFps={clipFps} {...repliquesProps} />}
         {rightTab === 'voix' && <InspectorVoix {...voixProps} />}
         {rightTab === 'detection' && <InspectorDetection {...detectionProps} />}
         {rightTab === 'boucles' && <InspectorBoucles {...bouclesProps} />}
