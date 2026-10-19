@@ -225,7 +225,7 @@ async def go(cdp, section, clip=None, wait=2.5):
 CLICK = """(async () => {
   const t = %s;
   const els = [...document.querySelectorAll('button,[role=tab],[role=button]')];
-  const el = els.find(b => b.innerText.trim() === t) || els.find(b => b.innerText.trim().startsWith(t)) || els.find(b => b.title === t);
+  const el = els.find(b => b.innerText.trim() === t) || els.find(b => b.innerText.trim().startsWith(t)) || els.find(b => b.title === t) || els.find(b => b.title && b.title.startsWith(t));
   if (!el) return false;
   el.click();
   await new Promise(r => setTimeout(r, 500));
@@ -362,7 +362,7 @@ async def shoot_base(cdp):
     if await click(cdp, "Sous-titres"):
         await cdp.shot("editor/09-menu-sous-titres.png")
         await cdp.key("Escape", "Escape", 27)
-    if await click(cdp, "Resp."):
+    if await click(cdp, "Resp.") or await click(cdp, "Respirations"):
         await cdp.shot("editor/10-menu-respirations.png")
         await cdp.key("Escape", "Escape", 27)
     await cdp.js("document.activeElement && document.activeElement.blur(); 1")
