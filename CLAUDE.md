@@ -13,7 +13,7 @@
 # Backend
 cd backend
 venv\Scripts\activate
-uvicorn main:app --reload --port 8000
+uvicorn main:app --reload --port 8000 --timeout-graceful-shutdown 2
 
 # Frontend
 cd frontend
@@ -70,7 +70,10 @@ frontend/src/
     VideoEditor.jsx        # éditeur clip (job-mode batch)
     TimelineBar.jsx        # timeline zoom + minimap (import)
     BRTimeline.jsx         # nav plein-clip sous canvas BR (waveform/boucles/scenes/playhead)
-    VideoPlayer.jsx        # player custom réutilisable
+    import/                # ImportPlayer, SeekBar, PlayerControls (lecteur Importer)
+    band/                  # BandCanvas + bandRender/bandHit — rendu bande partagé Éditeur/Studio
+    editor/                # EditorHeader, VideoStage, Transport, TimelineNav, BandToolbar, Inspector + onglets
+    StudioScreen.jsx       # écran Studio (scène de doublage, pré-roll, A/B, écoute sur l'image)
     ClipsLibrary.jsx       # grille clips + filtres status + chips projet
     ClipCard.jsx           # card: thumbnail, rename, projet, Doubler / ▶ / MP3 / GIF / ✕
     DubbingWorkspace.jsx   # BR pro: SMPTE, détection, boucles, undo/redo, proxy, traduction, scènes, auto-save
@@ -88,6 +91,7 @@ frontend/src/
 - ~~BR décalée ~1s~~ : `-ss` après `-i` dans extract_segment (fix appliqué). Slider `brOffset` (-2s/+2s) = échappatoire.
 - ~~Deadlock jobs ffmpeg~~ : `run_ffmpeg_with_progress` stderr PIPE non drainé → DEVNULL (fix).
 - Vite proxy doit cibler `http://127.0.0.1:8000` (pas `localhost`) — Windows IPv6
+- `uvicorn --reload` figé sous Windows : au reload il attend la fermeture de toutes les connexions (WebSocket des jobs, streaming vidéo) → le worker ne redémarre jamais et l'API ne répond plus. Toujours lancer avec `--timeout-graceful-shutdown 2`.
 
 ## Export MP4 + BR — bonnes pratiques (texte défilant lisible)
 
@@ -235,15 +239,20 @@ Cursor TC chip : `HH:MM:SS:FF` à `clip.fps` (accent, bordure accent).
 Format `croisille` disponible via `POST /api/export/export`.
 
 ## Polices BR (picker)
+Liste unique `frontend/src/config/fonts.js` (Réglages, barre Éditeur, Exporter — même `Select`) ;
+rendu canevas `band/bandRender.js` (`BR_FONTS`, graisse 600) ; export `br_renderer.resolve_br_font_path`.
 ```
-atkinson  → AtkinsonHyperlegible-Bold.ttf  (défaut)
-lisible   → ShantellSans.ttf               (manuscrite lisible, à bundler)
-cursive   → Caveat.ttf                     (manuscrite authentique)
-inter     → Inter.ttf
-jetbrains → JetBrainsMono-Bold.ttf
+cursive   → Manuscrite → Caveat.ttf
+atkinson  → Lisible    → AtkinsonHyperlegible-Bold.ttf  (fallback générique)
+lisible   → Feutre     → ShantellSans.ttf               (à bundler → repli atkinson + warning)
+plex      → Neutre     → IBMPlexSans-SemiBold.ttf       (à bundler → repli Inter.ttf + warning)
+jetbrains → Mono       → JetBrainsMono-Bold.ttf
+inter     → (legacy, plus proposé) → Inter.ttf — projets/réglages existants ; n'apparaît
+            dans un Select que tant qu'il est la valeur sélectionnée
+u-…       → police uploadée (routes/fonts.resolve_font_path) → repli atkinson + warning
 ```
-Web: Shantell Sans chargé depuis Google Fonts dans `index.html`.
-Backend: `_BR_FONT_FILES["lisible"]` → fallback atkinson si fichier absent.
+Web: IBM Plex Sans / Shantell Sans / Inter (legacy) chargés depuis Google Fonts dans `index.html`.
+Backend: fichier absent → `_BR_FONT_FALLBACKS` (warning loggé une fois par id, `br.renderer`).
 
 ## Roadmap
 
@@ -254,7 +263,7 @@ Backend: `_BR_FONT_FILES["lisible"]` → fallback atkinson si fichier absent.
 - ClipsLibrary refonte (filtres status, cards)
 - Set d'icônes SVG unifié (Icons.jsx)
 - Export MP3/WAV
-- VideoPlayer custom (composant)
+- VideoPlayer custom (composant) — remplacé par import/ImportPlayer (redesign v2)
 - Intégration Plex (PlexBrowser + route, restyle complet)
 - Générateur de memes
 - **BR Pro (2026-05-30)** : SMPTE fmtTC, détection layer, START/BIP/PI, boucles, line flags, Clip.fps, DetX pro, Croisillé, police Shantell
@@ -316,9 +325,35 @@ Backend: `_BR_FONT_FILES["lisible"]` → fallback atkinson si fichier absent.
   - **UI Mixage** (ExportPanel) : prises cochables + gain −12..+12 dB, VO
     duck/muette, Remplacer l'audio / Instrumental / reset, export 1-clic
 
+### Fait — Usable v1 (2026-10-14, branche `feat/usable-v1`)
+- Export **Dubpack** (pack Choicer Voicer : OGV Theora + 1 ogg/png/txt par réplique, ZIP) — `dubpack_service.py`, `POST /api/export/dubpack-job`
+- Audit complet backend/éditeur/shell (~80 fixes) — détail + suite ordonnée : `REMAKE_PLAN.md` §5b
+- Annulation de job = `kill_process_tree` (ffmpeg Chocolatey = shim → l'enfant survivait à `kill()`)
+- Ids clip validés (middleware anti `..`/`\` + `SafeId` sur `segment_id`)
+- Rechargement page → restaure la vue + le clip ouvert (`sessionStorage` `br-nav`)
+
+### Fait — Redesign v2 (2026-10-14 → 2026-10-19)
+- Port intégral du prototype Claude Design (`design/design_handoff_redesign_v2/`), 8 rounds de revue + revue finale acceptée
+- Détail par écran : `CHANGELOG_REDESIGN.md` ; captures finales `design/app_screens_2026-10-14_final/`
+- Captures reproductibles : `backend/venv/Scripts/python.exe design/app_screens_2026-10-14/shoot.py <out> --extras --mock-states [--size WxH]`
+
 ### Reste à faire (non démarré)
 - **Phase 2 (REMAKE_PLAN)** : split DubbingWorkspace (3 650 lignes) en hooks,
   export côté serveur (DB source of truth), Vitest
 - **Gestion utilisateurs** : auth (JWT/session), multi-user, contenu par user
 - **Intégrations tierces** : Stremio (lecture vidéo), qBittorrent (download → import auto)
 - `.rythmo.txt` import (DetX XML déjà couvert)
+
+### Idées — gamification (plus tard, [TryToAct](https://trytoact.com/))
+Boucle du jeu, pas à construire maintenant. Dépend de la gestion utilisateurs.
+L'app reste l'outil studio ; ça serait une couche jeu par-dessus clips + prises.
+L'export Dubpack (pack Choicer Voicer) est déjà le format « créer un pack ».
+
+1. **Choisir une scène** — bibliothèque de packs (films/séries) ou sa propre vidéo.
+2. **Enregistrer** — une prise par réplique, réécoutes libres (prises + A/B déjà là).
+3. **Solo ou multijoueur live** — s'entraîner seul, ou défier des amis sur la même scène en direct.
+4. **Partager** — publier le pack pour que d'autres le doublent (mode créateur).
+5. **Classement** — meilleurs doubleurs, et packs les plus joués. Découverte des nouveaux doublages.
+
+Contraintes annoncées côté TryToAct, à garder en tête si on s'en inspire :
+gratuit (compte, pas d'abonnement), navigateur sans install, communauté FR.

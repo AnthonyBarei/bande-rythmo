@@ -58,6 +58,7 @@ backend/memes/
 backend/clips.json
 backend/sources/*
 backend/plex_config.json
+backend/takes/
 
 # --- Tooling ---
 .claude/settings.local.json
@@ -65,6 +66,11 @@ backend/plex_config.json
 
 # --- DBs ---
 *.db
+*.db-shm
+*.db-wal
+*.db-journal
 *.sqlite3
 *.sqlite
 *.sqlite3
+# --- Design capture bundles (regenerable) ---
+design/*.zip

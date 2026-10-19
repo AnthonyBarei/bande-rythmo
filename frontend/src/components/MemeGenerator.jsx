@@ -1,7 +1,38 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react'
-import { Icon, ICONS } from '../Icons'
-import { Btn, Segmented, ScreenHeader } from '../ui'
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { T, Icon, ICONS, Btn, Chip, Segmented, Select, ScreenHeader, alpha, pressable } from '../ui'
 import { useProgress } from '../ProgressContext'
+import { TRACK_HEXES } from '../config/tracks'
+import { fmtSMPTE } from '../utils/timecode'
+import { defaultRange } from '../utils/gifRange'
+import SeekBar from './import/SeekBar'
+import JobError from './JobError'
+
+// F12 — short videos are imported inline as clips of this project.
+const MEME_PROJECT = 'Memes & extraits'
+const SHORT_VIDEO_MAX_S = 60
+const IMAGE_RE = /\.(png|jpe?g|webp|gif)$/i
+const VIDEO_RE = /\.(mp4|m4v|mov|webm|mkv|avi)$/i
+const isVideoFile = f => (f.type || '').startsWith('video/') || VIDEO_RE.test(f.name)
+
+function probeVideoDuration(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file)
+    const v = document.createElement('video')
+    const release = () => { v.removeAttribute('src'); v.load(); URL.revokeObjectURL(url) }
+    v.preload = 'metadata'
+    v.muted = true
+    v.onloadedmetadata = () => {
+      const d = v.duration
+      release()
+      if (Number.isFinite(d) && d > 0) resolve(d)
+      else reject(new Error('durée de la vidéo inconnue'))
+    }
+    v.onerror = () => { release(); reject(new Error('vidéo illisible par le navigateur')) }
+    v.src = url
+  })
+}
+
+const fmtDur = s => `${s.toFixed(1)}s`
 
 const FONTS = [
   { id: 'impact',   label: 'Impact',  css: 'Impact, "Arial Black", sans-serif' },
@@ -33,15 +64,38 @@ function wrapText(ctx, text, maxW) {
   return lines.length ? lines : [text]
 }
 
-const fmtTime = t => {
-  const m = Math.floor(t / 60)
-  const s = (t % 60).toFixed(1).padStart(4, '0')
-  return `${m}:${s}`
-}
+const DEFAULT_FPS = 25
+const MODE_ICON = { image: ICONS.film, video: ICONS.layers, audio: ICONS.volume }
 
-export default function MemeGenerator({ clip = null, onBack = null, initialTab = null }) {
-  const segmentUrl = clip?.segment_path ? `/${clip.segment_path}` : null
+export default function MemeGenerator({
+  clip: clipProp = null, initialTab = null,
+  clips: clipsProp, onSelectClip, onClipsCreated, onOpenInImporter,
+}) {
   const progress = useProgress()
+
+  // Source clip: the one handed in by App, unless the user picked another in the header Select.
+  const [fetchedClips, setFetchedClips] = useState([])
+  const [createdClips, setCreatedClips] = useState([])
+  const [pickedId, setPickedId] = useState(null)
+  const [importing, setImporting] = useState(false)
+
+  const clipList = useMemo(() => {
+    const base = clipsProp || fetchedClips
+    const ids = new Set(base.map(c => c.clip_id))
+    const all = [...createdClips.filter(c => !ids.has(c.clip_id)), ...base]
+    if (clipProp && !all.some(c => c.clip_id === clipProp.clip_id)) all.unshift(clipProp)
+    return [...all].sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
+  }, [clipsProp, fetchedClips, createdClips, clipProp])
+
+  const clip = pickedId ? (clipList.find(c => c.clip_id === pickedId) || null) : clipProp
+  const segmentUrl = clip?.segment_path ? `/${clip.segment_path}` : null
+
+  // Same project → color mapping as the library's project filter.
+  const clipOptions = useMemo(() => {
+    const projects = [...new Set(clipList.map(c => c.project).filter(Boolean))].sort((a, b) => a.localeCompare(b))
+    const color = p => p ? TRACK_HEXES[projects.indexOf(p) % TRACK_HEXES.length] : T.text4
+    return clipList.map(c => ({ v: c.clip_id, l: c.name || `Clip ${c.clip_id.slice(0, 6)}`, dot: color(c.project) }))
+  }, [clipList])
 
   // MEME_PLEX_HANDOFF §2 entry intent:
   //   ClipCard "GIF" → initialTab='video' (GIF tab)
@@ -49,16 +103,17 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
   //   Drop zone (no clip) → 'image'
   // Persist last-used tab per session (sessionStorage), but explicit prop wins.
   const [sourceTab, setSourceTab] = useState(() => {
+    if (!clip) return 'image'   // Sidebar entry (no clip) → Image mode
     if (initialTab) return initialTab
     try {
       const last = sessionStorage.getItem('meme-last-tab')
       if (last) return last
-    } catch {}
+    } catch { /* storage unavailable → default tab */ }
     return 'image'
   })
   // Persist tab selection across session.
   useEffect(() => {
-    try { sessionStorage.setItem('meme-last-tab', sourceTab) } catch {}
+    try { sessionStorage.setItem('meme-last-tab', sourceTab) } catch { /* storage unavailable */ }
   }, [sourceTab])
   const [imageUrl, setImageUrl] = useState(null)
   const [imageName, setImageName] = useState(null)
@@ -73,11 +128,25 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [resultUrl, setResultUrl] = useState(null)
+  // FIXES_R5 #1 — a failed Atelier job / export is shown inline only: { err, retry }.
+  const [jobError, setJobError] = useState(null)
+  const gifJobKeyRef = useRef(null)
+
+  useEffect(() => {
+    if (clipsProp) return
+    let live = true
+    fetch('/api/clips/')
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() })
+      .then(d => { if (live) setFetchedClips(d || []) })
+      .catch(e => { console.error('Atelier: liste des clips', e); if (live) setError('Liste des clips indisponible : ' + e.message) })
+    return () => { live = false }
+  }, [clipsProp])
 
   // Shared video state
   const [videoTime, setVideoTime] = useState(0)
   const [videoDuration, setVideoDuration] = useState(0)
   const [videoReady, setVideoReady] = useState(false)
+  const [videoAr, setVideoAr] = useState(16 / 9)
 
   // GIF / Audio range selection state
   const [inPoint, setInPoint] = useState(0)
@@ -85,11 +154,17 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
   const [gifLoading, setGifLoading] = useState(false)
   const [audioLoading, setAudioLoading] = useState(false)
   const [playing, setPlaying] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
+  // Until the user sets IN / OUT, the range follows the playhead (±3 s).
+  const rangeTouchedRef = useRef(false)
+  const fps = clip?.fps > 0 ? clip.fps : DEFAULT_FPS
 
   const canvasRef = useRef(null)
   const imgRef = useRef(null)
   const fileInputRef = useRef(null)
-  const dropRef = useRef(null)
+  const videoInputRef = useRef(null)
+  const stageRef = useRef(null)
+  const canvasWrapRef = useRef(null)
   const videoRef = useRef(null)
   const timelineRef = useRef(null)
   const textsRef = useRef(texts)
@@ -101,16 +176,37 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
   selectedIdRef.current = selectedId
   draggingRef.current = dragging
 
+  // Reset only when the clip actually changes — running on mount would
+  // override initialTab (ClipCard "GIF" must land on the GIF tab).
+  const prevPropIdRef = useRef(clipProp?.clip_id)
   useEffect(() => {
+    if (prevPropIdRef.current === clipProp?.clip_id) return
+    prevPropIdRef.current = clipProp?.clip_id
+    setPickedId(null)
+    setSourceTab(clipProp && initialTab ? initialTab : 'image')
+  }, [clipProp?.clip_id, initialTab])
+
+  // Any source swap (App prop or header Select) drops the previous clip's frame / range.
+  const prevClipIdRef = useRef(clip?.clip_id)
+  useEffect(() => {
+    if (prevClipIdRef.current === clip?.clip_id) return
+    prevClipIdRef.current = clip?.clip_id
     setImageUrl(null)
     setResultUrl(null)
     setVideoTime(0)
     setVideoDuration(0)
     setVideoReady(false)
+    setVideoAr(16 / 9)
     setInPoint(0)
     setOutPoint(0)
-    setSourceTab('image')
+    setPlaying(false)
+    setJobError(null)
+    rangeTouchedRef.current = false
   }, [clip?.clip_id])
+
+  // Release replaced blob URLs (frames, GIFs, results can weigh several MB).
+  useEffect(() => () => { if (imageUrl?.startsWith('blob:')) URL.revokeObjectURL(imageUrl) }, [imageUrl])
+  useEffect(() => () => { if (resultUrl?.startsWith('blob:')) URL.revokeObjectURL(resultUrl) }, [resultUrl])
 
   useEffect(() => {
     if (!imageUrl) { setImageDims(null); imgRef.current = null; isGifRef.current = false; return }
@@ -170,15 +266,29 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
     }
   }, [])
 
+  // Fit the canvas inside the editor stage (contain), redraw on resize.
   useEffect(() => {
     if (!imageDims) return
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const maxW = Math.min(canvas.parentElement?.clientWidth || 800, 900)
-    canvas.width = maxW
-    canvas.height = Math.round(maxW * (imageDims.h / imageDims.w))
-    draw()
-  }, [imageDims, draw])
+    const stage = stageRef.current
+    if (!stage) return
+    const fit = () => {
+      const canvas = canvasRef.current
+      const wrap = canvasWrapRef.current
+      if (!canvas || !wrap) return
+      const ar = imageDims.w / imageDims.h
+      const w = Math.max(1, Math.floor(Math.min(stage.clientWidth, stage.clientHeight * ar)))
+      const h = Math.max(1, Math.round(w / ar))
+      canvas.width = w
+      canvas.height = h
+      wrap.style.width = `${w}px`
+      wrap.style.height = `${h}px`
+      draw()
+    }
+    fit()
+    const ro = new ResizeObserver(fit)
+    ro.observe(stage)
+    return () => ro.disconnect()
+  }, [imageDims, draw, resultUrl])
 
   useEffect(() => { draw() }, [texts, selectedId, draw])
 
@@ -292,8 +402,10 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
       ? { ...t, x: Math.max(0, Math.min(100, t.x + dx)), y: Math.max(0, Math.min(100, t.y + dy)) }
       : t))
   }
-  // Arrow-key nudge for selected layer when not editing text.
+  // Arrow-key nudge for selected layer — only while the editor canvas is shown,
+  // otherwise arrows also seek the player and move a hidden layer.
   useEffect(() => {
+    if (!imageUrl || resultUrl) return
     function onKey(e) {
       if (!selectedIdRef.current) return
       if (['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return
@@ -309,22 +421,108 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  }, [imageUrl, resultUrl])
 
   function handleFile(f) {
     if (!f) return
-    if (!/\.(png|jpe?g|webp|gif)$/i.test(f.name)) { setError('Format non supporté (PNG, JPG, WEBP, GIF).'); return }
+    if (isVideoFile(f)) { handleVideoFile(f); return }
+    if (!IMAGE_RE.test(f.name)) { setError('Format non supporté (PNG, JPG, WEBP, GIF, MP4).'); return }
     setError(null); setResultUrl(null)
     setImageName(f.name)
     setImageUrl(URL.createObjectURL(f))
   }
 
+  // Clip changes made here keep the current mode: mark them as already seen
+  // so the App-prop reset effect (entry intent) does not fire.
+  function selectClip(id) {
+    if (!id || id === clip?.clip_id) return
+    setError(null)
+    setPickedId(id)
+    const picked = clipList.find(c => c.clip_id === id)
+    if (!picked) return
+    prevPropIdRef.current = picked.clip_id
+    onSelectClip?.(picked)
+  }
+
+  function closeSource() {
+    setError(null)
+    setPickedId(null)
+    prevPropIdRef.current = undefined
+    onSelectClip?.(null)
+  }
+
+  // F12: ≤ 60 s → imported inline as a clip of MEME_PROJECT (no transcription) and
+  // selected; longer → handed to Importer to be cut.
+  async function handleVideoFile(f) {
+    if (importing) return
+    setError(null)
+    let duration
+    try {
+      duration = await probeVideoDuration(f)
+    } catch (e) {
+      setError(`Impossible de lire « ${f.name} » : ${e.message}.`)
+      return
+    }
+    if (duration > SHORT_VIDEO_MAX_S) {
+      if (onOpenInImporter) onOpenInImporter(f)
+      else setError(`Vidéo de ${fmtDur(duration)} (> ${SHORT_VIDEO_MAX_S} s) — ouvrez-la dans Importer pour la découper.`)
+      return
+    }
+    setImporting(true)
+    try {
+      const form = new FormData()
+      form.append('file', f, f.name)
+      const name = f.name.replace(/\.[^.]+$/, '').trim().slice(0, 120)
+      form.append('clips_json', JSON.stringify([{ name, start: 0, end: duration }]))
+      const res = await fetch('/api/clips/batch', { method: 'POST', body: form })
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail || `HTTP ${res.status}`) }
+      let created = (await res.json())[0]
+      if (!created) throw new Error('aucun clip créé')
+      try {
+        const pr = await fetch(`/api/clips/${created.clip_id}/project`, {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ project: MEME_PROJECT }),
+        })
+        if (!pr.ok) throw new Error(`HTTP ${pr.status}`)
+        created = await pr.json()
+      } catch (e) {
+        console.error('Atelier: projet du clip importé', e)
+        setError(`Clip importé, mais pas rangé dans « ${MEME_PROJECT} » : ${e.message}`)
+      }
+      setCreatedClips(prev => [created, ...prev.filter(c => c.clip_id !== created.clip_id)])
+      onClipsCreated?.([created])
+      setPickedId(created.clip_id)
+      prevPropIdRef.current = created.clip_id
+      onSelectClip?.(created)
+    } catch (e) {
+      setError('Import de la vidéo échoué : ' + e.message)
+    } finally {
+      setImporting(false)
+    }
+  }
+
   function onVideoLoaded(e) {
     const dur = e.target.duration
+    const { videoWidth: vw, videoHeight: vh } = e.target
+    if (vw > 0 && vh > 0) setVideoAr(vw / vh)
     setVideoDuration(dur)
-    setOutPoint(prev => prev === 0 ? dur : prev)
+    if (!rangeTouchedRef.current) {
+      const r = defaultRange(e.target.currentTime, dur)
+      setInPoint(r.in)
+      setOutPoint(r.out)
+    }
     setVideoReady(true)
   }
+
+  // Entering GIF / Audio with an untouched range recentres it on the playhead.
+  useEffect(() => {
+    if (sourceTab === 'image' || rangeTouchedRef.current) return
+    const v = videoRef.current
+    if (!v || !Number.isFinite(v.duration) || v.duration <= 0) return
+    const r = defaultRange(v.currentTime, v.duration)
+    setInPoint(r.in)
+    setOutPoint(r.out)
+  }, [sourceTab])
 
   function seekVideo(t) {
     setVideoTime(t)
@@ -339,7 +537,7 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
   }
 
   useEffect(() => {
-    if (sourceTab !== 'video' && sourceTab !== 'audio') return
+    if (!segmentUrl || imageUrl) return
     function onKey(e) {
       if (['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return
       if (e.key === 'ArrowLeft') { e.preventDefault(); seekRelative(e.shiftKey ? -1 : -0.1) }
@@ -348,13 +546,14 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [sourceTab, videoDuration])
+  }, [segmentUrl, imageUrl, videoDuration, inPoint, outPoint, sourceTab])
 
   function togglePlay() {
     const v = videoRef.current
     if (!v) return
     if (v.paused) {
-      if (v.currentTime >= outPoint) v.currentTime = inPoint
+      // GIF / Audio preview plays the selection; Image mode plays freely.
+      if (sourceTab !== 'image' && (v.currentTime >= outPoint || v.currentTime < inPoint)) v.currentTime = inPoint
       v.play()
     } else {
       v.pause()
@@ -364,7 +563,8 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
   function onGifTimeUpdate(e) {
     const t = e.target.currentTime
     setVideoTime(t)
-    if (t >= outPoint) {
+    // Only playback wraps at OUT — seeking past it must stay free to pick a new range.
+    if (!e.target.paused && t >= outPoint) {
       e.target.pause()
       e.target.currentTime = inPoint
       setPlaying(false)
@@ -391,6 +591,7 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
     if (duration <= 0) { setError('OUT doit être après IN'); return }
     setGifLoading(true)
     setError(null)
+    setJobError(null)
     const body = {
       segment_id: clip.clip_id, subtitles: [],
       format: 'gif', in_point: inPoint, out_point: outPoint,
@@ -404,13 +605,25 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
       const { job_id } = await res.json()
       return job_id
     }
+    const failed = err => { setJobError({ err, retry: retryGif }); setGifLoading(false) }
+    // Activité's Réessayer also goes through here: a refused restart shows inline.
+    const retryJob = async () => {
+      try {
+        return await fireJob()
+      } catch (e) {
+        failed(e)
+        throw e
+      }
+    }
     try {
       const jobId = await fireJob()
-      progress.start({
+      const handle = progress.start({
         kind: 'export-gif',
+        clipId: clip.clip_id,
         title: 'GIF — génération',
         jobId,
-        retry: fireJob,
+        retry: retryJob,
+        toast: false,
         onDone: (blob) => {
           if (blob && blob instanceof Blob) {
             setImageName(`${clip.name}_${inPoint.toFixed(1)}s-${outPoint.toFixed(1)}s.gif`)
@@ -419,19 +632,34 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
           }
           setGifLoading(false)
         },
-        onError: (err) => { setError('Erreur GIF : ' + err.message); setGifLoading(false) },
+        onError: failed,
         onCancel: () => { setError('GIF annulé.'); setGifLoading(false) },
       })
+      gifJobKeyRef.current = handle.key
     } catch (e) {
-      setError('Erreur GIF : ' + e.message)
-      setGifLoading(false)
+      gifJobKeyRef.current = null
+      failed(e)
     }
+  }
+
+  // Inline Réessayer: restart the failed job in place (one Activité row), or
+  // start a new one when it is gone (dismissed, or never started).
+  function retryGif() {
+    const key = gifJobKeyRef.current
+    if (key && progress.jobs.some(j => j.key === key && j.status === 'error')) {
+      setJobError(null)
+      setGifLoading(true)
+      progress.retry(key)
+      return
+    }
+    createGif()
   }
 
   async function createAudio(format) {
     if (!clip) return
     setAudioLoading(true)
     setError(null)
+    setJobError(null)
     try {
       if (outPoint <= inPoint) throw new Error('OUT doit être après IN')
       const res = await fetch('/api/export/export', {
@@ -451,10 +679,12 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
       const a = document.createElement('a')
       a.href = url
       a.download = `${clip.name}_${inPoint.toFixed(1)}s-${outPoint.toFixed(1)}s.${format}`
+      document.body.appendChild(a)
       a.click()
-      URL.revokeObjectURL(url)
+      a.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
     } catch (e) {
-      setError('Erreur audio : ' + e.message)
+      setJobError({ err: e, retry: () => createAudio(format) })
     } finally {
       setAudioLoading(false)
     }
@@ -498,427 +728,398 @@ export default function MemeGenerator({ clip = null, onBack = null, initialTab =
     setError(null)
   }
 
+  // Drag along the range track: seek, or move the IN / OUT handles.
+  function trackDrag(e, apply) {
+    e.preventDefault()
+    e.stopPropagation()
+    const el = timelineRef.current
+    if (!el) return
+    const getT = ev => {
+      const rect = el.getBoundingClientRect()
+      return Math.max(0, Math.min(videoDuration, (ev.clientX - rect.left) / rect.width * videoDuration))
+    }
+    apply(getT(e))
+    const onMove = ev => apply(getT(ev))
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }
+
+  const dragIn = t => { rangeTouchedRef.current = true; const v = Math.max(0, Math.min(t, outPoint - 0.1)); setInPoint(v); seekVideo(v) }
+  const dragOut = t => { rangeTouchedRef.current = true; const v = Math.min(videoDuration, Math.max(t, inPoint + 0.1)); setOutPoint(v); seekVideo(v) }
+  const markDrag = (which, t) => (which === 'in' ? dragIn : dragOut)(t)
+  const pauseVideo = () => videoRef.current?.pause()
+  const scrubTo = t => { setVideoTime(t); if (videoRef.current) videoRef.current.currentTime = t }
+
   const sel = texts.find(t => t.id === selectedId)
+  const selIndex = texts.findIndex(t => t.id === selectedId)
   const gifDuration = Math.max(0, outPoint - inPoint).toFixed(1)
+  const editing = !!imageUrl
+  const isGif = (imageName || '').toLowerCase().endsWith('.gif')
+  const pct = t => `${(t / (videoDuration || 1)) * 100}%`
+  const blue = T.info
+
+  const errorBox = (error || jobError) && (<>
+    {error && (
+      <div style={{ padding: '8px 10px', background: alpha(T.danger, '14'), color: T.danger, borderRadius: T.r.ctl, fontSize: T.fs.xs, border: `1px solid ${alpha(T.danger, '44')}` }}>
+        {error}
+      </div>
+    )}
+    {jobError && <JobError error={jobError.err} onRetry={jobError.retry} />}
+  </>)
+
+  const noClip = !segmentUrl
+
+  const transport = (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+      <Btn size="sm" icon={ICONS.skipBack} onClick={() => seekRelative(-1)} title="−1 s (Maj+←)" />
+      <Btn size="sm" icon={ICONS.prevFrame} onClick={() => seekRelative(-0.1)} title="−0,1 s (←)" />
+      <Btn size="sm" variant="solid" icon={playing ? ICONS.pause : ICONS.play} onClick={togglePlay} title="Lecture / pause (Espace)" />
+      <Btn size="sm" icon={ICONS.nextFrame} onClick={() => seekRelative(0.1)} title="+0,1 s (→)" />
+      <Btn size="sm" icon={ICONS.skipFwd} onClick={() => seekRelative(1)} title="+1 s (Maj+→)" />
+    </div>
+  )
+
+  const clipSelect = (
+    <Select width={250} value={clip?.clip_id ?? null} onChange={selectClip} options={clipOptions} placeholder="Choisir un clip…" />
+  )
+  const uploadBtn = (
+    <Btn variant="outline" icon={ICONS.upload} onClick={() => videoInputRef.current?.click()} disabled={importing}
+      title={importing ? 'Import de la vidéo en cours…' : `Importer une vidéo de ${SHORT_VIDEO_MAX_S} s max. comme clip « ${MEME_PROJECT} »`}>
+      {importing ? 'Import…' : 'Vidéo courte…'}
+    </Btn>
+  )
+  const dropProps = {
+    onDragOver: e => { e.preventDefault(); setDragOver(true) },
+    onDragLeave: () => setDragOver(false),
+    onDrop: e => { e.preventDefault(); setDragOver(false); handleFile(e.dataTransfer.files?.[0]) },
+  }
+
+  // FIXES_R4 #3 — no source: one compact 16:9 card, no mode actions.
+  const sourceWhat = { image: 'capturer un frame', video: 'extraire un GIF', audio: 'exporter l’audio' }[sourceTab]
+  const emptySource = (
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+      <div {...dropProps} style={{
+        width: 'min(100%, 720px, calc((100vh - 330px) * 16 / 9))', aspectRatio: '16/9', borderRadius: T.r.card,
+        border: `2px dashed ${dragOver ? T.accent : T.border2}`, background: dragOver ? alpha(T.accent, '0d') : T.bg2, transition: 'border-color .15s, background .15s',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, padding: 24, textAlign: 'center',
+      }}>
+        <div style={{ width: 52, height: 52, borderRadius: 14, background: T.surface2, border: `1px solid ${T.border2}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Icon d={MODE_ICON[sourceTab] || ICONS.film} size={22} stroke={T.text2} />
+        </div>
+        <div>
+          <div style={{ fontSize: T.fs.md, fontWeight: 600, color: T.text }}>Choisissez une source</div>
+          <div style={{ fontSize: T.fs.xs, color: T.text3, marginTop: 4 }}>pour {sourceWhat}</div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
+          {clipSelect}
+          {uploadBtn}
+        </div>
+        <div style={{ fontSize: T.fs.micro, color: T.text3 }}>
+          ou glissez une image / vidéo ici · MP4 ≤ {SHORT_VIDEO_MAX_S} s, plus longue → <span style={{ color: T.accent }}>Importer</span>
+        </div>
+      </div>
+      {error && <div style={{ width: 'min(100%, 720px, calc((100vh - 330px) * 16 / 9))' }}>{errorBox}</div>}
+    </div>
+  )
+
+  // FIXES_R4 #4 — player sized to the video (16:9 until metadata), capped so its
+  // controls stay on screen: no black bars, no scrolling.
+  const videoStub = footer => (
+    <div style={{
+      background: '#000', borderRadius: T.r.card, border: `1px solid ${T.border}`, overflow: 'hidden', display: 'flex', flexDirection: 'column',
+      width: `min(100%, calc((100vh - 400px) * ${videoAr}))`, justifySelf: 'center',
+    }}>
+      <div onClick={togglePlay} style={{ aspectRatio: String(videoAr), position: 'relative', cursor: 'pointer', background: '#000' }}>
+        <video
+          key={segmentUrl}
+          ref={videoRef}
+          src={segmentUrl}
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+          onLoadedMetadata={onVideoLoaded}
+          onTimeUpdate={e => sourceTab === 'image' ? setVideoTime(e.target.currentTime) : onGifTimeUpdate(e)}
+          onPlay={() => setPlaying(true)}
+          onPause={() => setPlaying(false)}
+        />
+      </div>
+      {footer}
+    </div>
+  )
+
+  const imageFooter = (
+    <div style={{ padding: '12px 14px', borderTop: `1px solid ${T.border}`, display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div onMouseDown={e => trackDrag(e, seekVideo)} style={{ padding: '3px 0', cursor: 'pointer' }}>
+        <div ref={timelineRef} style={{ height: 4, background: T.surface3, borderRadius: 2, position: 'relative' }}>
+          <div style={{ width: pct(videoTime), height: '100%', background: T.accent, borderRadius: 2 }} />
+          <div style={{ position: 'absolute', left: pct(videoTime), top: -3, width: 10, height: 10, borderRadius: '50%', background: T.accent, transform: 'translateX(-50%)' }} />
+        </div>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontFamily: T.fontMono, fontSize: 11, color: T.text3 }}>
+        <span>{fmtSMPTE(videoTime, fps)}</span>
+        <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>{transport}</div>
+        <span>{fmtSMPTE(videoDuration, fps)}</span>
+      </div>
+    </div>
+  )
+
+  // FIXES_R5 #4 — the Importer's seek bar: IN→OUT in info 33 with an accent
+  // OUT edge; dragging an edge moves IN / OUT, anywhere else seeks.
+  const rangeFooter = (<>
+    <SeekBar t={videoTime} duration={videoDuration} fps={fps} markIn={inPoint} markOut={outPoint}
+      onScrubStart={pauseVideo} onScrub={scrubTo} onScrubEnd={() => {}} onMarkDrag={markDrag} />
+    <div style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8, fontFamily: T.fontMono, fontSize: 11, background: T.surface }}>
+      <Chip soft color={blue} onClick={() => dragIn(videoTime)}>[ IN {fmtSMPTE(inPoint, fps)}</Chip>
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, color: T.text3 }}>
+        {transport}
+        <span>{fmtSMPTE(videoTime, fps)} · {gifDuration}s</span>
+      </div>
+      <Chip soft color={T.accent} onClick={() => dragOut(videoTime)}>OUT {fmtSMPTE(outPoint, fps)} ]</Chip>
+    </div>
+  </>)
+
+  const hint = text => <p style={{ fontSize: T.fs.xs, color: T.text3, lineHeight: 1.6, margin: 0 }}>{text}</p>
+
+  const dropZone = (
+    <div
+      role="button" tabIndex={0}
+      onClick={() => fileInputRef.current?.click()}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInputRef.current?.click() } }}
+      {...dropProps}
+      style={{ padding: 22, border: `2px dashed ${dragOver ? T.accent : T.border2}`, borderRadius: T.r.card, textAlign: 'center', color: T.text3, cursor: 'pointer', transition: 'border-color .2s' }}>
+      <Icon d={ICONS.upload} size={26} stroke={T.text3} style={{ margin: '0 auto' }} />
+      <div style={{ fontSize: T.fs.xs, fontWeight: 600, marginTop: 8, color: T.text2 }}>{importing ? 'Import de la vidéo…' : 'Ou utiliser votre image'}</div>
+      <div style={{ fontSize: 11, marginTop: 2 }}>PNG · JPG · WEBP · GIF</div>
+    </div>
+  )
+
+  let sourcePanel
+  // Why a source action is unavailable — shown as the disabled button's tooltip.
+  const rangeBlocker = busyMsg => busyMsg ? busyMsg
+    : !videoReady ? 'Chargement de la vidéo…'
+      : outPoint <= inPoint ? 'Le point OUT doit être après IN' : undefined
+  if (sourceTab === 'video') {
+    const gifTitle = rangeBlocker(gifLoading && 'GIF en cours de génération…')
+    sourcePanel = (<>
+      <Btn variant="primary" size="lg" full icon={ICONS.layers} onClick={createGif} disabled={!!gifTitle} title={gifTitle}>
+        {gifLoading ? 'Génération GIF…' : 'Créer le GIF'}
+      </Btn>
+      {errorBox}
+      {hint("Réglez IN / OUT puis créez le GIF. Il s'ouvre dans l'éditeur de texte.")}
+    </>)
+  } else if (sourceTab === 'audio') {
+    const audioTitle = rangeBlocker(audioLoading && 'Export audio en cours…')
+    const audioDisabled = !!audioTitle
+    sourcePanel = (<>
+      <Btn variant="primary" size="lg" full icon={ICONS.download} onClick={() => createAudio('mp3')} disabled={audioDisabled} title={audioTitle}>
+        {audioLoading ? 'Export…' : 'Télécharger MP3'}
+      </Btn>
+      <Btn variant="solid" full icon={ICONS.download} onClick={() => createAudio('wav')} disabled={audioDisabled} title={audioTitle}>Télécharger WAV</Btn>
+      {errorBox}
+      {hint("Exporte l'audio de la sélection. MP3 compact, WAV lossless.")}
+    </>)
+  } else {
+    sourcePanel = (<>
+      <Btn variant="primary" size="lg" full icon={ICONS.film} onClick={captureFrame} disabled={!videoReady}
+        title={!videoReady ? 'Chargement de la vidéo…' : 'Capturer l’image affichée pour en faire un meme'}>Capturer ce frame</Btn>
+      {errorBox}
+      {hint('Naviguez puis capturez le frame souhaité — ou glissez votre propre image.')}
+      {dropZone}
+    </>)
+  }
+
+  const swatches = (colors, value, key) => colors.map(c => (
+    <button data-rd key={c} title={c} onClick={() => updateLayer(selectedId, { [key]: c })} style={{
+      width: 22, height: 22, borderRadius: 5, background: c, padding: 0, cursor: 'pointer', flexShrink: 0,
+      border: value.toLowerCase() === c ? `2px solid ${T.accent}` : '1px solid #444',
+    }} />
+  ))
+
+  const colorInput = (value, key, title) => (
+    <input type="color" value={value} title={title}
+      onChange={e => updateLayer(selectedId, { [key]: e.target.value })}
+      style={{ width: 22, height: 22, border: 'none', background: 'none', cursor: 'pointer', padding: 0, flexShrink: 0 }} />
+  )
+
 
   return (
-    <div style={{ overflow: 'auto', height: '100%', boxSizing: 'border-box', background: 'var(--bg)' }}>
-      <div style={{ maxWidth: 1100, margin: '0 auto', paddingBottom: 28 }}>
-
-        <ScreenHeader
-          kicker="ATELIER"
-          title="Meme · GIF · Audio"
-          sub={clip ? clip.name : undefined}
-          right={(
-            <div style={{ display: 'flex', gap: 8 }}>
-              {onBack && <Btn variant="outline" size="sm" icon={ICONS.back} onClick={onBack}>Mes clips</Btn>}
-              {imageUrl && <Btn variant="solid" size="sm" icon={ICONS.plus} onClick={resetMeme}>Nouveau</Btn>}
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <ScreenHeader
+        kicker="ATELIER"
+        title="Meme · GIF · Audio"
+        sub={clip ? `source · ${clip.name || `Clip ${clip.clip_id.slice(0, 6)}`} · ${fmtDur(Math.max(0, (clip.end ?? 0) - (clip.start ?? 0)))}`
+          : editing && imageName ? `image · ${imageName}` : 'aucune source'}
+        right={editing
+          ? <Btn variant="outline" onClick={resetMeme} icon={ICONS.chevron} style={{ transform: 'none' }}>Sources</Btn>
+          : noClip ? null : (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              {clipSelect}
+              {uploadBtn}
+              <Btn icon={ICONS.close} title="Fermer la source" onClick={closeSource} />
             </div>
           )}
-        />
-        <div style={{ padding: '14px 32px 0' }}>
-
-        {!imageUrl ? (
-          <div>
-            {/* Tab switcher — only when clip provided.
-                MEME_PLEX_HANDOFF §2.2: rename by intent + one-line flow hint. */}
-            {clip && (
-              <>
-                <Segmented value={sourceTab} onChange={setSourceTab} options={[
-                  { v: 'image', l: 'Image', icon: ICONS.film },
-                  { v: 'video', l: 'GIF', icon: ICONS.gif },
-                  { v: 'audio', l: 'Extrait audio', icon: ICONS.audio },
-                ]} />
-                <div style={{ fontSize: 11, color: 'var(--text3)', margin: '8px 0 16px' }}>
-                  {sourceTab === 'audio'
-                    ? "L'audio s'exporte directement — pas d'éditeur."
-                    : 'Image & GIF passent par l\'éditeur de texte.'}
-                </div>
-              </>
-            )}
-
-            {/* IMAGE TAB — no clip, show drop zone */}
-            {sourceTab === 'image' && !segmentUrl && (
-              <div
-                ref={dropRef}
-                onClick={() => fileInputRef.current?.click()}
-                onDragOver={e => { e.preventDefault(); dropRef.current.style.borderColor = 'var(--accent)' }}
-                onDragLeave={() => { dropRef.current.style.borderColor = '' }}
-                onDrop={e => { e.preventDefault(); dropRef.current.style.borderColor = ''; handleFile(e.dataTransfer.files?.[0]) }}
-                style={{ border: '2px dashed var(--border2)', borderRadius: 8, padding: 60, textAlign: 'center', background: 'var(--surface)', cursor: 'pointer', transition: 'border-color 0.2s' }}
-              >
-                <div style={{ marginBottom: 10, display: 'flex', justifyContent: 'center', color: 'var(--text3)' }}><Icon d={ICONS.upload} size={38} sw={1.4} /></div>
-                <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4, color: 'var(--text)' }}>Glissez une image ou un GIF</div>
-                <div style={{ fontSize: 12, color: '#888' }}>PNG · JPG · WEBP · GIF animé</div>
-              </div>
-            )}
-
-            {/* UNIFIED PLAYER — one transport for Image / GIF / Audio.
-                Image mode hides the IN/OUT range (capture is at the playhead);
-                GIF/Audio show the range. MEME_PLEX_HANDOFF §2.1. */}
-            {segmentUrl && (() => {
-              const imageMode = sourceTab === 'image'
-              const rangePlayer = (
-                <div style={{ background: '#000', borderRadius: 6, border: '1px solid var(--border)' }}>
-                  <div style={{ position: 'relative', cursor: 'pointer', overflow: 'hidden', borderRadius: '6px 6px 0 0' }} onClick={togglePlay}>
-                    <video
-                      ref={videoRef}
-                      src={segmentUrl}
-                      style={{ display: 'block', width: '100%' }}
-                      onLoadedMetadata={onVideoLoaded}
-                      onTimeUpdate={e => imageMode ? setVideoTime(e.target.currentTime) : onGifTimeUpdate(e)}
-                      onPlay={() => setPlaying(true)}
-                      onPause={() => setPlaying(false)}
-                    />
-                    <div style={{
-                      position: 'absolute', top: 8, left: 8,
-                      background: 'rgba(0,0,0,0.55)', borderRadius: 4,
-                      padding: '5px', color: '#fff', pointerEvents: 'none',
-                    }}>
-                      <Icon d={playing ? ICONS.pause : ICONS.play} size={12} />
-                    </div>
-                  </div>
-                  <div style={{ padding: '12px 14px', borderTop: '1px solid #1a1a1a', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {/* Timeline click/drag to seek */}
-                    <div
-                      ref={timelineRef}
-                      style={{ position: 'relative', height: 10, background: 'var(--surface3)', borderRadius: 3, cursor: 'pointer' }}
-                      onMouseDown={e => {
-                        e.preventDefault()
-                        const el = timelineRef.current
-                        if (!el) return
-                        const dur = videoDuration
-                        const getT = ev => {
-                          const rect = el.getBoundingClientRect()
-                          return Math.max(0, Math.min(dur, (ev.clientX - rect.left) / rect.width * dur))
-                        }
-                        seekVideo(getT(e))
-                        const onMove = ev => seekVideo(getT(ev))
-                        const onUp = () => {
-                          document.removeEventListener('mousemove', onMove)
-                          document.removeEventListener('mouseup', onUp)
-                        }
-                        document.addEventListener('mousemove', onMove)
-                        document.addEventListener('mouseup', onUp)
-                      }}
-                    >
-                      {!imageMode && <>
-                        <div style={{ position: 'absolute', top: 0, height: '100%', background: 'rgba(245, 197, 24,0.35)', borderRadius: 3, left: `${(inPoint / (videoDuration || 1)) * 100}%`, width: `${((outPoint - inPoint) / (videoDuration || 1)) * 100}%` }} />
-                        <div style={{ position: 'absolute', top: 0, width: 3, height: '100%', background: '#4af', borderRadius: 1, left: `${(inPoint / (videoDuration || 1)) * 100}%` }} />
-                        <div style={{ position: 'absolute', top: 0, width: 3, height: '100%', background: 'var(--accent)', borderRadius: 1, left: `calc(${(outPoint / (videoDuration || 1)) * 100}% - 3px)` }} />
-                      </>}
-                      <div style={{ position: 'absolute', top: -3, width: 2, height: 'calc(100% + 6px)', background: '#fff', borderRadius: 1, left: `${(videoTime / (videoDuration || 1)) * 100}%`, boxShadow: '0 0 4px rgba(255,255,255,0.6)', pointerEvents: 'none' }} />
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'center' }}>
-                      <button onClick={() => seekRelative(-1)} style={SEEK_BTN} title="−1s (Shift+←)">«</button>
-                      <button onClick={() => seekRelative(-0.1)} style={SEEK_BTN} title="−0.1s (←)">‹</button>
-                      <button onClick={togglePlay} style={{ ...SEEK_BTN, padding: '5px 14px', display: 'inline-flex', alignItems: 'center' }} title="Play/Pause (Space)"><Icon d={playing ? ICONS.pause : ICONS.play} size={12} /></button>
-                      <button onClick={() => seekRelative(0.1)} style={SEEK_BTN} title="+0.1s (→)">›</button>
-                      <button onClick={() => seekRelative(1)} style={SEEK_BTN} title="+1s (Shift+→)">»</button>
-                    </div>
-                    {imageMode ? (
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text3)' }}>
-                        <span>{fmtTime(videoTime)}</span>
-                        <span>{fmtTime(videoDuration)}</span>
-                      </div>
-                    ) : (<>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'var(--font-mono)', fontSize: 11 }}>
-                        <button onClick={() => setInPoint(Math.min(videoTime, outPoint - 0.1))} style={{ padding: '3px 7px', background: 'rgba(68,170,255,0.12)', color: '#4af', border: '1px solid rgba(68,170,255,0.3)', borderRadius: 3, fontSize: 11, cursor: 'pointer', fontFamily: 'var(--font-mono)' }}>[ IN</button>
-                        <span style={{ color: '#4af' }}>{fmtTime(inPoint)}</span>
-                        <div style={{ flex: 1, textAlign: 'center', color: 'var(--text3)' }}>{fmtTime(videoTime)} · {gifDuration}s</div>
-                        <span style={{ color: 'var(--accent)' }}>{fmtTime(outPoint)}</span>
-                        <button onClick={() => setOutPoint(Math.max(videoTime, inPoint + 0.1))} style={{ padding: '3px 7px', background: 'rgba(245, 197, 24,0.12)', color: 'var(--accent)', border: '1px solid rgba(245, 197, 24,0.3)', borderRadius: 3, fontSize: 11, cursor: 'pointer', fontFamily: 'var(--font-mono)' }}>OUT ]</button>
-                      </div>
-                      <input type="range" min={0} max={videoDuration || 1} step={0.05} value={inPoint} onChange={e => { const v = Math.min(+e.target.value, outPoint - 0.1); setInPoint(v); seekVideo(v) }} style={{ width: '100%', margin: 0, color: '#4af', '--pct': `${(inPoint / (videoDuration || 1)) * 100}%` }} />
-                      <input type="range" min={0} max={videoDuration || 1} step={0.05} value={outPoint} onChange={e => { const v = Math.max(+e.target.value, inPoint + 0.1); setOutPoint(v); seekVideo(v) }} style={{ width: '100%', margin: 0, color: 'var(--accent)', '--pct': `${(outPoint / (videoDuration || 1)) * 100}%` }} />
-                    </>)}
-                  </div>
-                </div>
-              )
-
-              if (imageMode) return (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 240px', gap: 20, alignItems: 'start' }}>
-                  {rangePlayer}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {error && <div style={{ padding: '8px 10px', background: 'rgba(229,69,69,0.12)', color: '#e54545', borderRadius: 4, fontSize: 12, border: '1px solid rgba(229,69,69,0.3)' }}>{error}</div>}
-                    <button onClick={captureFrame} disabled={!videoReady} style={{ padding: '11px', fontWeight: 700, borderRadius: 4, fontSize: 13, background: videoReady ? 'var(--accent)' : 'var(--surface3)', color: videoReady ? '#000' : '#888', border: 'none', cursor: videoReady ? 'pointer' : 'default' }}>◉ Capturer ce frame</button>
-                    <p style={{ fontSize: 11, color: 'var(--text3)', lineHeight: 1.6, margin: 0 }}>Naviguez puis capturez le frame souhaité — il s'ouvrira dans l'éditeur.</p>
-                  </div>
-                </div>
-              )
-
-              if (sourceTab === 'video') return (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 240px', gap: 20, alignItems: 'start' }}>
-                  {rangePlayer}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {error && <div style={{ padding: '8px 10px', background: 'rgba(229,69,69,0.12)', color: '#e54545', borderRadius: 4, fontSize: 12, border: '1px solid rgba(229,69,69,0.3)' }}>{error}</div>}
-                    <button onClick={createGif} disabled={gifLoading || !videoReady || outPoint <= inPoint} style={{ padding: '11px', fontWeight: 700, borderRadius: 4, fontSize: 13, background: gifLoading || !videoReady || outPoint <= inPoint ? 'var(--surface3)' : 'var(--accent)', color: gifLoading || !videoReady || outPoint <= inPoint ? '#888' : '#000', border: 'none', cursor: gifLoading || !videoReady ? 'default' : 'pointer' }}>{gifLoading ? '◉ Génération GIF…' : '◉ Créer GIF'}</button>
-                    <p style={{ fontSize: 11, color: 'var(--text3)', lineHeight: 1.6, margin: 0 }}>Réglez IN/OUT puis créez le GIF. Il s'ouvrira dans l'éditeur.</p>
-                  </div>
-                </div>
-              )
-
-              if (sourceTab === 'audio') return (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 240px', gap: 20, alignItems: 'start' }}>
-                  {rangePlayer}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {error && <div style={{ padding: '8px 10px', background: 'rgba(229,69,69,0.12)', color: '#e54545', borderRadius: 4, fontSize: 12, border: '1px solid rgba(229,69,69,0.3)' }}>{error}</div>}
-                    <button
-                      onClick={() => createAudio('mp3')}
-                      disabled={audioLoading || !videoReady || outPoint <= inPoint}
-                      style={{ padding: '11px', fontWeight: 700, borderRadius: 4, fontSize: 13, background: audioLoading || !videoReady || outPoint <= inPoint ? 'var(--surface3)' : 'var(--accent)', color: audioLoading || !videoReady || outPoint <= inPoint ? '#888' : '#000', border: 'none', cursor: audioLoading || !videoReady ? 'default' : 'pointer' }}
-                    >{audioLoading ? '◉ Export…' : 'Télécharger MP3'}</button>
-                    <button
-                      onClick={() => createAudio('wav')}
-                      disabled={audioLoading || !videoReady || outPoint <= inPoint}
-                      style={{ padding: '11px', fontWeight: 700, borderRadius: 4, fontSize: 13, background: 'var(--surface2)', color: audioLoading || !videoReady || outPoint <= inPoint ? '#888' : 'var(--text)', border: '1px solid var(--border2)', cursor: audioLoading || !videoReady ? 'default' : 'pointer' }}
-                    >Télécharger WAV</button>
-                    <p style={{ fontSize: 11, color: 'var(--text3)', lineHeight: 1.6, margin: 0 }}>Réglez IN/OUT puis exportez l'audio de la sélection. MP3 = compact, WAV = lossless.</p>
-                  </div>
-                </div>
-              )
-            })()}
+      />
+      {!editing && (
+        <div style={{ padding: '0 32px 14px', flexShrink: 0 }}>
+          <Segmented value={sourceTab} onChange={setSourceTab} options={[
+            { v: 'image', l: 'Image', icon: ICONS.film }, { v: 'video', l: 'GIF', icon: ICONS.layers }, { v: 'audio', l: 'Audio', icon: ICONS.volume },
+          ]} />
+        </div>
+      )}
+      <div style={{ flex: 1, minHeight: 0, padding: '0 32px 28px', overflow: 'auto' }}>
+        {!editing && noClip ? emptySource : !editing ? (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: 22, height: '100%', alignItems: 'start' }}>
+            {videoStub(sourceTab === 'image' ? imageFooter : rangeFooter)}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {sourcePanel}
+            </div>
           </div>
         ) : (
-          /* Canvas editor */
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 290px', gap: 20, alignItems: 'start' }}>
-
-            {/* Left column: result REPLACES the editor canvas once generated
-                (MEME_PLEX_HANDOFF §2.3 — never show source + result stacked). */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 22, height: '100%' }}>
+            {/* Result REPLACES the editor canvas once generated — never source + result stacked. */}
             {resultUrl ? (
-              <div style={{ background: '#000', borderRadius: 6, overflow: 'hidden', border: '1px solid var(--accent)' }}>
-                <div style={{ padding: '6px 10px', borderBottom: '1px solid #1a1a1a', fontSize: 11, color: 'var(--accent)', fontWeight: 600 }}>
-                  Résultat
+              <div style={{ background: '#000', borderRadius: T.r.card, border: `1px solid ${T.accent}`, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                <div style={{ padding: '8px 14px', borderBottom: `1px solid ${T.border}`, fontSize: T.fs.xs, color: T.accent, fontWeight: 600 }}>Résultat</div>
+                <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'repeating-linear-gradient(0deg,#16161c 0 2px,#1b1b22 2px 6px)' }}>
+                  <img src={resultUrl} alt="meme" style={{ display: 'block', maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
                 </div>
-                <img src={resultUrl} alt="meme" style={{ display: 'block', width: '100%' }} />
-                <div style={{ display: 'flex', gap: 8, padding: 10, borderTop: '1px solid #1a1a1a' }}>
-                  <button onClick={() => setResultUrl(null)}
-                    style={{ flex: 1, padding: 9, background: 'var(--surface2)', color: 'var(--text)', fontWeight: 600, borderRadius: 4, fontSize: 12, border: '1px solid var(--border2)', cursor: 'pointer' }}>↩ Refaire</button>
-                  <button onClick={download}
-                    style={{ flex: 1, padding: 9, background: '#44bb55', color: '#fff', fontWeight: 700, borderRadius: 4, fontSize: 12, border: 'none', cursor: 'pointer' }}>↓ Télécharger</button>
+                <div style={{ display: 'flex', gap: 8, padding: 10, borderTop: `1px solid ${T.border}` }}>
+                  <Btn variant="solid" icon={ICONS.undo} onClick={() => setResultUrl(null)} style={{ flex: 1 }}>Refaire</Btn>
+                  <Btn variant="primary" icon={ICONS.download} onClick={download} style={{ flex: 1 }}>Télécharger</Btn>
                 </div>
               </div>
             ) : (
-            <div style={{ background: '#000', borderRadius: 6, overflow: 'hidden', border: '1px solid var(--border)' }}>
-              <div style={{ padding: '6px 10px', borderBottom: '1px solid #1a1a1a', fontSize: 11, color: '#666' }}>
-                Glissez le texte pour le repositionner
+              <div style={{ background: '#000', borderRadius: T.r.card, border: `1px solid ${T.border}`, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                <div style={{ padding: '8px 14px', borderBottom: `1px solid ${T.border}`, fontSize: T.fs.xs, color: T.text3 }}>Glissez le texte pour le repositionner</div>
+                <div ref={stageRef} style={{ flex: 1, minHeight: 0, position: 'relative', background: 'repeating-linear-gradient(0deg,#16161c 0 2px,#1b1b22 2px 6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                  <div ref={canvasWrapRef} style={{ position: 'relative', flexShrink: 0 }}>
+                    {isGif && <img src={imageUrl} alt="" style={{ display: 'block', width: '100%', height: '100%', pointerEvents: 'none', userSelect: 'none' }} />}
+                    <canvas
+                      ref={canvasRef}
+                      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', display: 'block', cursor: dragging ? 'grabbing' : 'grab', userSelect: 'none' }}
+                      onMouseDown={onMouseDown}
+                      onMouseMove={onMouseMove}
+                      onMouseUp={onMouseUp}
+                      onMouseLeave={onMouseUp}
+                    />
+                  </div>
+                </div>
               </div>
-              <div style={{ position: 'relative' }}>
-                {imageName?.toLowerCase().endsWith('.gif') && imageUrl && (
-                  <img
-                    src={imageUrl}
-                    alt=""
-                    style={{ display: 'block', width: '100%', pointerEvents: 'none', userSelect: 'none' }}
-                  />
-                )}
-                <canvas
-                  ref={canvasRef}
-                  style={{
-                    display: 'block', width: '100%',
-                    cursor: dragging ? 'grabbing' : 'grab', userSelect: 'none',
-                    ...(imageName?.toLowerCase().endsWith('.gif') && imageUrl
-                      ? { position: 'absolute', inset: 0, height: '100%' }
-                      : {}),
-                  }}
-                  onMouseDown={onMouseDown}
-                  onMouseMove={onMouseMove}
-                  onMouseUp={onMouseUp}
-                  onMouseLeave={onMouseUp}
-                />
-              </div>
-            </div>
             )}
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16, overflow: 'auto', minHeight: 0 }}>
               <div>
-                <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
-                  <span style={SL}>TEXTES</span>
+                <div style={{ display: 'flex', alignItems: 'center', marginBottom: 9 }}>
+                  <span style={{ fontSize: T.fs.micro, fontWeight: 700, letterSpacing: 1.2, color: T.text3 }}>TEXTES</span>
                   <div style={{ flex: 1 }} />
-                  <button onClick={addLayer} style={{ fontSize: 11, color: 'var(--accent)', background: 'rgba(245, 197, 24,0.1)', border: '1px solid rgba(245, 197, 24,0.3)', borderRadius: 3, padding: '3px 8px', cursor: 'pointer' }}>+ Ajouter</button>
+                  <Btn size="xs" active icon={ICONS.plus} onClick={addLayer} style={{ background: 'transparent' }}>Ajouter</Btn>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  {texts.map((t, i) => (
-                    <div
-                      key={t.id}
-                      onClick={() => setSelectedId(t.id)}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: 6,
-                        padding: '5px 8px',
-                        background: selectedId === t.id ? 'rgba(245, 197, 24,0.08)' : 'var(--surface3)',
-                        border: `1px solid ${selectedId === t.id ? 'rgba(245, 197, 24,0.4)' : 'var(--border)'}`,
-                        borderRadius: 4, cursor: 'pointer',
-                      }}
-                    >
-                      <span style={{ fontSize: 10, color: '#555', width: 14, textAlign: 'center', flexShrink: 0 }}>{i + 1}</span>
+                {texts.map((t, i) => {
+                  const on = t.id === selectedId
+                  return (
+                    <div key={t.id} onClick={() => setSelectedId(t.id)} {...pressable(true)} style={{
+                      display: 'flex', alignItems: 'center', gap: 6, padding: '8px 10px', marginBottom: 6, borderRadius: T.r.ctl, cursor: 'pointer',
+                      background: on ? alpha(T.accent, '14') : T.surface2, border: `1px solid ${on ? alpha(T.accent, '55') : T.border}`,
+                    }}>
+                      <span style={{ fontSize: 10, color: T.text4, width: 12, textAlign: 'center', flexShrink: 0 }}>{i + 1}</span>
                       <input
                         value={t.content}
                         onChange={e => updateLayer(t.id, { content: e.target.value })}
                         onClick={e => e.stopPropagation()}
+                        onFocus={() => setSelectedId(t.id)}
                         placeholder={i === 0 ? 'WHEN YOU…' : i === 1 ? '…IT\'S FRIDAY' : 'Texte…'}
                         style={{
-                          flex: 1, background: 'transparent', border: 'none', outline: 'none',
-                          fontSize: 12, color: 'var(--text)',
+                          flex: 1, minWidth: 0, background: 'transparent', border: 'none', outline: 'none', padding: 0,
+                          fontSize: T.fs.xs, color: T.text, letterSpacing: 0.3,
                           fontFamily: (FONTS.find(f => f.id === t.fontId) || FONTS[0]).css,
-                          letterSpacing: 0.5,
                         }}
                       />
-                      {/* Layer affordances: duplicate, ↑↓ reorder, delete. */}
-                      <button
-                        onClick={e => { e.stopPropagation(); duplicateLayer(t.id) }}
-                        title="Dupliquer"
-                        style={{ fontSize: 11, color: 'var(--text3)', background: 'none', border: 'none', cursor: 'pointer', padding: '0 4px' }}
-                      >⎘</button>
-                      <button
-                        onClick={e => { e.stopPropagation(); reorderLayer(t.id, -1) }}
-                        disabled={i === 0}
-                        title="Monter"
-                        style={{ fontSize: 11, color: i === 0 ? 'var(--text4)' : 'var(--text3)', background: 'none', border: 'none', cursor: i === 0 ? 'default' : 'pointer', padding: '0 2px' }}
-                      >↑</button>
-                      <button
-                        onClick={e => { e.stopPropagation(); reorderLayer(t.id, 1) }}
-                        disabled={i === texts.length - 1}
-                        title="Descendre"
-                        style={{ fontSize: 11, color: i === texts.length - 1 ? 'var(--text4)' : 'var(--text3)', background: 'none', border: 'none', cursor: i === texts.length - 1 ? 'default' : 'pointer', padding: '0 2px' }}
-                      >↓</button>
+                      <Btn size="xs" icon={ICONS.chevron} title={i === 0 ? 'Déjà en première position' : 'Monter'} disabled={i === 0}
+                        onClick={e => { e.stopPropagation(); reorderLayer(t.id, -1) }} style={{ transform: 'rotate(180deg)' }} />
+                      <Btn size="xs" icon={ICONS.chevron} title={i === texts.length - 1 ? 'Déjà en dernière position' : 'Descendre'} disabled={i === texts.length - 1}
+                        onClick={e => { e.stopPropagation(); reorderLayer(t.id, 1) }} />
+                      <Btn size="xs" icon={ICONS.layers} title="Dupliquer"
+                        onClick={e => { e.stopPropagation(); duplicateLayer(t.id) }} />
                       {texts.length > 1 && (
-                        <button
-                          onClick={e => { e.stopPropagation(); removeLayer(t.id) }}
-                          style={{ fontSize: 14, color: '#e54545', background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', lineHeight: 1 }}
-                          title="Supprimer"
-                        >×</button>
+                        <Btn size="xs" danger icon={ICONS.trash} title="Supprimer"
+                          onClick={e => { e.stopPropagation(); removeLayer(t.id) }} />
                       )}
                     </div>
-                  ))}
-                </div>
-                <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 6 }}>
-                  ↑↓ ← → flèches : déplacer le texte sélectionné · ⇧ pour 5×
+                  )
+                })}
+                <div style={{ fontSize: 9.5, color: T.text4, marginTop: 2, display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+                  ↑↓ réordonner · <Icon d={ICONS.layers} size={11} stroke="currentColor" /> dupliquer · flèches pour ajuster la position
                 </div>
               </div>
 
               {sel && (
-                <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  <span style={SL}>STYLE — TEXTE {texts.findIndex(t => t.id === selectedId) + 1}</span>
-
-                  <div>
-                    <label style={LBL}>POLICE</label>
-                    <div style={{ display: 'flex', gap: 4 }}>
-                      {FONTS.map(f => (
-                        <button key={f.id} onClick={() => updateLayer(selectedId, { fontId: f.id })} style={{
-                          flex: 1, padding: '5px 4px',
-                          background: sel.fontId === f.id ? 'rgba(245, 197, 24,0.1)' : 'var(--surface3)',
-                          color: sel.fontId === f.id ? 'var(--accent)' : '#888',
-                          border: `1px solid ${sel.fontId === f.id ? 'rgba(245, 197, 24,0.4)' : 'var(--border2)'}`,
-                          borderRadius: 3, fontSize: 10, cursor: 'pointer', fontFamily: f.css,
-                        }}>{f.label}</button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
-                    <div style={{ flex: 1 }}>
-                      <label style={LBL}>TAILLE — {sel.fontSize}px</label>
-                      <input type="range" min={16} max={120} value={sel.fontSize}
+                <div>
+                  <div style={{ fontSize: T.fs.micro, fontWeight: 700, letterSpacing: 1.2, color: T.text3, marginBottom: 9 }}>STYLE — TEXTE {selIndex + 1}</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <Field label="POLICE">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <Segmented value={sel.fontId} onChange={v => updateLayer(selectedId, { fontId: v })}
+                          options={FONTS.map(f => ({ v: f.id, l: f.label }))} />
+                        <Btn size="sm" active={sel.bold} title="Gras" onClick={() => updateLayer(selectedId, { bold: !sel.bold })}
+                          style={{ fontWeight: 700 }}>B</Btn>
+                      </div>
+                    </Field>
+                    <Field label={`TAILLE — ${sel.fontSize}px`}>
+                      <input type="range" min={16} max={120} value={sel.fontSize} aria-label="Taille"
                         onChange={e => updateLayer(selectedId, { fontSize: +e.target.value })}
-                        style={{ width: '100%', color: 'var(--accent)' }}
-                      />
-                    </div>
-                    <button
-                      onClick={() => updateLayer(selectedId, { bold: !sel.bold })}
-                      style={{
-                        padding: '4px 12px', marginBottom: 1,
-                        background: sel.bold ? 'rgba(245, 197, 24,0.1)' : 'var(--surface3)',
-                        color: sel.bold ? 'var(--accent)' : '#888',
-                        border: `1px solid ${sel.bold ? 'rgba(245, 197, 24,0.4)' : 'var(--border2)'}`,
-                        borderRadius: 3, fontSize: 14, fontWeight: 700, cursor: 'pointer',
-                      }}
-                    >B</button>
-                  </div>
-
-                  <div>
-                    <label style={LBL}>COULEUR TEXTE</label>
-                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                      <input type="color" value={sel.color}
-                        onChange={e => updateLayer(selectedId, { color: e.target.value })}
-                        style={{ width: 30, height: 26, border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}
-                      />
-                      {QUICK_COLORS_TEXT.map(c => (
-                        <div key={c} onClick={() => updateLayer(selectedId, { color: c })}
-                          style={{ width: 18, height: 18, background: c, borderRadius: 2, cursor: 'pointer', flexShrink: 0,
-                            border: sel.color.toLowerCase() === c ? '2px solid var(--accent)' : '1px solid #444' }}
-                        />
-                      ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <label style={LBL}>CONTOUR — épaisseur {sel.strokeWidth}</label>
-                    <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6 }}>
-                      <input type="color" value={sel.strokeColor}
-                        onChange={e => updateLayer(selectedId, { strokeColor: e.target.value })}
-                        style={{ width: 30, height: 26, border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}
-                      />
-                      {QUICK_COLORS_STROKE.map(c => (
-                        <div key={c} onClick={() => updateLayer(selectedId, { strokeColor: c })}
-                          style={{ width: 18, height: 18, background: c, borderRadius: 2, cursor: 'pointer', flexShrink: 0,
-                            border: sel.strokeColor.toLowerCase() === c ? '2px solid var(--accent)' : '1px solid #444' }}
-                        />
-                      ))}
-                    </div>
-                    <input type="range" min={0} max={8} value={sel.strokeWidth}
-                      onChange={e => updateLayer(selectedId, { strokeWidth: +e.target.value })}
-                      style={{ width: '100%', color: 'var(--accent)' }}
-                    />
-                  </div>
-
-                  <div>
-                    <label style={LBL}>ALIGNEMENT</label>
-                    <div style={{ display: 'flex', gap: 4 }}>
-                      {[['left', '⟵ Gauche'], ['center', '⊣ Centre'], ['right', 'Droite ⟶']].map(([v, lbl]) => (
-                        <button key={v} onClick={() => updateLayer(selectedId, { align: v })}
-                          style={{
-                            flex: 1, padding: '5px 4px',
-                            background: sel.align === v ? 'rgba(245, 197, 24,0.1)' : 'var(--surface3)',
-                            color: sel.align === v ? 'var(--accent)' : '#888',
-                            border: `1px solid ${sel.align === v ? 'rgba(245, 197, 24,0.4)' : 'var(--border2)'}`,
-                            borderRadius: 3, fontSize: 10, cursor: 'pointer',
-                          }}
-                        >{lbl}</button>
-                      ))}
-                    </div>
+                        style={{ width: '100%', color: T.accent, '--pct': `${((sel.fontSize - 16) / (120 - 16)) * 100}%` }} />
+                    </Field>
+                    <Field label="COULEUR">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {swatches(QUICK_COLORS_TEXT, sel.color, 'color')}
+                        {colorInput(sel.color, 'color', 'Couleur personnalisée')}
+                      </div>
+                    </Field>
+                    <Field label={`CONTOUR — ÉPAISSEUR ${sel.strokeWidth}`}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                        {swatches(QUICK_COLORS_STROKE, sel.strokeColor, 'strokeColor')}
+                        {colorInput(sel.strokeColor, 'strokeColor', 'Contour personnalisé')}
+                      </div>
+                      <input type="range" min={0} max={8} value={sel.strokeWidth} aria-label="Épaisseur du contour"
+                        onChange={e => updateLayer(selectedId, { strokeWidth: +e.target.value })}
+                        style={{ width: '100%', color: T.accent, '--pct': `${(sel.strokeWidth / 8) * 100}%` }} />
+                    </Field>
+                    <Field label="ALIGNEMENT">
+                      <Segmented value={sel.align} onChange={v => updateLayer(selectedId, { align: v })} options={[
+                        { v: 'left', l: 'Gauche' }, { v: 'center', l: 'Centre' }, { v: 'right', l: 'Droite' },
+                      ]} />
+                    </Field>
                   </div>
                 </div>
               )}
 
-              {error && (
-                <div style={{ padding: '8px 10px', background: 'rgba(229,69,69,0.12)', color: '#e54545', borderRadius: 4, fontSize: 12, border: '1px solid rgba(229,69,69,0.3)' }}>
-                  {error}
-                </div>
-              )}
+              {errorBox}
 
-              <button
-                onClick={generate}
-                disabled={loading || !imageUrl}
-                style={{
-                  padding: '10px', fontWeight: 700, borderRadius: 4, fontSize: 13,
-                  background: loading ? 'var(--surface3)' : 'var(--accent)',
-                  color: loading ? '#888' : '#000',
-                  border: 'none', cursor: loading ? 'default' : 'pointer',
-                }}
-              >{loading ? '◉ Génération…' : resultUrl ? '◉ Régénérer' : '◉ Générer'}</button>
+              <Btn variant="primary" size="lg" full icon={ICONS.sparkle} onClick={generate} disabled={loading || !imageUrl}
+                title={loading ? 'Génération en cours…' : !imageUrl ? "Choisissez une image d'abord" : undefined}>
+                {loading ? 'Génération…' : resultUrl ? 'Régénérer' : 'Générer'}
+              </Btn>
             </div>
           </div>
         )}
 
         <input ref={fileInputRef} type="file" accept=".png,.jpg,.jpeg,.webp,.gif"
-          onChange={e => handleFile(e.target.files?.[0])} style={{ display: 'none' }} />
-        </div>
+          onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; handleFile(f) }} style={{ display: 'none' }} />
+        <input ref={videoInputRef} type="file" accept="video/*"
+          onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) handleVideoFile(f) }} style={{ display: 'none' }} />
       </div>
     </div>
   )
 }
 
-const SL = { fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: 1 }
-const LBL = { display: 'block', fontSize: 10, fontWeight: 700, color: '#666', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 4 }
-const BTN_GHOST = { fontSize: 11, color: 'var(--text2)', background: 'var(--surface2)', border: '1px solid var(--border2)', borderRadius: 5, padding: '5px 10px', cursor: 'pointer', minHeight: 28 }
-const SEEK_BTN = { fontSize: 13, color: 'var(--text2)', background: 'var(--surface2)', border: '1px solid var(--border2)', borderRadius: 5, padding: '5px 9px', cursor: 'pointer', minHeight: 28 }
+function Field({ label, children }) {
+  return (
+    <div>
+      <div style={{ fontSize: 10, color: T.text3, marginBottom: 6 }}>{label}</div>
+      {children}
+    </div>
+  )
+}
+

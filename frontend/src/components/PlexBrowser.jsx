@@ -1,28 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Icon, ICONS } from '../Icons'
+import { Btn, Dot, Icon, ICONS, SectionLabel, T, alpha } from '../ui'
 
-/* PlexBrowser — restyled per MEME_PLEX_HANDOFF §1.
-   Connect: centered 460px card, ▶ PLEX amber wordmark, green probe banner,
-            bordered URL/Token, primary Connecter.
-   Browser: left sidebar libraries with counts, search pill, ONLINE chip,
-            poster grid minmax(180px,1fr), selected accent ring + badge.
-*/
+// Reference screen-import.jsx PlexBrowse — libraries card (200px) + search pill
+// + poster grid minmax(150px,1fr). The connect card has no reference screen.
 
-const PLEX_AMBER = '#e5a00d'
+const TYPE_LABEL = { movie: 'Film', show: 'Série', episode: 'Épisode' }
 
-const inp = {
-  background: 'var(--surface2)',
-  color: 'var(--text)',
-  border: '1px solid var(--border2)',
-  borderRadius: 6,
-  padding: '8px 12px',
-  fontSize: 13,
-  width: '100%',
-  minHeight: 36,
+function fmtDur(ms) {
+  if (!ms) return ''
+  const min = Math.round(ms / 60000)
+  return min >= 60 ? `${Math.floor(min / 60)}h${String(min % 60).padStart(2, '0')}` : `${min} min`
 }
 
-function PlexConnect({ onConnected }) {
-  const [url, setUrl] = useState('http://localhost:32400')
+function PlexConnect({ initialUrl, onConnected }) {
+  const [url, setUrl] = useState(initialUrl || 'http://localhost:32400')
   const [token, setToken] = useState('')
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState(null)
@@ -50,8 +41,8 @@ function PlexConnect({ onConnected }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url, token }),
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.detail || 'Erreur')
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`)
       onConnected(data.server)
     } catch (e) {
       setErr(e.message)
@@ -61,100 +52,53 @@ function PlexConnect({ onConnected }) {
   }
 
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      height: '100%', padding: 24, background: 'var(--bg)',
-    }}>
-      <div style={{
-        width: 460, maxWidth: '100%',
-        background: 'var(--surface)',
-        border: '1px solid var(--border)',
-        borderRadius: 8,
-        padding: '28px 28px 24px',
-        boxShadow: '0 8px 32px rgba(0,0,0,0.35)',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 18 }}>
-          <span style={{
-            display: 'inline-flex', alignItems: 'center', gap: 5,
-            fontSize: 18, fontWeight: 800, color: PLEX_AMBER,
-            letterSpacing: 1.5, fontFamily: 'var(--font-mono)',
-          }}>
-            ▶ PLEX
-          </span>
-          <span style={{ fontSize: 12, color: 'var(--text3)' }}>Connecter votre serveur</span>
+    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 0, overflow: 'auto' }}>
+      <div style={{ width: 460, maxWidth: '100%', background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.r.card, padding: '24px 24px 20px', boxShadow: T.shadow }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+          <Icon d={ICONS.film} size={18} stroke={T.accent} />
+          <span style={{ fontSize: T.fs.md, fontWeight: 600 }}>Connecter Plex</span>
+          <span style={{ fontSize: T.fs.xs, color: T.text3 }}>serveur local</span>
         </div>
 
         {detected && (
-          <div style={{
-            fontSize: 12, color: 'var(--success)',
-            padding: '8px 12px',
-            background: 'rgba(94,194,124,0.10)',
-            border: '1px solid rgba(94,194,124,0.35)',
-            borderRadius: 6,
-            marginBottom: 14,
-            display: 'flex', alignItems: 'center', gap: 6,
-          }}>
-            <span>●</span>
-            <span>Serveur Plex détecté — <code style={{ fontFamily: 'var(--font-mono)' }}>{detected}</code></span>
+          <div style={{ fontSize: T.fs.xs, color: T.success, padding: '8px 12px', background: 'rgba(94,194,124,.08)', border: `1px solid ${alpha(T.success, '44')}`, borderRadius: T.r.ctl, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Dot color={T.success} size={6} />
+            <span>Serveur Plex détecté — <span style={{ fontFamily: T.fontMono }}>{detected}</span></span>
           </div>
         )}
         {detected === false && (
-          <div style={{
-            fontSize: 12, color: 'var(--text3)',
-            padding: '8px 12px', background: 'var(--surface2)',
-            border: '1px solid var(--border)', borderRadius: 6,
-            marginBottom: 14,
-          }}>
-            Aucun serveur local détecté — saisissez l'URL manuellement.
+          <div style={{ fontSize: T.fs.xs, color: T.text3, padding: '8px 12px', background: T.bg2, border: `1px solid ${T.border}`, borderRadius: T.r.ctl, marginBottom: 14 }}>
+            Aucun serveur local détecté — saisissez l&apos;URL manuellement.
           </div>
         )}
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <label style={{ fontSize: 11, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, fontFamily: 'var(--font-mono)' }}>
-            URL serveur
-            <input
-              value={url}
-              onChange={e => setUrl(e.target.value)}
-              style={{ ...inp, marginTop: 4 }}
-              placeholder="http://localhost:32400"
-            />
+          <label>
+            <SectionLabel>URL SERVEUR</SectionLabel>
+            <input value={url} onChange={e => setUrl(e.target.value)} placeholder="http://localhost:32400"
+              style={{ width: '100%', height: 36, marginTop: 6, padding: '0 12px', fontSize: T.fs.sm, background: T.bg2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: T.r.ctl, fontFamily: T.fontMono }} />
           </label>
-          <label style={{ fontSize: 11, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, fontFamily: 'var(--font-mono)' }}>
-            Token Plex
-            <input
-              value={token}
-              onChange={e => setToken(e.target.value)}
-              style={{ ...inp, marginTop: 4 }}
-              type="password"
-              placeholder="••••••••••••••••••••"
-            />
-            <span style={{ display: 'block', marginTop: 6, fontSize: 11, color: 'var(--text3)', textTransform: 'none', letterSpacing: 0 }}>
-              Plex Web → ⚙ → XML → attribut <code style={{ color: 'var(--accent)', fontFamily: 'var(--font-mono)' }}>X-Plex-Token</code>
+          <label>
+            <SectionLabel>TOKEN PLEX</SectionLabel>
+            <input value={token} onChange={e => setToken(e.target.value)} type="password" placeholder="X-Plex-Token"
+              style={{ width: '100%', height: 36, marginTop: 6, padding: '0 12px', fontSize: T.fs.sm, background: T.bg2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: T.r.ctl }} />
+            <span style={{ display: 'block', marginTop: 6, fontSize: T.fs.micro, color: T.text3 }}>
+              Plex Web → Paramètres → XML → attribut <span style={{ color: T.accent, fontFamily: T.fontMono }}>X-Plex-Token</span>
             </span>
           </label>
 
           {err && (
-            <div style={{ fontSize: 12, color: 'var(--danger)', padding: '8px 12px', background: 'rgba(232,93,93,0.10)', border: '1px solid rgba(232,93,93,0.35)', borderRadius: 6 }}>
+            <div style={{ fontSize: T.fs.xs, color: T.danger, padding: '8px 12px', background: 'rgba(232,89,93,.05)', border: `1px solid ${alpha(T.danger, '44')}`, borderRadius: T.r.ctl }}>
               {err}
             </div>
           )}
 
-          <button
-            onClick={handleConnect}
-            disabled={loading || !token}
-            style={{
-              padding: '10px 18px',
-              background: (loading || !token) ? 'var(--surface3)' : 'var(--accent)',
-              color: (loading || !token) ? 'var(--text3)' : '#000',
-              fontWeight: 600, fontSize: 13,
-              borderRadius: 6, marginTop: 4, minHeight: 36,
-              cursor: (loading || !token) ? 'default' : 'pointer',
-            }}
-          >
+          <Btn variant="primary" full icon={ICONS.plug} onClick={handleConnect} disabled={loading || !token} style={{ marginTop: 4 }}
+            title={loading ? 'Connexion en cours…' : !token ? 'Renseignez le token Plex' : undefined}>
             {loading ? 'Connexion…' : 'Connecter'}
-          </button>
+          </Btn>
 
-          <div style={{ fontSize: 11, color: 'var(--text3)', textAlign: 'center', marginTop: 4 }}>
+          <div style={{ fontSize: T.fs.micro, color: T.text3, textAlign: 'center' }}>
             La connexion reste locale — token stocké uniquement sur votre machine.
           </div>
         </div>
@@ -163,24 +107,37 @@ function PlexConnect({ onConnected }) {
   )
 }
 
-function LibraryGrid({ sectionId, onSelect, selectedKey }) {
+function LibraryGrid({ sectionId, sectionTitle, onSelect, selectedKey, toolbar }) {
   const [items, setItems] = useState([])
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(false)
+  const [loadErr, setLoadErr] = useState(null)
   const debounceRef = useRef(null)
+  const reqRef = useRef(0)
 
+  // Latest request wins — a slow earlier search must not overwrite newer results.
   async function load(q = '') {
+    const req = ++reqRef.current
     setLoading(true)
+    setLoadErr(null)
     try {
       const url = `/api/plex/library/${sectionId}?limit=60${q ? `&search=${encodeURIComponent(q)}` : ''}`
       const res = await fetch(url)
-      const data = await res.json()
-      setItems(data.items || [])
-    } catch (_) {}
-    setLoading(false)
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`)
+      if (req === reqRef.current) setItems(data.items || [])
+    } catch (e) {
+      if (req === reqRef.current) { setItems([]); setLoadErr('Bibliothèque inaccessible : ' + e.message) }
+    } finally {
+      if (req === reqRef.current) setLoading(false)
+    }
   }
 
-  useEffect(() => { load() }, [sectionId])
+  useEffect(() => {
+    clearTimeout(debounceRef.current)
+    load(search)
+    return () => clearTimeout(debounceRef.current)
+  }, [sectionId])
 
   function handleSearch(e) {
     const q = e.target.value
@@ -190,94 +147,42 @@ function LibraryGrid({ sectionId, onSelect, selectedKey }) {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <div style={{
-        padding: '10px 16px',
-        borderBottom: '1px solid var(--border)',
-        background: 'var(--bg)',
-        display: 'flex', alignItems: 'center', gap: 10,
-      }}>
-        <div style={{ position: 'relative', flex: 1, maxWidth: 360 }}>
-          <span style={{
-            position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)',
-            color: 'var(--text3)', display: 'flex', alignItems: 'center',
-          }}>
-            <Icon d={ICONS.search} size={14} />
-          </span>
-          <input
-            value={search}
-            onChange={handleSearch}
-            placeholder="Rechercher dans la bibliothèque…"
-            style={{
-              ...inp,
-              borderRadius: 99,
-              paddingLeft: 34,
-              background: 'var(--surface)',
-            }}
-          />
+    <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 9, padding: '8px 14px', background: T.surface, border: `1px solid ${T.border}`, borderRadius: 99 }}>
+          <Icon d={ICONS.search} size={14} stroke={T.text3} />
+          <input value={search} onChange={handleSearch} placeholder={`Rechercher dans ${sectionTitle || 'la bibliothèque'}…`}
+            style={{ flex: 1, minWidth: 0, padding: 0, background: 'transparent', border: 'none', fontSize: T.fs.sm, color: T.text, boxShadow: 'none' }} />
+          {loading && <span style={{ fontSize: T.fs.micro, color: T.text3 }}>Chargement…</span>}
         </div>
-        {loading && <span style={{ fontSize: 11, color: 'var(--text3)' }}>Chargement…</span>}
+        {toolbar}
       </div>
 
-      <div style={{
-        flex: 1, overflow: 'auto', padding: 16,
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
-        gap: 14,
-      }}>
+      <div style={{ flex: 1, overflow: 'auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(150px,1fr))', gap: 12, alignContent: 'flex-start' }}>
         {items.map(item => {
-          const selected = selectedKey === item.rating_key
+          const mine = selectedKey === item.rating_key
+          const seed = (item.title || '??').charCodeAt(0) + ((item.title || '??').charCodeAt(1) || 0)
+          const sub = [item.year, fmtDur(item.duration)].filter(Boolean).join(' · ')
           return (
-            <button
-              key={item.rating_key}
-              onClick={() => onSelect(item.rating_key)}
-              style={{
-                position: 'relative',
-                cursor: 'pointer',
-                borderRadius: 8, overflow: 'hidden',
-                background: 'var(--surface)',
-                border: `1px solid ${selected ? 'var(--accent)' : 'var(--border)'}`,
-                outline: selected ? '2px solid var(--accent)' : 'none',
-                outlineOffset: -2,
-                transition: 'border-color 0.15s, transform 0.15s',
-                padding: 0,
-                textAlign: 'left',
-              }}
-              onMouseEnter={e => { if (!selected) e.currentTarget.style.borderColor = 'var(--border2)' }}
-              onMouseLeave={e => { if (!selected) e.currentTarget.style.borderColor = 'var(--border)' }}
-            >
-              {item.thumb
-                ? <img src={item.thumb} alt={item.title} style={{ width: '100%', aspectRatio: '9/16', objectFit: 'cover', display: 'block' }} />
-                : <div style={{ width: '100%', aspectRatio: '9/16', background: 'var(--surface2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)' }}>
-                    <Icon d={ICONS.film} size={28} />
-                  </div>
-              }
-              {selected && (
-                <div style={{
-                  position: 'absolute', top: 8, left: 8,
-                  background: 'var(--accent)', color: '#000',
-                  fontSize: 9, fontWeight: 800, letterSpacing: 1.2,
-                  padding: '2px 7px', borderRadius: 3,
-                }}>
-                  SÉLECTIONNÉ
-                </div>
-              )}
+            <button key={item.rating_key} data-rd onClick={() => onSelect(item.rating_key)} title={item.title} style={{
+              background: T.surface, border: `1px solid ${mine ? T.accent : T.border}`, borderRadius: T.r.ctl, overflow: 'hidden', cursor: 'pointer',
+              boxShadow: mine ? `0 0 0 2px ${alpha(T.accent, '33')}` : 'none', padding: 0, textAlign: 'left', color: T.text, display: 'block', width: '100%',
+            }}>
+              <div style={{ aspectRatio: '2/3', position: 'relative', background: `linear-gradient(135deg,hsl(${seed * 7 % 360},18%,22%),hsl(${seed * 13 % 360},16%,13%))` }}>
+                {item.thumb && <img src={item.thumb} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />}
+                {mine && <div style={{ position: 'absolute', top: 6, left: 6, padding: '2px 6px', background: T.accent, color: '#0b0b0d', fontSize: 8.5, fontWeight: 800, borderRadius: 3 }}>SÉLECTIONNÉ</div>}
+                {sub && <div style={{ position: 'absolute', left: 8, bottom: 8, fontFamily: T.fontMono, fontSize: 9, color: 'rgba(255,255,255,.5)', textShadow: '0 1px 2px rgba(0,0,0,.8)' }}>{sub}</div>}
+              </div>
               <div style={{ padding: '8px 10px' }}>
-                <div style={{
-                  fontSize: 12, fontWeight: 600, color: 'var(--text)',
-                  lineHeight: 1.3, overflow: 'hidden',
-                  display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
-                }}>
-                  {item.title}
-                </div>
-                {item.year && <div style={{ fontSize: 10.5, color: 'var(--text3)', marginTop: 2, fontFamily: 'var(--font-mono)' }}>{item.year}</div>}
+                <div style={{ fontSize: T.fs.xs, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.title}</div>
+                <div style={{ fontSize: 10.5, color: T.text3 }}>{TYPE_LABEL[item.type] || item.type || ''}</div>
               </div>
             </button>
           )
         })}
         {!loading && items.length === 0 && (
-          <div style={{ gridColumn: '1/-1', color: 'var(--text3)', fontSize: 13, padding: 24, textAlign: 'center' }}>
-            Aucun résultat
+          <div style={{ gridColumn: '1/-1', color: loadErr ? T.danger : T.text3, fontSize: T.fs.sm, padding: 24, textAlign: 'center' }}>
+            {loadErr || 'Aucun résultat'}
           </div>
         )}
       </div>
@@ -285,7 +190,7 @@ function LibraryGrid({ sectionId, onSelect, selectedKey }) {
   )
 }
 
-export default function PlexBrowser({ onSourceSelected }) {
+export default function PlexBrowser({ onSourceSelected, onStatus }) {
   const [status, setStatus] = useState(null)   // null=loading, {connected, server?, url}
   const [libraries, setLibraries] = useState([])
   const [activeSectionId, setActiveSectionId] = useState(null)
@@ -294,24 +199,35 @@ export default function PlexBrowser({ onSourceSelected }) {
   const [err, setErr] = useState(null)
 
   async function checkStatus() {
-    const res = await fetch('/api/plex/status')
-    const data = await res.json()
-    setStatus(data)
-    if (data.connected) loadLibraries()
+    setErr(null)
+    try {
+      const res = await fetch('/api/plex/status')
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+      setStatus(data)
+      onStatus?.(data)
+      if (data.connected) loadLibraries()
+    } catch (e) {
+      setErr('Statut Plex indisponible : ' + e.message)
+    }
   }
 
   async function loadLibraries() {
     try {
       const res = await fetch('/api/plex/libraries')
-      const data = await res.json()
+      const data = await res.json().catch(() => null)
+      if (!res.ok || !Array.isArray(data)) throw new Error(data?.detail || `HTTP ${res.status}`)
       setLibraries(data)
-      if (data.length > 0) setActiveSectionId(data[0].id)
-    } catch (_) {}
+      if (data.length > 0) setActiveSectionId(prev => data.some(l => l.id === prev) ? prev : data[0].id)
+    } catch (e) {
+      setErr('Bibliothèques inaccessibles : ' + e.message)
+    }
   }
 
   useEffect(() => { checkStatus() }, [])
 
   async function handleSelect(ratingKey) {
+    if (loadingItem) return
     setLoadingItem(true)
     setErr(null)
     setSelectedKey(ratingKey)
@@ -324,7 +240,8 @@ export default function PlexBrowser({ onSourceSelected }) {
 
       const part = item.parts[0]
       const sourceId = crypto.randomUUID()
-      await fetch(`/api/files/register?source_id=${sourceId}&stream_url=${encodeURIComponent(part.stream_url)}&filename=${encodeURIComponent(part.filename)}`, { method: 'POST' })
+      const reg = await fetch(`/api/files/register?source_id=${sourceId}&stream_url=${encodeURIComponent(part.stream_url)}&filename=${encodeURIComponent(part.filename)}`, { method: 'POST' })
+      if (!reg.ok) throw new Error(`Enregistrement source : HTTP ${reg.status}`)
 
       onSourceSelected({
         sourceId,
@@ -343,104 +260,69 @@ export default function PlexBrowser({ onSourceSelected }) {
     }
   }
 
-  if (!status) return <div style={{ padding: 24, color: 'var(--text3)' }}>Vérification Plex…</div>
-
-  if (!status.connected) {
-    return <PlexConnect onConnected={() => checkStatus()} />
+  if (!status) {
+    return (
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, fontSize: T.fs.sm }}>
+        {err
+          ? <><span style={{ color: T.danger }}>{err}</span><Btn variant="outline" size="sm" icon={ICONS.loop2} onClick={checkStatus}>Réessayer</Btn></>
+          : <span style={{ color: T.text3 }}>Vérification Plex…</span>}
+      </div>
+    )
   }
 
+  if (!status.connected) {
+    return <PlexConnect initialUrl={status.url} onConnected={() => checkStatus()} />
+  }
+
+  const activeLib = libraries.find(l => l.id === activeSectionId)
+
   return (
-    <div style={{ display: 'flex', height: '100%', background: 'var(--bg)' }}>
-      {/* Left sidebar — libraries with item counts */}
-      <div style={{
-        width: 220, flexShrink: 0,
-        borderRight: '1px solid var(--border)',
-        background: 'var(--surface)',
-        display: 'flex', flexDirection: 'column',
-      }}>
-        <div style={{
-          padding: '14px 16px 10px',
-          borderBottom: '1px solid var(--border)',
-          display: 'flex', alignItems: 'center', gap: 6,
-        }}>
-          <span style={{
-            fontSize: 14, fontWeight: 800, color: PLEX_AMBER,
-            letterSpacing: 1.2, fontFamily: 'var(--font-mono)',
-          }}>
-            ▶ PLEX
-          </span>
-        </div>
-        <div style={{ padding: 8, display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {libraries.map(lib => {
-            const active = activeSectionId === lib.id
-            return (
-              <button
-                key={lib.id}
-                onClick={() => setActiveSectionId(lib.id)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 8,
-                  padding: '8px 10px', borderRadius: 5,
-                  background: active ? 'var(--accent-soft)' : 'transparent',
-                  color: active ? 'var(--accent)' : 'var(--text2)',
-                  fontSize: 12.5, fontWeight: active ? 600 : 500,
-                  border: 'none', cursor: 'pointer', textAlign: 'left',
-                  minHeight: 32,
-                }}>
-                <span style={{ flex: 1 }}>{lib.title}</span>
-                {typeof lib.count === 'number' && (
-                  <span style={{
-                    fontSize: 10, fontFamily: 'var(--font-mono)',
-                    color: 'var(--text3)',
-                  }}>{lib.count}</span>
-                )}
-              </button>
-            )
-          })}
-        </div>
+    <div style={{ flex: 1, display: 'flex', gap: 16, minHeight: 0 }}>
+      <div style={{ width: 200, flexShrink: 0, background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.r.card, padding: 8, overflow: 'auto' }}>
+        <div style={{ fontSize: T.fs.micro, color: T.text3, letterSpacing: 1.4, fontWeight: 700, padding: '8px 10px' }}>BIBLIOTHÈQUES</div>
+        {libraries.map(lib => {
+          const on = activeSectionId === lib.id
+          return (
+            <div key={lib.id} role="button" tabIndex={0} onClick={() => setActiveSectionId(lib.id)}
+              onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setActiveSectionId(lib.id) } }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 9, padding: '8px 10px', borderRadius: T.r.ctl, cursor: 'pointer',
+                background: on ? alpha(T.accent, '11') : 'transparent', color: on ? T.accent : T.text2, border: on ? `1px solid ${alpha(T.accent, '33')}` : '1px solid transparent', fontSize: T.fs.sm, fontWeight: on ? 600 : 500,
+              }}>
+              <Icon d={ICONS.folder} size={14} /><span style={{ flex: 1 }}>{lib.title}</span>
+              {typeof lib.count === 'number' && <span style={{ fontSize: 10, color: T.text3, fontFamily: T.fontMono }}>{lib.count}</span>}
+            </div>
+          )
+        })}
+        {libraries.length === 0 && !err && <div style={{ padding: '8px 10px', fontSize: T.fs.xs, color: T.text3 }}>Aucune bibliothèque</div>}
       </div>
 
-      {/* Body */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-        {/* Top bar — ONLINE chip + server name */}
-        <div style={{
-          padding: '10px 16px',
-          borderBottom: '1px solid var(--border)',
-          background: 'var(--surface)',
-          display: 'flex', alignItems: 'center', gap: 10,
-        }}>
-          <span style={{
-            display: 'inline-flex', alignItems: 'center', gap: 5,
-            fontSize: 10.5, fontWeight: 700, letterSpacing: 1,
-            color: 'var(--success)',
-            padding: '3px 8px', borderRadius: 99,
-            background: 'rgba(94,194,124,0.10)',
-            border: '1px solid rgba(94,194,124,0.35)',
-            fontFamily: 'var(--font-mono)',
-          }}>
-            ● ONLINE
-          </span>
-          <span style={{ fontSize: 12, color: 'var(--text2)', fontWeight: 500 }}>{status.server}</span>
-          <div style={{ flex: 1 }} />
-          {loadingItem && <span style={{ fontSize: 11, color: 'var(--accent)' }}>Chargement…</span>}
-          {err && <span style={{ fontSize: 11, color: 'var(--danger)' }}>{err}</span>}
-          <button
-            onClick={() => { setStatus(null); checkStatus() }}
-            title="Recharger"
-            style={{
-              fontSize: 11, color: 'var(--text3)',
-              background: 'transparent', border: '1px solid var(--border2)',
-              borderRadius: 5, padding: '4px 10px', minHeight: 28, cursor: 'pointer',
-            }}>
-            Recharger
-          </button>
+      {activeSectionId ? (
+        <LibraryGrid
+          sectionId={activeSectionId}
+          sectionTitle={activeLib?.title}
+          onSelect={handleSelect}
+          selectedKey={selectedKey}
+          toolbar={<PlexToolbar status={status} loadingItem={loadingItem} err={err} onReload={() => { setStatus(null); checkStatus() }} />}
+        />
+      ) : (
+        <div style={{ flex: 1, display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end' }}>
+          <PlexToolbar status={status} loadingItem={loadingItem} err={err} onReload={() => { setStatus(null); checkStatus() }} />
         </div>
-
-        {activeSectionId && (
-          <div style={{ flex: 1, overflow: 'hidden' }}>
-            <LibraryGrid sectionId={activeSectionId} onSelect={handleSelect} selectedKey={selectedKey} />
-          </div>
-        )}
-      </div>
+      )}
     </div>
+  )
+}
+
+function PlexToolbar({ status, loadingItem, err, onReload }) {
+  return (
+    <>
+      {loadingItem && <span style={{ fontSize: T.fs.micro, color: T.accent, whiteSpace: 'nowrap' }}>Chargement…</span>}
+      {err && <span style={{ fontSize: T.fs.micro, color: T.danger, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={err}>{err}</span>}
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: T.fs.xs, color: T.text2, whiteSpace: 'nowrap' }}>
+        <Dot color={T.success} size={6} />{status.server}
+      </span>
+      <Btn variant="outline" size="sm" icon={ICONS.loop2} onClick={onReload} title="Recharger">Recharger</Btn>
+    </>
   )
 }

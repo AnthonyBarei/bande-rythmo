@@ -4,8 +4,36 @@
     {
       "name": "frontend",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "frontend", "run", "dev"],
+      "runtimeArgs": [
+        "--prefix",
+        "frontend",
+        "run",
+        "dev"
+      ],
       "port": 5173
+    },
+    {
+      "name": "backend",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": [
+        "/c",
+        "cd backend && venv\\Scripts\\python.exe -m uvicorn main:app --host 127.0.0.1 --port 8000 --timeout-graceful-shutdown 2"
+      ],
+      "port": 8000
+    },
+    {
+      "name": "reference",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "5190",
+        "--bind",
+        "127.0.0.1",
+        "--directory",
+        "design/design_handoff_redesign_v2/reference"
+      ],
+      "port": 5190
     }
   ]
 }

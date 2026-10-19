@@ -10,6 +10,8 @@ import os
 import subprocess
 import sys
 
+from services.jobs import kill_process_tree
+
 
 class VocalSeparationUnavailable(Exception):
     pass
@@ -43,7 +45,7 @@ def separate(audio_path: str, out_dir: str, model: str = "htdemucs",
                             text=True, bufsize=1)
     for line in proc.stdout:
         if is_cancelled and is_cancelled():
-            proc.kill()
+            kill_process_tree(proc)
             proc.wait(timeout=5)
             raise VocalSeparationUnavailable("Annulé")
         if on_progress:

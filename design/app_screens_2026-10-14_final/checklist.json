@@ -1,0 +1,317 @@
+[
+ {
+  "id": "L1",
+  "screen": "Bibliothèque",
+  "item": "grille de clips",
+  "status": "pass",
+  "detail": "12 cartes"
+ },
+ {
+  "id": "L2",
+  "screen": "Bibliothèque",
+  "item": "badges de statut (À faire/Doublage/À revoir/Validé)",
+  "status": "pass",
+  "detail": "badges sur cartes ['À FAIRE', 'DOUBLAGE'] · onglets ['À faire', 'Doublage', 'À revoir', 'Validé']"
+ },
+ {
+  "id": "L3",
+  "screen": "Bibliothèque",
+  "item": "recherche",
+  "status": "pass",
+  "detail": "« pote » → 1/12 cartes"
+ },
+ {
+  "id": "L4",
+  "screen": "Bibliothèque",
+  "item": "sélecteur de projet",
+  "status": "pass",
+  "detail": "options ['Tous les projets', 'Bad Ass', 'Sans projet']"
+ },
+ {
+  "id": "L5",
+  "screen": "Bibliothèque",
+  "item": "tri (Select)",
+  "status": "pass",
+  "detail": "[['Nom A→Z', True], ['Durée', True], ['Statut', True]]"
+ },
+ {
+  "id": "L6",
+  "screen": "Bibliothèque",
+  "item": "rangée d'actions au survol (Doubler/mic/MP3/GIF/corbeille)",
+  "status": "pass",
+  "detail": "visible · Doublage | Enregistrer — Studio | Exporter MP3 — audio uniquement | Créer un GIF depuis ce clip (Atelier) | Supprimer"
+ },
+ {
+  "id": "I1",
+  "screen": "Importer",
+  "item": "onglets source Fichier / Plex / URL",
+  "status": "pass",
+  "detail": "présents: Fichier local, Plex, URL / Stream"
+ },
+ {
+  "id": "I2",
+  "screen": "Importer",
+  "item": "sélecteur flux vidéo + piste audio",
+  "status": "pass",
+  "detail": "preuve r4_import_proofs --import-proof : import/01-import.png (2 tailles) — FLUX DÉTECTÉS · Vidéo H264 1918x800 · Audio AAC (ffprobe)"
+ },
+ {
+  "id": "I2b",
+  "screen": "Importer",
+  "item": "note remux 5.1 → stéréo",
+  "status": "n/t",
+  "detail": "nécessite une source multicanal + un job de remux (POST /api/files/remux) — non exercé"
+ },
+ {
+  "id": "I3",
+  "screen": "Importer",
+  "item": "timeline zoomable + minimap",
+  "status": "pass",
+  "detail": "zoom 1.0× → 1.5×; minimap visible sur import/01-import.png (barre jaune sous la piste)"
+ },
+ {
+  "id": "I4",
+  "screen": "Importer",
+  "item": "renommage inline des clips en attente (pas de champ nom global)",
+  "status": "pass",
+  "detail": "{\"input\":true,\"focused\":\"Nom du clip…\"}"
+ },
+ {
+  "id": "I5",
+  "screen": "Importer",
+  "item": "Ctrl+S crée le lot",
+  "status": "pass",
+  "detail": "requêtes tentées (bloquées par les mocks) : ['POST /api/clips/batch-local-job']"
+ },
+ {
+  "id": "I6",
+  "screen": "Importer",
+  "item": "Plex : connexion (token) + navigateur de bibliothèque",
+  "status": "pass",
+  "detail": "onglet Plex rendu (serveur 192.168.1.5:32400) ; la navigation lit le vrai serveur Plex (GET) — IMPORTER · Choisir un fichier dans Plex · Fichier local, bibliothèque Plex ou URL directe · Fichier local · glisser un .mp4 · Plex · bibliothèque locale · URL /"
+ },
+ {
+  "id": "E1",
+  "screen": "Éditeur",
+  "item": "vidéo + chip TC SMPTE + bascule VO/Proxy",
+  "status": "pass",
+  "detail": "{\"video\":true,\"tc\":true,\"vo\":true,\"proxy\":true}"
+ },
+ {
+  "id": "E2",
+  "screen": "Éditeur",
+  "item": "sous-titre incrusté dans le player",
+  "status": "pass",
+  "detail": "overlay « Ça y est, ça roule ? » (Affichage → Toujours, réglage local)"
+ },
+ {
+  "id": "E3",
+  "screen": "Éditeur",
+  "item": "transport : image par image, vitesse 0.5–2×, scrub",
+  "status": "pass",
+  "detail": "+1 image → 0.040s · vitesse 1.5× · scrub 50% → 33.2/66.5s"
+ },
+ {
+  "id": "E4",
+  "screen": "Éditeur",
+  "item": "barre timeline-nav (waveform + blocs + boucles + fenêtre)",
+  "status": "pass",
+  "detail": "canvas [973, 56] — contenu visible sur editor/01-editor.png"
+ },
+ {
+  "id": "E5",
+  "screen": "Éditeur",
+  "item": "bande : menu contextuel (clic droit)",
+  "status": "pass",
+  "detail": "['Éditer le texte', 'Couper ici (00:00:00:13)', 'Dupliquer après', 'Aller au début (00:00:00:05)', 'Aller à la fin (00:00:01:10)', 'Supprimer']"
+ },
+ {
+  "id": "E6",
+  "screen": "Éditeur",
+  "item": "bande : texte élastique, police manuscrite, marqueurs d'étirement, START/BIP/PI, boucles, PLAN, détection",
+  "status": "visual",
+  "detail": "rendu canvas (pixels) : vérifié visuellement sur editor/01-editor.png et studio/*.png ; non assertable dans le DOM"
+ },
+ {
+  "id": "E7",
+  "screen": "Éditeur",
+  "item": "bande : maintien-glisser (scrub), double-clic édition, clic-lettre détection",
+  "status": "n/t",
+  "detail": "gestes souris sur le canvas qui modifient les répliques (autosave PUT) — non exercés pour ne rien écrire"
+ },
+ {
+  "id": "E8",
+  "screen": "Éditeur",
+  "item": "barre d'outils en clusters (édition · insertion · drapeaux + Plans · note · détection · police · verrou · zoom)",
+  "status": "pass",
+  "detail": "présents: Ajouter une réplique, Couper, Boucler la sélection, Resp., Réact., État de la réplique, Plans, Note de direction, Calque détection, Manuscrite, Verrouiller, Zoom arrière, Zoom avant, Affichage"
+ },
+ {
+  "id": "E9",
+  "screen": "Éditeur",
+  "item": "annuler / rétablir",
+  "status": "pass",
+  "detail": "[['Annuler (Ctrl+Z)', True], ['Rétablir (Ctrl+Y)', True]] (désactivés tant qu'aucune édition : infobulle portée par le wrapper)"
+ },
+ {
+  "id": "E10",
+  "screen": "Éditeur",
+  "item": "menu Sous-titres (Transcrire / import SRT·ASS·VTT / export)",
+  "status": "pass",
+  "detail": "[['Transcrire', True], ['Importer SRT', True], ['Exporter les sous-titres', True]]"
+ },
+ {
+  "id": "E11",
+  "screen": "Éditeur",
+  "item": "onglets inspecteur Répliques · Voix · Détection · Boucles · Lexique",
+  "status": "pass",
+  "detail": "[['Répliques', True], ['Voix', True], ['Détection', True], ['Boucles', True], ['Lexique', True]]"
+ },
+ {
+  "id": "E12",
+  "screen": "Éditeur",
+  "item": "Voix : distribution + réassignation",
+  "status": "pass",
+  "detail": "[['Nouveau personnage', True], ['Réassigner le personnage', True]]"
+ },
+ {
+  "id": "E13",
+  "screen": "Éditeur",
+  "item": "Détection : signes + affichage mot par mot",
+  "status": "pass",
+  "detail": "[['Labiale', True], ['Semi-fermée', True], ['Fricative', True], ['Arrondie', True], ['Ouverte', True], ['Rendu mot par mot', True], ['Aide auto', True]]"
+ },
+ {
+  "id": "E14",
+  "screen": "Éditeur",
+  "item": "Lexique : termes + Traduire auto",
+  "status": "pass",
+  "detail": "[['Traduire auto', True]] (désactivé sans fournisseur DeepL/LibreTranslate)"
+ },
+ {
+  "id": "X1",
+  "screen": "Exporter",
+  "item": "formats groupés (Vidéo BR / Sous-titres + ASS karaoké / DetX + Croisillé / Audio)",
+  "status": "pass",
+  "detail": "[['VIDÉO BANDE RYTHMO', True], ['SOUS-TITRES', True], ['DOCUMENTS STUDIO', True], ['AUDIO', True], ['ASS Karaoké', True], ['DetX', True], ['Croisillé', True], ['MP4 + BR', True], ['MP4 doublé', True], ['Dubpack', True], ['MP3', True]]"
+ },
+ {
+  "id": "X2",
+  "screen": "Exporter",
+  "item": "plage personnalisée (Plage)",
+  "status": "pass",
+  "detail": "{\"chips\":[\"IN 00:00:00:00\",\"OUT 00:01:06:11\"],\"sliders\":2}"
+ },
+ {
+  "id": "X3",
+  "screen": "Exporter",
+  "item": "incrustation détection OFF par défaut",
+  "status": "pass",
+  "detail": "aria-checked=false"
+ },
+ {
+  "id": "X4",
+  "screen": "Exporter",
+  "item": "file de téléchargement : progression + re-téléchargement par ligne",
+  "status": "pass",
+  "detail": "job mocké en cours (['POST /api/export/mp4-job']) · 8 boutons Télécharger (historique réel, GET)"
+ },
+ {
+  "id": "S1",
+  "screen": "Studio",
+  "item": "micro + vumètre live",
+  "status": "pass",
+  "detail": "Micro · Fake Default Audio Input (faux périphérique Chrome) ; vumètre = StageMeter (barres sous la bande)"
+ },
+ {
+  "id": "S3",
+  "screen": "Studio",
+  "item": "file des prises",
+  "status": "pass",
+  "detail": "3 prises (mockées)"
+ },
+ {
+  "id": "S4",
+  "screen": "Studio",
+  "item": "comparaison A/B",
+  "status": "pass",
+  "detail": "barre A/B affichée (basculer · Tab)"
+ },
+ {
+  "id": "S5",
+  "screen": "Studio",
+  "item": "valider la prise",
+  "status": "pass",
+  "detail": "présents: Valider la prise sélectionnée"
+ },
+ {
+  "id": "S2",
+  "screen": "Studio",
+  "item": "pré-roll (R lance le décompte, R l'annule)",
+  "status": "pass",
+  "detail": "réplique 4 / 51 : pré-roll affiché=True · retour au repos=True (aucune prise créée)"
+ },
+ {
+  "id": "A1",
+  "screen": "Atelier",
+  "item": "modes Meme / GIF / Audio",
+  "status": "pass",
+  "detail": "présents: Image, GIF, Audio"
+ },
+ {
+  "id": "A2",
+  "screen": "Atelier",
+  "item": "lecteur IN-OUT partagé",
+  "status": "pass",
+  "detail": "{\"video\":1,\"inout\":2}"
+ },
+ {
+  "id": "A3",
+  "screen": "Atelier",
+  "item": "éditeur de meme : calques (ajout / réordonner / dupliquer / décaler aux flèches)",
+  "status": "pass",
+  "detail": "calques 2 → ajouter 3 → dupliquer 4 · Monter/Descendre=True · décalage flèches (nudgeLayer) non assertable sans canvas"
+ },
+ {
+  "id": "V1",
+  "screen": "Activité",
+  "item": "centre des jobs : en cours (progression + annuler) / échecs (réessayer) / terminé (re-télécharger)",
+  "status": "pass",
+  "detail": "{\"enCours\":true,\"annuler\":true,\"echecs\":true,\"retry\":true,\"termine\":true,\"redl\":10} (jobs mockés)"
+ },
+ {
+  "id": "V2",
+  "screen": "Activité",
+  "item": "accessible depuis la barre du haut",
+  "status": "pass",
+  "detail": "bouton Activité de la top bar"
+ },
+ {
+  "id": "R1",
+  "screen": "Réglages",
+  "item": "pastilles d'accent (changement live)",
+  "status": "pass",
+  "detail": "--accent #f5c518 → #5AA9F0 → #F5C518 (localStorage du profil headless jetable)"
+ },
+ {
+  "id": "R2",
+  "screen": "Réglages",
+  "item": "style BR, densité, Whisper modèle + langue, Plex, défauts export, police perso, séparation vocale, traduction",
+  "status": "pass",
+  "detail": "[['Style de bande rythmo', True], ['Densité', True], ['Modèle', True], ['Langue par défaut', True], ['Connexion Plex', True], ['Incruster la détection (MP4)', True], ['Police personnalisée', True], ['Séparation vocale', True], ['Auto-traduction', True]]"
+ },
+ {
+  "id": "R3",
+  "screen": "Réglages",
+  "item": "moteur Whisper",
+  "status": "n/a",
+  "detail": "pas de régression : le backend n'utilise que faster-whisper (jamais sélectionnable, y compris sur main) ; le contrôle de la référence est un no-op"
+ },
+ {
+  "id": "R4",
+  "screen": "Réglages",
+  "item": "GPU (défaut d'export)",
+  "status": "info",
+  "detail": "le choix GPU vit dans Exporter › options (encodeurs détectés), pas dans Réglages"
+ }
+]

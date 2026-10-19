@@ -1,16 +1,20 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional
+from services.clip_service import SafeId
 from services.whisper_service import transcribe_segment
 from services.jobs import create_job, get_job, raise_if_cancelled, CancelledJobError, JobStartResponse
 import asyncio
+import logging
 import os
+
+log = logging.getLogger("br.transcription")
 
 router = APIRouter()
 
 
 class TranscribeRequest(BaseModel):
-    segment_id: str
+    segment_id: SafeId
     language: Optional[str] = "fr"
     diarize: bool = True
 
@@ -54,6 +58,7 @@ async def transcribe_job(req: TranscribeRequest):
         except CancelledJobError:
             pass
         except Exception as e:
+            log.exception("transcription failed (segment %s)", req.segment_id)
             job.fail(str(e))
 
     asyncio.get_running_loop().run_in_executor(None, worker)

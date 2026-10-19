@@ -5,6 +5,8 @@ import os
 import time
 from typing import Callable, List, Optional
 
+from services.jobs import kill_process_tree
+
 
 def run_ffmpeg_with_progress(
     cmd: List[str],
@@ -49,7 +51,7 @@ def run_ffmpeg_with_progress(
     try:
         for raw in proc.stdout:
             if is_cancelled and is_cancelled():
-                proc.kill()
+                kill_process_tree(proc)
                 proc.wait(timeout=5)
                 return -1
             line = raw.strip()
@@ -87,6 +89,10 @@ def run_ffmpeg_with_progress(
         proc.wait()
         return proc.returncode
     finally:
+        # A raising callback must not orphan a running ffmpeg.
+        if proc.poll() is None:
+            kill_process_tree(proc)
+            proc.wait()
         try:
             proc.stdout.close()
         except Exception:
@@ -200,6 +206,16 @@ def detect_scene_cuts(path: str, threshold: float = 0.4) -> list:
     return cuts
 
 
+def _rate(value) -> Optional[float]:
+    """ffprobe "num/den" frame rate → float (None when unknown or 0/0)."""
+    try:
+        num, _, den = str(value or "").partition("/")
+        fps = float(num) / float(den or 1)
+    except (ValueError, ZeroDivisionError):
+        return None
+    return round(fps, 3) if fps > 0 else None
+
+
 def probe_streams(path: str) -> dict:
     result = subprocess.run(
         ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", path],
@@ -220,9 +236,9 @@ def probe_streams(path: str) -> dict:
             parts.append(tags["title"])
         label = " · ".join(parts)
         if codec_type == "video":
-            video_streams.append({"relative_index": len(video_streams), "label": label})
+            video_streams.append({"relative_index": len(video_streams), "label": label, "fps": _rate(s.get("avg_frame_rate") or s.get("r_frame_rate"))})
         elif codec_type == "audio":
-            audio_streams.append({"relative_index": len(audio_streams), "label": label})
+            audio_streams.append({"relative_index": len(audio_streams), "label": label, "codec": codec_name, "channels": s.get("channels"), "sample_rate": int(s["sample_rate"]) if str(s.get("sample_rate", "")).isdigit() else None, "language": tags.get("language")})
     return {"video_streams": video_streams, "audio_streams": audio_streams}
 
 
@@ -261,7 +277,8 @@ def extract_segment(source: str, start: float, end: float, output: str,
     map_args = []
     if video_stream is not None or audio_stream is not None:
         map_args += ["-map", f"0:v:{video_stream if video_stream is not None else 0}"]
-        map_args += ["-map", f"0:a:{audio_stream if audio_stream is not None else 0}"]
+        # Trailing "?" = optional: a video-only source still yields a clip.
+        map_args += ["-map", f"0:a:{audio_stream if audio_stream is not None else 0}?"]
 
     cmd = [
         "ffmpeg", "-y",
@@ -301,13 +318,15 @@ def export_gif(video_path: str, output_path: str, fps: int = 12, scale: int = 48
     trim = ["-t", str(duration)] if duration is not None else []
     cmd1 = [
         "ffmpeg", "-y", *seek, "-i", video_path, *trim,
+        "-map", "0:v:0", "-an",
         "-vf", f"fps={fps},scale={scale}:-1:flags=lanczos,palettegen=stats_mode=diff",
         palette,
     ]
     subprocess.run(cmd1, check=True, capture_output=True)
     cmd2 = [
         "ffmpeg", "-y", *seek, "-i", video_path, "-i", palette, *trim,
-        "-lavfi", f"fps={fps},scale={scale}:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer",
+        "-lavfi", f"[0:v:0]fps={fps},scale={scale}:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer[gif]",
+        "-map", "[gif]", "-an",
         output_path,
     ]
     subprocess.run(cmd2, check=True, capture_output=True)

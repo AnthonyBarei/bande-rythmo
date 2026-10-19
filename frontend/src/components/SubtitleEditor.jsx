@@ -1,6 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { TRACK_COLORS } from '../config/tracks'
-import { fmtClockPrecise, parseTC } from '../utils/timecode'
+import { fmtSMPTE } from '../utils/timecode'
+import { parseTimecodeInput } from '../utils/tcInput'
+import { flagLines } from '../utils/lineRate'
+import { isActiveAt, activeIndexAt } from '../utils/band'
+import { T, alpha, Icon, ICONS, Btn, Dot, Chip, Popover, MenuItem, MenuLabel, MenuSep } from '../ui'
 
 const NOTATION_TAGS = [
   { label: '(HH)', title: 'Inspiration',  color: '#7ec0ff' },
@@ -13,17 +17,18 @@ const NOTATION_TAGS = [
   { label: '*',          title: 'Repère BR (respiration)',color: '#7ec0ff' },
 ]
 
-const fmtTC = fmtClockPrecise
+const RATE_COLOR = { ok: T.text4, warn: T.accent, danger: T.danger }
 
-function TCInput({ value, onCommit, color = 'var(--text2)' }) {
+function TCInput({ value, onCommit, fps = 25, color = 'var(--text2)', compact = false }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
   const inputRef = useRef(null)
+  const fmtTC = t => fmtSMPTE(t, fps)
 
   useEffect(() => { if (editing) inputRef.current?.select() }, [editing])
 
   function commit() {
-    const t = parseTC(draft)
+    const t = parseTimecodeInput(draft, fps)
     if (t != null) onCommit(t)
     setEditing(false)
   }
@@ -38,17 +43,17 @@ function TCInput({ value, onCommit, color = 'var(--text2)' }) {
           if (e.key === 'Enter') { e.preventDefault(); commit() }
           if (e.key === 'Escape') { e.preventDefault(); setEditing(false) }
         }}
-        style={{ width: 72, fontFamily: 'var(--font-mono)', fontSize: 11, background: '#0a0a0a', color, border: '1px solid #f5c518', borderRadius: 2, padding: '2px 4px', outline: 'none' }}
+        style={{ width: compact ? 74 : 92, fontFamily: 'var(--font-mono)', fontSize: compact ? 9.5 : 11, background: 'var(--bg)', color, border: '1px solid var(--accent)', borderRadius: 2, padding: compact ? '0 2px' : '2px 4px', outline: 'none' }}
       />
     )
   }
   return (
-    <button onClick={e => { e.stopPropagation(); setDraft(fmtTC(value)); setEditing(true) }} style={{
-      width: 72, fontFamily: 'var(--font-mono)', fontSize: 11, color, background: 'transparent',
-      border: '1px solid transparent', borderRadius: 2, padding: '2px 4px', textAlign: 'left', cursor: 'text',
+    <button onClick={e => { e.stopPropagation(); setDraft(fmtTC(value)); setEditing(true) }} title="Modifier le timecode" style={{
+      width: compact ? 'auto' : 92, fontFamily: 'var(--font-mono)', fontSize: compact ? 9.5 : 11, color, background: 'transparent',
+      border: '1px solid transparent', borderRadius: 2, padding: compact ? '0 2px' : '2px 4px', textAlign: 'left', cursor: 'text',
       transition: 'border-color 0.12s',
     }}
-    onMouseEnter={e => { e.currentTarget.style.borderColor = '#333' }}
+    onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--border2)' }}
     onMouseLeave={e => { e.currentTarget.style.borderColor = 'transparent' }}
     >{fmtTC(value)}</button>
   )
@@ -59,12 +64,12 @@ function CharOption({ name, idx, active, onClick }) {
   return (
     <button onClick={onClick} style={{
       display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '6px 10px',
-      background: active ? 'rgba(245, 197, 24,0.08)' : 'transparent',
+      background: active ? 'var(--accent-dim)' : 'transparent',
       border: 'none', fontSize: 12, textAlign: 'left', cursor: 'pointer', color: 'var(--text)',
     }}>
       <span style={{ width: 8, height: 8, borderRadius: '50%', background: c.label, flexShrink: 0 }} />
       <span style={{ flex: 1 }}>{name || '(défaut)'}</span>
-      {active && <span style={{ color: '#f5c518', fontSize: 10 }}>✓</span>}
+      {active && <Icon d={ICONS.check} size={12} stroke="var(--accent)" />}
     </button>
   )
 }
@@ -85,33 +90,26 @@ function CharSelect({ value, charMap, charList, onSelect, onCreate, compact = fa
 
   if (compact) {
     return (
-      <div ref={ref} style={{ position: 'relative', flexShrink: 0 }}>
-        <button onClick={e => { e.stopPropagation(); setOpen(o => !o) }} title={value || '(défaut)'} style={{
-          display: 'flex', alignItems: 'center', padding: '2px 7px', borderRadius: 99,
-          background: c.label + '1e', border: `1px solid ${c.label}44`,
-          cursor: 'pointer', fontSize: 9, fontWeight: 700, color: c.label,
-          letterSpacing: 0.4, textTransform: 'uppercase', maxWidth: 78,
-          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-        }}>
-          {value || 'déf'}
-        </button>
-        {open && (
-          <div style={{
-            position: 'absolute', top: 'calc(100% + 3px)', left: 0, minWidth: 160, zIndex: 30,
-            background: '#111', border: '1px solid #2a2a2a', borderRadius: 6,
-            boxShadow: '0 8px 24px rgba(0,0,0,0.7)', padding: '4px 0',
-          }}>
-            {charList.map(ch => (
-              <CharOption key={ch || '_def'} name={ch} idx={charMap[ch] ?? 0} active={ch === (value || '')}
-                onClick={() => { onSelect(ch); setOpen(false) }} />
-            ))}
-            <div style={{ borderTop: '1px solid #1e1e1e', margin: '4px 0' }} />
-            <button onClick={() => { onCreate(); setOpen(false) }} style={{
-              display: 'block', width: '100%', padding: '6px 10px', fontSize: 11,
-              color: '#f5c518', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer',
-            }}>+ Nouveau personnage…</button>
-          </div>
-        )}
+      <div onClick={e => e.stopPropagation()} style={{ flexShrink: 0, display: 'inline-flex' }}>
+        <Popover width={180} trigger={(o, tog) => (
+          <Chip color={c.hex} soft onClick={tog} style={{ padding: '0px 6px', fontSize: 9, maxWidth: 90, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block' }}>
+            {value || 'déf'}
+          </Chip>
+        )}>
+          {close => (<>
+            <MenuLabel>Personnage</MenuLabel>
+            {charList.map(ch => {
+              const hex = TRACK_COLORS[(charMap[ch] ?? 0) % TRACK_COLORS.length].hex
+              return (
+                <MenuItem key={ch || '_def'} active={ch === (value || '')} color={hex} onClick={() => { onSelect(ch); close() }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Dot color={hex} size={8} />{ch || '(défaut)'}</span>
+                </MenuItem>
+              )
+            })}
+            <MenuSep />
+            <MenuItem icon={ICONS.plus} onClick={() => { close(); onCreate() }}>Nouveau personnage…</MenuItem>
+          </>)}
+        </Popover>
       </div>
     )
   }
@@ -126,22 +124,22 @@ function CharSelect({ value, charMap, charList, onSelect, onCreate, compact = fa
       }}>
         <span style={{ width: 7, height: 7, borderRadius: '50%', background: c.label, flexShrink: 0 }} />
         <span style={{ flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 72 }}>{value || '(défaut)'}</span>
-        <span style={{ fontSize: 8, color: 'var(--text3)', flexShrink: 0 }}>▾</span>
+        <Icon d={ICONS.chevron} size={11} stroke="var(--text3)" style={{ flexShrink: 0 }} />
       </button>
       {open && (
         <div style={{
-          position: 'absolute', top: 'calc(100% + 3px)', left: 0, minWidth: 160, zIndex: 30,
-          background: '#111', border: '1px solid #2a2a2a', borderRadius: 6,
+          position: 'absolute', top: 'calc(100% + 3px)', left: 0, minWidth: 160, zIndex: 'var(--z-dropdown)',
+          background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: 6,
           boxShadow: '0 8px 24px rgba(0,0,0,0.7)', padding: '4px 0',
         }}>
           {charList.map(ch => (
             <CharOption key={ch || '_def'} name={ch} idx={charMap[ch] ?? 0} active={ch === (value || '')}
               onClick={() => { onSelect(ch); setOpen(false) }} />
           ))}
-          <div style={{ borderTop: '1px solid #1e1e1e', margin: '4px 0' }} />
+          <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0' }} />
           <button onClick={() => { onCreate(); setOpen(false) }} style={{
             display: 'block', width: '100%', padding: '6px 10px', fontSize: 11,
-            color: '#f5c518', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer',
+            color: 'var(--accent)', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer',
           }}>+ Nouveau personnage…</button>
         </div>
       )}
@@ -155,7 +153,7 @@ const Ic = ({ d, size = 14 }) => (
   </svg>
 )
 
-const ICONS = {
+const ROW_ICONS = {
   eye:    <><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></>,
   eyeOff: <><path d="M9.9 4.24A9.1 9.1 0 0 1 12 4c6.4 0 10 7 10 7a16.8 16.8 0 0 1-3.06 3.88M6.6 6.6A16.9 16.9 0 0 0 2 12s3.6 7 10 7a9.1 9.1 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/><line x1="3" y1="3" x2="21" y2="21"/></>,
   note:   <><path d="M21 14a2 2 0 0 1-2 2H8l-4 4V5a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2z"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="12.5" x2="13" y2="12.5"/></>,
@@ -163,10 +161,65 @@ const ICONS = {
   goto:   <><polygon points="7 4 20 12 7 20 7 4"/></>,
 }
 
-function SubtitleRow({ sub, idx, active, selected, compact, charMap, charList, onChange, onDelete, onSelect, onSeek, onNewCharacter }) {
+// Réplique note (FIXES_R5 #17): a read-only line at rest, an input on click.
+// Enter / blur save once, Escape drops the draft.
+function NoteEditor({ note, onSave, onClose }) {
+  const [draft, setDraft] = useState(note || '')
+  const doneRef = useRef(false)
+
+  function finish(save, value = draft) {
+    if (doneRef.current) return
+    doneRef.current = true
+    const next = value.trim()
+    if (save && next !== (note || '')) onSave(next)
+    onClose()
+  }
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
+      <Icon d={ICONS.note} size={11} stroke={T.accent} />
+      <input
+        value={draft}
+        autoFocus
+        onChange={e => setDraft(e.target.value)}
+        onClick={e => e.stopPropagation()}
+        onBlur={() => finish(true)}
+        onKeyDown={e => {
+          if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); finish(true) }
+          if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(false) }
+        }}
+        placeholder="Note — intention, intonation, didascalie…"
+        style={{
+          flex: 1, fontFamily: T.fontUI, fontSize: 12,
+          padding: '2px 6px', background: 'var(--accent-dim)',
+          border: '1px solid var(--accent-ring)', borderRadius: 4,
+          color: T.text, outline: 'none', minWidth: 0,
+        }}
+      />
+      {note && (
+        <span onMouseDown={e => e.preventDefault()}>
+          <Btn size="sm" icon={ICONS.close} title="Effacer la note"
+            onClick={e => { e.stopPropagation(); finish(true, '') }} />
+        </span>
+      )}
+    </div>
+  )
+}
+
+function NoteLine({ note, onEdit }) {
+  return (
+    <button onClick={e => { e.stopPropagation(); onEdit() }} title="Modifier la note"
+      style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, padding: 0, width: '100%', minWidth: 0, background: 'transparent', border: 'none', cursor: 'text', textAlign: 'left' }}>
+      <Icon d={ICONS.note} size={11} stroke={T.text3} style={{ flexShrink: 0 }} />
+      <span style={{ flex: 1, minWidth: 0, fontFamily: T.fontUI, fontSize: 12, color: T.text2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{note}</span>
+    </button>
+  )
+}
+
+function SubtitleRow({ sub, idx, rate, active, selected, compact, fps, charMap, charList, onChange, onDelete, onSelect, onSeek, onNewCharacter }) {
   const textInputRef = useRef(null)
   const [showNotations, setShowNotations] = useState(false)
-  const [showNote, setShowNote] = useState(false)
+  const [editingNote, setEditingNote] = useState(false)
   const notationRef = useRef(null)
   const mouseDownPos = useRef(null)
 
@@ -174,14 +227,14 @@ function SubtitleRow({ sub, idx, active, selected, compact, charMap, charList, o
     mouseDownPos.current = { x: e.clientX, y: e.clientY }
   }
 
-  function handleRowClick(e) {
+  function handleRowClick() {
     mouseDownPos.current = null
     onSelect()
   }
 
   useEffect(() => {
     if (!showNotations) return
-    const close = e => { if (!notationRef.current?.contains(e.target)) setShowNotations(false) }
+    const close = e => { if (!notationRef.current?.contains(e.target) && !e.target.closest?.('[data-notation-trigger]')) setShowNotations(false) }
     setTimeout(() => window.addEventListener('mousedown', close), 0)
     return () => window.removeEventListener('mousedown', close)
   }, [showNotations])
@@ -207,15 +260,14 @@ function SubtitleRow({ sub, idx, active, selected, compact, charMap, charList, o
   }
 
   const dur = sub.end - sub.start
-  const visibleText = (sub.text || '').replace(/\*/g, '')
-  const cps = dur > 0 ? visibleText.length / dur : 0
-  const cpsHigh = cps > 20
-  const c = TRACK_COLORS[(charMap[sub.character || ''] ?? 0) % TRACK_COLORS.length]
+  const rateFlag = rate.level !== 'ok'
+  const rateStyle = { color: RATE_COLOR[rate.level], fontWeight: rateFlag ? 700 : 400 }
+  const c =TRACK_COLORS[(charMap[sub.character || ''] ?? 0) % TRACK_COLORS.length]
 
   const icBtn = (title, color, onClick, children) => (
     <button title={title} onClick={e => { e.stopPropagation(); onClick() }} style={{
       background: 'transparent', border: '1px solid transparent', color,
-      width: 28, height: 28, borderRadius: 6,
+      width: 32, height: 32, borderRadius: 6,
       cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
       opacity: 0.55, transition: 'opacity 0.12s, background 0.12s, border-color 0.12s',
     }}
@@ -225,118 +277,74 @@ function SubtitleRow({ sub, idx, active, selected, compact, charMap, charList, o
   )
 
   if (compact) {
-    // Compact layout: number badge | (meta line + text line) | hover actions
+    // Reference Inspector › ReplList row: number badge | meta line + text | hover actions
+    const on = selected || active
+    const hex = c.hex
+    const isR = (sub.text || '').startsWith('(')
     return (
       <div
         onMouseDown={handleMouseDown}
         onClick={handleRowClick}
         className="sub-row"
         style={{
-          display: 'flex', gap: 8, padding: '9px 10px', marginBottom: 2,
-          borderRadius: 6, position: 'relative',
-          background: (selected || active) ? c.label + '22' : 'transparent',
-          border: `1px solid ${(selected || active) ? c.label + '44' : 'transparent'}`,
-          cursor: 'pointer', userSelect: 'none',
-          transition: 'background 0.1s',
+          display: 'flex', gap: 9, padding: '9px 10px', marginBottom: 3, borderRadius: T.r.ctl, cursor: 'pointer', position: 'relative',
+          background: on ? alpha(hex, '14') : 'transparent', border: `1px solid ${on ? alpha(hex, '44') : 'transparent'}`,
+          userSelect: 'none',
         }}
       >
-        {(selected || active) && (
-          <div style={{ position: 'absolute', left: 0, top: 8, bottom: 8, width: 2.5, background: c.label, borderRadius: 2 }} />
-        )}
-        {/* Number badge */}
-        <div style={{
-          width: 22, height: 22, flexShrink: 0, borderRadius: 4, marginTop: 1,
-          background: c.label + '22', color: c.label,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700,
-        }}>{idx + 1}</div>
+        {on && <div style={{ position: 'absolute', left: 0, top: 8, bottom: 8, width: 2.5, background: hex, borderRadius: 2 }} />}
+        <div style={{ width: 22, height: 22, borderRadius: 5, background: alpha(hex, '22'), color: hex, fontSize: 9.5, fontWeight: 700, fontFamily: T.fontMono, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>{String(idx + 1).padStart(2, '0')}</div>
 
-        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {/* Meta line */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 3, position: 'relative' }}>
             <CharSelect value={sub.character || ''} charMap={charMap} charList={charList}
               onSelect={v => onChange({ ...sub, character: v })}
               onCreate={onNewCharacter}
               compact
             />
-            <TCInput value={sub.start} color="var(--text3)"
-              onCommit={t => onChange({ ...sub, start: Math.min(t, sub.end - 0.1) })} />
-            <span style={{ color: 'var(--text4)', fontSize: 10 }}>→</span>
-            <TCInput value={sub.end} color="var(--text3)"
-              onCommit={t => onChange({ ...sub, end: Math.max(t, sub.start + 0.1) })} />
+            <span style={{ display: 'inline-flex', alignItems: 'center', fontSize: 9.5, color: T.text3, fontFamily: T.fontMono }}>
+              <TCInput compact fps={fps} value={sub.start} color={T.text3}
+                onCommit={t => onChange({ ...sub, start: Math.min(t, sub.end - 0.1) })} /> → <TCInput compact fps={fps} value={sub.end} color={T.text3}
+                onCommit={t => onChange({ ...sub, end: Math.max(t, sub.start + 0.1) })} />
+            </span>
+            {sub.take && <Dot color={T.danger} size={6} />}
             <div style={{ flex: 1 }} />
-            <span title={`${cps.toFixed(1)} c/s`} style={{
-              fontSize: 10, fontFamily: 'var(--font-mono)',
-              color: cpsHigh ? 'var(--danger)' : 'var(--text4)',
-              fontWeight: cpsHigh ? 700 : 400,
-            }}>{dur.toFixed(1)}s</span>
+            <span data-line-rate={rate.level} title={rate.reason || undefined} style={{ fontSize: 9.5, fontFamily: T.fontMono, cursor: rateFlag ? 'help' : 'default', ...rateStyle }}>{dur.toFixed(1)}s</span>
+
+            {/* Actions — reveal on row hover, over the duration on the TC
+                line only, bottom-anchored 1px above the text line, which is never
+                covered (FIXES_R6 #2). */}
+            <div className="row-actions" onClick={e => e.stopPropagation()} style={{ position: 'absolute', right: -4, bottom: -2, display: 'flex', alignItems: 'center', gap: 0, background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.r.ctl, padding: 1, boxShadow: T.shadow }}>
+              <Btn size="xs" icon={ICONS.play} title="Aller au timecode" onClick={() => onSeek?.(sub.start)} />
+              <span data-notation-trigger style={{ display: 'inline-flex' }}>
+                <Btn size="xs" icon={ICONS.breath} active={showNotations} title="Notations de doublage" onClick={() => setShowNotations(n => !n)} />
+              </span>
+              <Btn size="xs" icon={ICONS.note} active={!!sub.note} title={sub.note ? `Note : ${sub.note}` : 'Ajouter une note'} onClick={() => setEditingNote(true)} />
+              <Btn size="xs" icon={ICONS.eye} active={!!sub.hidden} title={sub.hidden ? 'Masquée sur la bande — cliquer pour afficher' : 'Masquer sur la bande'} onClick={() => onChange({ ...sub, hidden: !sub.hidden })} />
+              <Btn size="xs" icon={ICONS.trash} danger title="Supprimer" onClick={onDelete} />
+            </div>
           </div>
 
-          {/* Text line */}
           <div ref={notationRef} style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 2 }}>
             <input
               ref={textInputRef}
               value={sub.text}
-              onChange={e => onChange({ ...sub, text: e.target.value })}
+              onChange={e => onChange({ ...sub, text: e.target.value }, 'text')}
               placeholder="Texte de la réplique…"
               onClick={e => e.stopPropagation()}
               style={{
-                flex: 1, fontFamily: 'var(--font-ui)', fontSize: 13, lineHeight: 1.4, padding: '1px 0',
-                background: 'transparent', color: active || selected ? 'var(--text)' : 'var(--text2)',
-                border: 'none', outline: 'none', userSelect: 'text', minWidth: 0,
+                flex: 1, fontSize: T.fs.sm, lineHeight: 1.4, color: on ? T.text : T.text2, fontStyle: isR ? 'italic' : 'normal',
+                fontFamily: T.fontUI, padding: 0, background: 'transparent', border: 'none', outline: 'none', userSelect: 'text', minWidth: 0,
               }}
             />
-            <button onClick={e => { e.stopPropagation(); setShowNotations(n => !n) }}
-              title="Notations de doublage"
-              style={{
-                width: 22, height: 22, flexShrink: 0, borderRadius: 6, cursor: 'pointer', fontSize: 12,
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                background: showNotations ? 'var(--accent-soft)' : 'transparent',
-                color: showNotations ? 'var(--accent)' : 'var(--text4)',
-                border: `1px solid ${showNotations ? 'rgba(245,197,24,0.4)' : 'transparent'}`,
-                transition: 'background 0.12s, color 0.12s, border-color 0.12s',
-              }}
-              onMouseEnter={e => { if (!showNotations) { e.currentTarget.style.background = 'var(--surface2)'; e.currentTarget.style.borderColor = 'var(--border2)' } }}
-              onMouseLeave={e => { if (!showNotations) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'transparent' } }}>
-              ≈
-            </button>
             {showNotations && <NotationPopover tags={NOTATION_TAGS} onInsert={insertNotation} />}
           </div>
 
-          {/* Note line — free-text annotation, shown when toggled or present */}
-          {(showNote || sub.note) && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Ic d={ICONS.note} size={11} />
-              <input
-                value={sub.note || ''}
-                autoFocus={showNote && !sub.note}
-                onChange={e => onChange({ ...sub, note: e.target.value })}
-                onClick={e => e.stopPropagation()}
-                onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') { e.stopPropagation(); setShowNote(false); e.target.blur() } }}
-                placeholder="Note — intention, intonation, didascalie…"
-                style={{
-                  flex: 1, fontFamily: 'var(--font-ui)', fontSize: 11.5, fontStyle: 'italic',
-                  padding: '2px 6px', background: 'rgba(245,197,24,0.06)',
-                  border: '1px solid rgba(245,197,24,0.25)', borderRadius: 4,
-                  color: 'var(--accent)', outline: 'none', minWidth: 0,
-                }}
-              />
-              {sub.note && (
-                <button onClick={e => { e.stopPropagation(); onChange({ ...sub, note: '' }); setShowNote(false) }}
-                  title="Effacer la note"
-                  style={{ background: 'none', border: 'none', color: 'var(--text4)', cursor: 'pointer', fontSize: 12, flexShrink: 0 }}>✕</button>
-              )}
-            </div>
-          )}
+          {editingNote
+            ? <NoteEditor note={sub.note} onSave={note => onChange({ ...sub, note }, 'note')} onClose={() => setEditingNote(false)} />
+            : sub.note && <NoteLine note={sub.note} onEdit={() => setEditingNote(true)} />}
         </div>
 
-        {/* Actions — reveal on row hover (prototype: clean rows) */}
-        <div className="row-actions" style={{ position: 'absolute', top: 6, right: 8, display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0, background: (selected || active) ? c.label + '22' : 'var(--surface)', borderRadius: 7, padding: 1, boxShadow: '0 1px 4px rgba(0,0,0,0.25)' }}>
-          {icBtn('Aller au timecode', 'var(--info)', () => onSeek?.(sub.start), <Ic d={ICONS.goto} size={13} />)}
-          {icBtn(sub.note ? `Note : ${sub.note}` : 'Ajouter une note', sub.note ? 'var(--accent)' : 'var(--text4)', () => setShowNote(v => !v), <Ic d={ICONS.note} size={13} />)}
-          {icBtn(sub.hidden ? 'Masqué' : 'Visible', sub.hidden ? 'var(--text4)' : 'var(--success)', () => onChange({ ...sub, hidden: !sub.hidden }), <Ic d={sub.hidden ? ICONS.eyeOff : ICONS.eye} size={13} />)}
-          {icBtn('Supprimer', 'var(--danger)', onDelete, <Ic d={ICONS.trash} size={13} />)}
-        </div>
       </div>
     )
   }
@@ -348,8 +356,8 @@ function SubtitleRow({ sub, idx, active, selected, compact, charMap, charList, o
       onClick={handleRowClick}
       style={{
         display: 'flex', alignItems: 'center', gap: 0,
-        background: selected ? 'rgba(245, 197, 24,0.07)' : (active ? 'rgba(255,255,255,0.02)' : 'transparent'),
-        borderBottom: '1px solid #141414',
+        background: selected ? 'var(--accent-dim)' : (active ? 'rgba(255,255,255,0.02)' : 'transparent'),
+        borderBottom: '1px solid var(--border)',
         borderLeft: `3px solid ${selected ? c.label : (active ? c.label + '88' : 'transparent')}`,
         cursor: 'pointer', userSelect: 'none', minHeight: 42,
         transition: 'background 0.1s',
@@ -359,21 +367,21 @@ function SubtitleRow({ sub, idx, active, selected, compact, charMap, charList, o
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 8px', flexShrink: 0 }}>
         <input type="checkbox" checked={!!selected} readOnly
           onClick={e => { e.stopPropagation(); onSelect() }}
-          style={{ accentColor: '#f5c518', width: 13, height: 13, margin: 0, cursor: 'pointer' }} />
-        <span style={{ fontSize: 9, color: '#444', minWidth: 16, textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{idx + 1}</span>
+          style={{ accentColor: 'var(--accent)', width: 13, height: 13, margin: 0, cursor: 'pointer' }} />
+        <span style={{ fontSize: 11, color: 'var(--text4)', minWidth: 16, textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{idx + 1}</span>
       </div>
 
       {/* Timecodes */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '0 6px', flexShrink: 0, borderLeft: '1px solid #1a1a1a', borderRight: '1px solid #1a1a1a' }}>
-        <TCInput value={sub.start} color="#f5c518"
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '0 6px', flexShrink: 0, borderLeft: '1px solid var(--border)', borderRight: '1px solid var(--border)' }}>
+        <TCInput fps={fps} value={sub.start} color="var(--accent)"
           onCommit={t => onChange({ ...sub, start: Math.min(t, sub.end - 0.1) })} />
-        <span style={{ color: '#333', fontSize: 10 }}>→</span>
-        <TCInput value={sub.end} color="#f5c518"
+        <span style={{ color: 'var(--text4)', fontSize: 11 }}>→</span>
+        <TCInput fps={fps} value={sub.end} color="var(--accent)"
           onCommit={t => onChange({ ...sub, end: Math.max(t, sub.start + 0.1) })} />
       </div>
 
       {/* Character */}
-      <div style={{ padding: '0 8px', flexShrink: 0, borderRight: '1px solid #1a1a1a' }}>
+      <div style={{ padding: '0 8px', flexShrink: 0, borderRight: '1px solid var(--border)' }}>
         <CharSelect value={sub.character || ''} charMap={charMap} charList={charList}
           onSelect={v => onChange({ ...sub, character: v })}
           onCreate={onNewCharacter}
@@ -381,11 +389,11 @@ function SubtitleRow({ sub, idx, active, selected, compact, charMap, charList, o
       </div>
 
       {/* Text + notation */}
-      <div ref={notationRef} style={{ flex: 1, padding: '0 4px 0 8px', borderRight: '1px solid #1a1a1a', position: 'relative', display: 'flex', alignItems: 'center', gap: 2 }}>
+      <div ref={notationRef} style={{ flex: 1, padding: '0 4px 0 8px', borderRight: '1px solid var(--border)', position: 'relative', display: 'flex', alignItems: 'center', gap: 2 }}>
         <input
           ref={textInputRef}
           value={sub.text}
-          onChange={e => onChange({ ...sub, text: e.target.value })}
+          onChange={e => onChange({ ...sub, text: e.target.value }, 'text')}
           placeholder="Texte de la réplique…"
           onClick={e => e.stopPropagation()}
           style={{
@@ -396,7 +404,7 @@ function SubtitleRow({ sub, idx, active, selected, compact, charMap, charList, o
         />
         <button onClick={e => { e.stopPropagation(); setShowNotations(n => !n) }}
           title="Notations de doublage (HH, rires, …)"
-          style={{ background: 'none', border: 'none', color: showNotations ? '#f5c518' : '#333', padding: '2px 4px', cursor: 'pointer', fontSize: 13, flexShrink: 0, borderRadius: 2, transition: 'color 0.1s' }}>
+          style={{ background: 'none', border: 'none', color: showNotations ? 'var(--accent)' : 'var(--text4)', padding: '2px 4px', minWidth: 32, minHeight: 32, cursor: 'pointer', fontSize: 13, flexShrink: 0, borderRadius: 2, transition: 'color 0.1s' }}>
           ≈
         </button>
         {showNotations && <NotationPopover tags={NOTATION_TAGS} onInsert={insertNotation} />}
@@ -405,14 +413,12 @@ function SubtitleRow({ sub, idx, active, selected, compact, charMap, charList, o
       {/* Stats + actions */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 2, padding: '0 8px', flexShrink: 0 }}>
         <span style={{
-          fontSize: 9, color: cpsHigh ? '#e54545' : '#444',
-          fontFamily: 'var(--font-mono)', fontWeight: cpsHigh ? 700 : 400,
-          marginRight: 4, minWidth: 32,
-        }} title={`${cps.toFixed(1)} c/s`}>{dur.toFixed(2)}s</span>
-        {icBtn('Aller au timecode', '#7ec0ff', () => onSeek?.(sub.start), <Ic d={ICONS.goto} />)}
-        {icBtn(sub.hidden ? 'Masqué' : 'Visible', sub.hidden ? '#444' : '#6eb', () => onChange({ ...sub, hidden: !sub.hidden }), <Ic d={sub.hidden ? ICONS.eyeOff : ICONS.eye} />)}
-        {icBtn(sub.note ? `Note : ${sub.note}` : 'Ajouter une note', sub.note ? '#f5c518' : '#333', () => setShowNote(v => !v), <Ic d={ICONS.note} />)}
-        {icBtn('Supprimer', '#7a3535', onDelete, <Ic d={ICONS.trash} />)}
+          fontSize: 11, fontFamily: 'var(--font-mono)', marginRight: 4, minWidth: 32, ...rateStyle,
+        }} title={rate.reason || undefined}>{dur.toFixed(2)}s</span>
+        {icBtn('Aller au timecode', 'var(--info)', () => onSeek?.(sub.start), <Ic d={ROW_ICONS.goto} />)}
+        {icBtn(sub.hidden ? 'Masqué' : 'Visible', sub.hidden ? 'var(--text4)' : 'var(--success)', () => onChange({ ...sub, hidden: !sub.hidden }), <Ic d={sub.hidden ? ROW_ICONS.eyeOff : ROW_ICONS.eye} />)}
+        {icBtn(sub.note ? `Note : ${sub.note}` : 'Ajouter une note', sub.note ? 'var(--accent)' : 'var(--text4)', () => setEditingNote(true), <Ic d={ROW_ICONS.note} />)}
+        {icBtn('Supprimer', 'var(--danger)', onDelete, <Ic d={ROW_ICONS.trash} />)}
       </div>
     </div>
   )
@@ -420,42 +426,26 @@ function SubtitleRow({ sub, idx, active, selected, compact, charMap, charList, o
 
 function NotationPopover({ tags, onInsert }) {
   return (
-    <div style={{
-      position: 'absolute', top: 'calc(100% + 2px)', left: 0, zIndex: 30,
-      background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: 6,
-      padding: '8px 10px', display: 'flex', flexWrap: 'wrap', gap: 4, minWidth: 280,
-      boxShadow: '0 6px 20px rgba(0,0,0,0.8)',
+    <div onClick={e => e.stopPropagation()} style={{
+      position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 'var(--z-dropdown)', width: 280,
+      background: T.surface, border: `1px solid ${T.border2}`, borderRadius: T.r.card, boxShadow: T.shadowL, padding: 6,
     }}>
-      <div style={{ width: '100%', fontSize: 9, color: '#555', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 2 }}>
-        Notations — insère au curseur
+      <MenuLabel>Notations — insère au curseur</MenuLabel>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, padding: 6 }}>
+        {tags.map(n => (
+          <button key={n.label}
+            onMouseDown={e => { e.preventDefault(); e.stopPropagation(); onInsert(n.label) }}
+            title={n.title}
+            style={{ fontSize: 11, padding: '5px 9px', fontFamily: T.fontMono, background: T.surface2, border: `1px solid ${T.border2}`, color: n.color, borderRadius: 6, cursor: 'pointer' }}>
+            {n.label}
+          </button>
+        ))}
       </div>
-      {tags.map(n => (
-        <button key={n.label}
-          onMouseDown={e => { e.preventDefault(); e.stopPropagation(); onInsert(n.label) }}
-          title={n.title}
-          style={{
-            fontSize: 10, padding: '4px 8px',
-            background: 'rgba(255,255,255,0.04)', border: `1px solid ${n.color}44`,
-            color: n.color, borderRadius: 4, cursor: 'pointer', fontFamily: 'var(--font-mono)',
-            transition: 'background 0.1s, border-color 0.1s',
-          }}
-          onMouseEnter={e => { e.currentTarget.style.background = `${n.color}18`; e.currentTarget.style.borderColor = n.color }}
-          onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; e.currentTarget.style.borderColor = `${n.color}44` }}
-        >
-          {n.label}
-        </button>
-      ))}
     </div>
   )
 }
 
-const toolBtn = {
-  padding: '4px 10px', background: 'var(--surface3)', color: 'var(--text2)',
-  border: '1px solid var(--border2)', borderRadius: 4, fontSize: 11, cursor: 'pointer',
-  display: 'inline-flex', alignItems: 'center', gap: 4,
-}
-
-export default function SubtitleEditor({ subtitles, onChange, currentTime = 0, onSeek, selectedIdx, setSelectedIdx, compact = false, onDelete, charFilter, clipId }) {
+export default function SubtitleEditor({ subtitles, onChange, currentTime = 0, onSeek, selectedIdx, setSelectedIdx, compact = false, onDelete, charFilter, clipId, charMap: charMapProp, fps = 25 }) {
   // charFilter (optional Set of character names): when non-empty, hide rows whose
   // character isn't in the set. Indices stay aligned with the unfiltered array
   // so update/delete callbacks still work.
@@ -466,8 +456,9 @@ export default function SubtitleEditor({ subtitles, onChange, currentTime = 0, o
   const [importError, setImportError] = useState(null)
 
   const charList = Array.from(new Set(subtitles.map(s => s.character || '')))
-  const charMap = Object.fromEntries(charList.map((c, i) => [c, i]))
-  const curActive = subtitles.findIndex(s => currentTime >= s.start && currentTime <= s.end)
+  const charMap = charMapProp || Object.fromEntries(charList.map((c, i) => [c, i]))
+  const curActive = activeIndexAt(subtitles, currentTime)
+  const rates = flagLines(subtitles)
 
   useEffect(() => {
     if (curActive !== -1 && curActive !== prevActiveIdx.current) {
@@ -476,8 +467,10 @@ export default function SubtitleEditor({ subtitles, onChange, currentTime = 0, o
     }
   }, [curActive])
 
-  function update(i, next) {
-    onChange(subtitles.map((s, idx) => idx === i ? next : s))
+  // `field` marks a typing edit: consecutive keystrokes in the same field of
+  // the same réplique coalesce into one undo step.
+  function update(i, next, field) {
+    onChange(subtitles.map((s, idx) => idx === i ? next : s), field ? { coalesce: `${i}:${field}` } : undefined)
   }
 
   function del(i) {
@@ -538,20 +531,20 @@ export default function SubtitleEditor({ subtitles, onChange, currentTime = 0, o
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      {/* Toolbar — full editor shows all controls; compact only shows import */}
-      {(!compact || clipId) && (
+      {/* Toolbar — full editor only (the editor's import lives in the header Sous-titres menu) */}
+      {!compact && (
         <div style={{ display: 'flex', gap: 4, padding: '6px 10px', flexWrap: 'wrap', alignItems: 'center', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)' }}>
           {!compact && <>
-            <button onClick={addNew} style={{ ...toolBtn, color: 'var(--accent)', borderColor: 'rgba(245,197,24,0.35)', background: 'rgba(245,197,24,0.06)' }}>
+            <Btn size="sm" active onClick={addNew} style={{ border: '1px solid var(--accent-ring)' }}>
               + Réplique
-            </button>
-            <button onClick={sortByTime} style={toolBtn}>⇅ Trier</button>
+            </Btn>
+            <Btn size="sm" variant="solid" onClick={sortByTime}>⇅ Trier</Btn>
             <div style={{ width: 1, height: 16, background: 'var(--border2)', margin: '0 2px' }} />
-            <span style={{ fontSize: 10, color: 'var(--text3)' }}>Décaler</span>
-            <button onClick={() => shiftAll(-1)} style={toolBtn}>−1s</button>
-            <button onClick={() => shiftAll(0.1)} style={toolBtn}>+.1</button>
-            <button onClick={() => shiftAll(-0.1)} style={toolBtn}>−.1</button>
-            <button onClick={() => shiftAll(1)} style={toolBtn}>+1s</button>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>Décaler</span>
+            <Btn size="sm" variant="solid" onClick={() => shiftAll(-1)}>−1s</Btn>
+            <Btn size="sm" variant="solid" onClick={() => shiftAll(0.1)}>+.1</Btn>
+            <Btn size="sm" variant="solid" onClick={() => shiftAll(-0.1)}>−.1</Btn>
+            <Btn size="sm" variant="solid" onClick={() => shiftAll(1)}>+1s</Btn>
           </>}
           <div style={{ flex: 1 }} />
           {clipId && (
@@ -563,22 +556,22 @@ export default function SubtitleEditor({ subtitles, onChange, currentTime = 0, o
                 style={{ display: 'none' }}
                 onChange={handleImportFile}
               />
-              <button
+              <Btn size="sm" variant="solid"
                 onClick={() => importInputRef.current?.click()}
                 disabled={importing}
-                title="Importer sous-titres (SRT / ASS / VTT) — remplace les répliques existantes"
-                style={{ ...toolBtn, color: 'var(--text2)', opacity: importing ? 0.5 : 1 }}>
+                title="Importer sous-titres (SRT / ASS / VTT) — remplace les répliques existantes">
                 {importing ? '…' : '⇑ Import'}
-              </button>
+              </Btn>
             </>
           )}
           {importError && (
-            <span style={{ fontSize: 10, color: 'var(--danger)', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--danger)', maxWidth: 180 }}
               title={importError}>
-              ✕ {importError}
+              <Icon d={ICONS.warn} size={12} stroke="var(--danger)" style={{ flexShrink: 0 }} />
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{importError}</span>
             </span>
           )}
-          <span style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>
+          <span style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>
             {subtitles.length} répl.
           </span>
         </div>
@@ -591,15 +584,15 @@ export default function SubtitleEditor({ subtitles, onChange, currentTime = 0, o
             Aucune réplique — transcrivez avec Whisper ou ajoutez avec ⇧↵.
           </div>
         ) : subtitles.map((sub, i) => {
-          const active = currentTime >= sub.start && currentTime <= sub.end
+          const active = isActiveAt(sub, currentTime)
           if (charFilter && charFilter.size > 0 && !charFilter.has(sub.character || '')) return null
           return (
-            <div key={i} ref={active ? activeRef : null}>
+            <div key={i} ref={active ? activeRef : null} style={{ opacity: sub.hidden ? 0.45 : 1 }}>
               <SubtitleRow
-                sub={sub} idx={i} active={active} selected={selectedIdx === i}
-                compact={compact}
+                sub={sub} idx={i} rate={rates[i]} active={active} selected={selectedIdx === i}
+                compact={compact} fps={fps}
                 charMap={charMap} charList={charList}
-                onChange={next => update(i, next)}
+                onChange={(next, field) => update(i, next, field)}
                 onDelete={() => del(i)}
                 onSeek={onSeek}
                 onSelect={() => setSelectedIdx?.(selectedIdx === i ? null : i)}

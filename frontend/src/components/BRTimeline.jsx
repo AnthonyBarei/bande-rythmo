@@ -1,11 +1,22 @@
 import React, { useRef, useEffect, useCallback } from 'react'
 import { TRACK_HEXES as TRACK_COLORS } from '../config/tracks'
 
-// Full-clip navigation timeline, drawn below the scrolling BR canvas.
+// Full-clip navigation timeline (reference screen-editor.jsx › TimelineNav look).
 // Shows the WHOLE clip at once (the BR canvas only shows a moving window):
-//   waveform · subtitle ticks per track · boucle bands · scene cuts ·
-//   the visible-window bracket · the playhead.
-// Click / drag anywhere to seek.
+//   waveform · réplique blocks per track colour · dashed boucle bands ·
+//   scene cuts · the visible-window bracket · the white playhead.
+// Click / drag anywhere to seek. `labelRowH` px at the top are left empty for
+// the overlay labels: everything is drawn from y = labelRowH down.
+
+// Canvas can't read CSS variables — resolve them (accent is user-swappable).
+function cssVar(name, fallback) {
+  try {
+    const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+    return v || fallback
+  } catch { return fallback }
+}
+// `hex + 'aa'` from the reference; non-hex colours fall back to the plain colour.
+const withAA = (hex, aa) => (/^#[0-9a-f]{6}$/i.test(hex) ? hex + aa : hex)
 
 export default function BRTimeline({
   duration = 0,
@@ -13,12 +24,13 @@ export default function BRTimeline({
   boucles = [],
   waveform = null,        // { samples: number[], duration, onsets: number[] } | null
   sceneCuts = [],         // number[] timecodes
-  subtitles = [],         // [{ start, end, character }]
+  subtitles = [],         // [{ start, end, character, hidden? }] — hidden ones not drawn
   charMap = {},           // character → track index
   viewStart = null,       // visible BR window start (s) — bracket
   viewEnd = null,         // visible BR window end (s)
   onSeek,
   height = 56,
+  labelRowH = 0,          // px reserved at the top for overlay labels (bracket starts below)
 }) {
   const canvasRef = useRef(null)
   const draggingRef = useRef(false)
@@ -26,112 +38,83 @@ export default function BRTimeline({
   const draw = useCallback(() => {
     const canvas = canvasRef.current
     if (!canvas) return
+    const dpr = window.devicePixelRatio || 1
     const cssW = canvas.offsetWidth
     const cssH = canvas.offsetHeight
-    if (cssW > 0 && canvas.width !== cssW) canvas.width = cssW
-    if (cssH > 0 && canvas.height !== cssH) canvas.height = cssH
+    if (cssW > 0 && canvas.width !== Math.round(cssW * dpr)) canvas.width = Math.round(cssW * dpr)
+    if (cssH > 0 && canvas.height !== Math.round(cssH * dpr)) canvas.height = Math.round(cssH * dpr)
     const ctx = canvas.getContext('2d')
-    const W = canvas.width
-    const H = canvas.height
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    const w = canvas.width / dpr
+    const h = canvas.height / dpr
     const dur = duration || waveform?.duration || 1
-    const tToX = t => (t / dur) * W
+    const tToX = t => (t / dur) * w
+    const accent = cssVar('--accent', '#F5C518')
+    const top = Math.min(labelRowH, h - 2)
+    const bodyH = h - top
+    ctx.clearRect(0, 0, w, h)
 
-    // Background
-    ctx.fillStyle = '#0a0a0c'
-    ctx.fillRect(0, 0, W, H)
-
-    // ── Boucle bands (behind everything) ──
-    boucles.forEach((b, i) => {
-      const x0 = tToX(b.start)
-      const x1 = tToX(b.end)
-      ctx.fillStyle = i % 2 === 0 ? 'rgba(245,197,24,0.05)' : 'rgba(245,197,24,0.09)'
-      ctx.fillRect(x0, 0, x1 - x0, H)
-      // dashed left border + cap label
-      ctx.strokeStyle = 'rgba(245,197,24,0.45)'
-      ctx.setLineDash([3, 3])
-      ctx.lineWidth = 1
-      ctx.beginPath()
-      ctx.moveTo(x0 + 0.5, 0)
-      ctx.lineTo(x0 + 0.5, H)
-      ctx.stroke()
-      ctx.setLineDash([])
-      ctx.fillStyle = 'rgba(245,197,24,0.85)'
-      ctx.font = 'bold 9px "IBM Plex Sans", sans-serif'
-      ctx.fillText(`B${b.number ?? i + 1}`, x0 + 3, 10)
-    })
-
-    // ── Waveform (mirrored around vertical center) ──
+    // waveform
     if (waveform?.samples?.length) {
       const samples = waveform.samples
       const n = samples.length
-      const midY = H / 2
-      const amp = H * 0.42
-      ctx.strokeStyle = 'rgba(126,192,255,0.30)'
-      ctx.lineWidth = 1
-      ctx.beginPath()
-      for (let x = 0; x < W; x++) {
-        const si = Math.min(n - 1, Math.floor((x / W) * n))
-        const v = Math.abs(samples[si] || 0)
-        ctx.moveTo(x + 0.5, midY - v * amp)
-        ctx.lineTo(x + 0.5, midY + v * amp)
+      const wavDur = waveform.duration || dur
+      // Normalise to the loudest sample; centred between the label strip and
+      // the réplique ticks, peaks clamped so they never enter the strip.
+      const peak = samples.reduce((m, v) => Math.max(m, Math.abs(v || 0)), 0) || 1
+      const mid = top + (bodyH - 12) / 2
+      const maxA = Math.max(2, Math.min(14, (bodyH - 12) / 2 - 1))
+      ctx.fillStyle = cssVar('--border3', '#3f3f4a')
+      for (let x = 0; x < w; x += 2) {
+        const si = Math.min(n - 1, Math.floor(((x / w) * dur / wavDur) * n))
+        const a = (Math.abs(samples[si] || 0) / peak) * (maxA - 1) + 1
+        ctx.fillRect(x, mid - a, 1.2, a * 2)
       }
-      ctx.stroke()
     }
 
-    // ── Subtitle ticks per track (thin colored marks at each réplique start) ──
+    // subtitle blocks
     subtitles.forEach(s => {
+      if (s.hidden) return
       const tr = charMap[s.character || ''] ?? 0
-      const color = TRACK_COLORS[tr % TRACK_COLORS.length]
-      const x0 = tToX(s.start)
-      const x1 = tToX(s.end)
-      const bandH = 4
-      const y = H - 8 - (tr % TRACK_COLORS.length) * (bandH + 1)
-      ctx.fillStyle = color + '99'
-      ctx.fillRect(x0, y, Math.max(1, x1 - x0), bandH)
+      const hex = TRACK_COLORS[tr % TRACK_COLORS.length]
+      ctx.fillStyle = hex + '33'
+      ctx.fillRect(tToX(s.start), h - 10, Math.max(1, tToX(s.end) - tToX(s.start)), 6)
     })
 
-    // ── Scene cuts (dashed blue verticals) ──
+    // boucle bands
+    boucles.forEach(b => {
+      const x0 = tToX(b.start)
+      const bw = tToX(b.end) - x0
+      ctx.fillStyle = withAA(accent, '18'); ctx.fillRect(x0, top, bw, bodyH)
+      ctx.strokeStyle = withAA(accent, '88'); ctx.lineWidth = 1; ctx.setLineDash([3, 3])
+      ctx.strokeRect(x0, top + 0.5, bw, bodyH - 1); ctx.setLineDash([])
+    })
+
+    // scene cuts (changements de plan)
     ctx.strokeStyle = 'rgba(126,192,255,0.65)'
     ctx.lineWidth = 1
     ctx.setLineDash([3, 2])
     sceneCuts.forEach(t => {
       const x = tToX(t)
-      ctx.beginPath()
-      ctx.moveTo(x + 0.5, 0)
-      ctx.lineTo(x + 0.5, H)
-      ctx.stroke()
+      ctx.beginPath(); ctx.moveTo(x + 0.5, top); ctx.lineTo(x + 0.5, h); ctx.stroke()
     })
     ctx.setLineDash([])
 
-    // ── Visible-window bracket (what the BR canvas currently shows) ──
+    // visible-window bracket (what the BR canvas currently shows) — outline
+    // only, below the label strip so it never boxes the overlay labels.
     if (viewStart != null && viewEnd != null && viewEnd > viewStart) {
       const x0 = Math.max(0, tToX(viewStart))
-      const x1 = Math.min(W, tToX(viewEnd))
-      ctx.fillStyle = 'rgba(255,255,255,0.07)'
-      ctx.fillRect(x0, 0, x1 - x0, H)
-      ctx.strokeStyle = 'rgba(255,255,255,0.30)'
+      const x1 = Math.min(w, tToX(viewEnd))
+      ctx.strokeStyle = cssVar('--border3', '#3f3f4a')
       ctx.lineWidth = 1
-      ctx.strokeRect(x0 + 0.5, 0.5, (x1 - x0) - 1, H - 1)
+      ctx.strokeRect(x0 + 0.5, top + 0.5, (x1 - x0) - 1, h - top - 1)
     }
 
-    // ── Playhead ──
+    // playhead
     const px = tToX(currentTime)
-    ctx.strokeStyle = '#f5c518'
-    ctx.lineWidth = 1.5
-    ctx.beginPath()
-    ctx.moveTo(px + 0.5, 0)
-    ctx.lineTo(px + 0.5, H)
-    ctx.stroke()
-    // head handle
-    ctx.fillStyle = '#f5c518'
-    ctx.beginPath()
-    ctx.moveTo(px, 0)
-    ctx.lineTo(px - 4, 0)
-    ctx.lineTo(px, 6)
-    ctx.lineTo(px + 4, 0)
-    ctx.closePath()
-    ctx.fill()
-  }, [duration, currentTime, boucles, waveform, sceneCuts, subtitles, charMap, viewStart, viewEnd])
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(px, top); ctx.lineTo(px, h); ctx.stroke()
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.moveTo(px - 5, top); ctx.lineTo(px + 5, top); ctx.lineTo(px, top + 6); ctx.fill()
+  }, [duration, currentTime, boucles, waveform, sceneCuts, subtitles, charMap, viewStart, viewEnd, labelRowH])
 
   useEffect(() => { draw() }, [draw])
 
@@ -154,15 +137,13 @@ export default function BRTimeline({
   }, [duration, waveform, onSeek])
 
   return (
-    <div style={{ flexShrink: 0, height, borderTop: '1px solid var(--border)', background: '#0a0a0c' }}>
-      <canvas
-        ref={canvasRef}
-        style={{ display: 'block', width: '100%', height: '100%', cursor: 'pointer' }}
-        onMouseDown={e => { draggingRef.current = true; seekFromEvent(e) }}
-        onMouseMove={e => { if (draggingRef.current) seekFromEvent(e) }}
-        onMouseUp={() => { draggingRef.current = false }}
-        onMouseLeave={() => { draggingRef.current = false }}
-      />
-    </div>
+    <canvas
+      ref={canvasRef}
+      style={{ width: '100%', height, display: 'block', cursor: 'pointer' }}
+      onMouseDown={e => { draggingRef.current = true; seekFromEvent(e) }}
+      onMouseMove={e => { if (draggingRef.current) seekFromEvent(e) }}
+      onMouseUp={() => { draggingRef.current = false }}
+      onMouseLeave={() => { draggingRef.current = false }}
+    />
   )
 }

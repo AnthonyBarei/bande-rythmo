@@ -42,10 +42,12 @@ async def plex_get(path: str, params: dict | None = None) -> dict:
     if not cfg["token"]:
         raise ValueError("Plex not configured")
     async with httpx.AsyncClient(timeout=10) as client:
+        # Token in a header, not the query: httpx errors echo the full URL
+        # and the route forwards them to the client.
         res = await client.get(
             f"{cfg['url']}{path}",
-            params={"X-Plex-Token": cfg["token"], **(params or {})},
-            headers={"Accept": "application/json"},
+            params=params or {},
+            headers={"Accept": "application/json", "X-Plex-Token": cfg["token"]},
         )
         res.raise_for_status()
         return res.json()
@@ -71,8 +73,7 @@ async def test_connection(url: str, token: str) -> str:
     async with httpx.AsyncClient(timeout=5) as client:
         res = await client.get(
             f"{url.rstrip('/')}/",
-            params={"X-Plex-Token": token},
-            headers={"Accept": "application/json"},
+            headers={"Accept": "application/json", "X-Plex-Token": token},
         )
         res.raise_for_status()
         data = res.json()

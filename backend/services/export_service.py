@@ -1,12 +1,15 @@
 """Export artifact persistence — DB CRUD for the exports table."""
 
 import json
+import logging
 import os
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
 from models import Export
+
+log = logging.getLogger("br.exports")
 
 
 def _to_dict(e: Export) -> Dict[str, Any]:
@@ -75,7 +78,7 @@ def delete_export(db: Session, export_id: int) -> bool:
         if e.path and os.path.exists(e.path):
             os.remove(e.path)
     except OSError:
-        pass
+        log.warning("export %s: could not remove %s", export_id, e.path, exc_info=True)
     db.delete(e)
     db.commit()
     return True

@@ -1,8 +1,26 @@
 import json
+import logging
+import re
 import os
+import shutil
 from datetime import datetime
+from typing import Annotated
+from pydantic import StringConstraints
 from sqlalchemy.orm import Session
-from models import Clip, Subtitle, Boucle
+from models import Clip, Subtitle, Boucle, Take, Export
+
+log = logging.getLogger("br.clips")
+
+# Clip ids become file names (segments/{id}.mp4) — never allow path parts.
+SAFE_ID_PATTERN = r"^[A-Za-z0-9_-]{1,64}$"
+SafeId = Annotated[str, StringConstraints(pattern=SAFE_ID_PATTERN)]
+
+
+def _redact_token(path):
+    """Plex stream URLs carry X-Plex-Token — never send it to the browser."""
+    if not path or "X-Plex-Token" not in path:
+        return path
+    return re.sub(r"X-Plex-Token=[^&]+", "X-Plex-Token=***", path)
 
 
 def _parse_words(raw):
@@ -30,7 +48,7 @@ def _to_dict(clip: Clip) -> dict:
         "clip_id": clip.clip_id,
         "name": clip.name,
         "source_filename": clip.source_filename,
-        "source_path": clip.source_path,
+        "source_path": _redact_token(clip.source_path),
         "start": clip.start,
         "end": clip.end,
         "segment_path": clip.segment_path,
@@ -48,6 +66,7 @@ def _to_dict(clip: Clip) -> dict:
                 "off": bool(s.off), "dos": bool(s.dos),
                 "ambiance": bool(s.ambiance), "plan_cut": s.plan_cut,
                 "note": s.note or "",
+                "hidden": bool(s.hidden), "take": bool(s.take),
             }
             for s in clip.subtitles
         ],
@@ -106,14 +125,16 @@ def update_subtitles(db: Session, clip_id, subtitles):
             order_index=i,
             start=float(s.get("start", 0)),
             end=float(s.get("end", 0)),
-            character=s.get("character", ""),
-            text=s.get("text", ""),
+            character=s.get("character") or "",
+            text=s.get("text") or "",
             words=words_json,
             off=bool(s.get("off", False)),
             dos=bool(s.get("dos", False)),
             ambiance=bool(s.get("ambiance", False)),
             plan_cut=plan_cut,
             note=(s.get("note") or None),
+            hidden=bool(s.get("hidden", False)),
+            take=bool(s.get("take", False)),
         ))
     db.commit()
     db.refresh(clip)
@@ -197,18 +218,53 @@ def update_status(db: Session, clip_id, status):
     return _to_dict(clip)
 
 
+def _inside(path: str, folder: str) -> bool:
+    root = os.path.realpath(folder)
+    try:
+        return os.path.commonpath([os.path.realpath(path), root]) == root
+    except ValueError:
+        return False
+
+
+def _remove_owned(path, folder: str):
+    if not path or not os.path.exists(path):
+        return
+    if not _inside(path, folder):
+        log.warning("not removing %s: outside %s/", path, folder)
+        return
+    try:
+        os.remove(path)
+    except OSError:
+        log.warning("could not remove %s", path, exc_info=True)
+
+
 def delete_clip(db: Session, clip_id):
     clip = db.query(Clip).filter(Clip.clip_id == clip_id).first()
     if not clip:
         return False
     segment_path = clip.segment_path
     thumbnail_path = clip.thumbnail_path
+    take_paths = [t.audio_path for t in db.query(Take).filter(Take.clip_id == clip_id)]
+    export_paths = [e.path for e in db.query(Export).filter(Export.clip_id == clip_id)]
+    db.query(Take).filter(Take.clip_id == clip_id).delete()
+    db.query(Export).filter(Export.clip_id == clip_id).delete()
     db.delete(clip)
     db.commit()
-    for p in (segment_path, thumbnail_path):
-        if p and os.path.exists(p):
-            try:
-                os.remove(p)
-            except OSError:
-                pass
+    # Derived per-clip files are unreachable once the row is gone.
+    owned = [
+        (segment_path, "segments"),
+        (thumbnail_path, "thumbnails"),
+        (f"segments/{clip_id}_proxy.mp4", "segments"),
+        (f"segments/{clip_id}_bed.wav", "segments"),
+        *((p, "takes") for p in take_paths),
+        *((p, "exports") for p in export_paths),
+    ]
+    for path, folder in owned:
+        _remove_owned(path, folder)
+    stems = os.path.join("segments", "stems", "htdemucs", clip_id)
+    if os.path.isdir(stems):
+        try:
+            shutil.rmtree(stems)
+        except OSError:
+            log.warning("could not remove %s", stems, exc_info=True)
     return True

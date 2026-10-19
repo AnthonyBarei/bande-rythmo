@@ -59,6 +59,8 @@ class Subtitle(Base):
     ambiance = Column(Boolean, nullable=False, default=False)   # ambiance ON/OFF (non-dialogue)
     plan_cut = Column(Float, nullable=True)                     # change-of-plan timecode within line
     note = Column(String, nullable=True)                        # free-text annotation per réplique
+    hidden = Column(Boolean, nullable=False, default=False)     # masked: off the band + every export
+    take = Column(Boolean, nullable=False, default=False)       # "prise à enregistrer" marker
 
     clip = relationship("Clip", back_populates="subtitles")
 
@@ -105,6 +107,8 @@ class Take(Base):
     duration = Column(Float, nullable=False, default=0.0)
     label = Column(String, default="")
     created_at = Column(DateTime, default=datetime.now)
+    # Validated take of its réplique — at most one per (clip_id, subtitle_index).
+    best = Column(Boolean, nullable=False, default=False)
 
 
 class LexiconEntry(Base):

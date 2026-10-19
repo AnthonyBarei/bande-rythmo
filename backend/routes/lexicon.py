@@ -11,7 +11,7 @@ router = APIRouter()
 
 
 class LexiconIn(BaseModel):
-    project: str = ""
+    project: Optional[str] = None   # PUT: None = keep the entry's scope
     term: str
     translation: Optional[str] = None
     phonetic: Optional[str] = None

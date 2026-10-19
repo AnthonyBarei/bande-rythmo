@@ -1,3 +1,4 @@
+from html import escape as html_escape
 import xml.etree.ElementTree as ET
 from typing import List, Dict
 
@@ -8,19 +9,30 @@ _DETX_COLORS = ["#F5C518", "#50B4FF", "#FF64A0", "#64E6A0"]
 
 
 def _to_srt_time(s: float) -> str:
-    h = int(s // 3600)
-    m = int((s % 3600) // 60)
-    sec = int(s % 60)
-    ms = int(round(s % 1, 3) * 1000)
+    # Round once on the integer ms total so 1.9996 → 00:00:02,000 (not ,1000).
+    total_ms = int(round(max(0.0, s) * 1000))
+    sec, ms = divmod(total_ms, 1000)
+    m, sec = divmod(sec, 60)
+    h, m = divmod(m, 60)
     return f"{h:02d}:{m:02d}:{sec:02d},{ms:03d}"
 
 
 def _to_ass_time(s: float) -> str:
-    s = max(0.0, s)
-    h = int(s // 3600)
-    m = int((s % 3600) // 60)
-    sec = s % 60
-    return f"{h}:{m:02d}:{sec:05.2f}"
+    total_cs = int(round(max(0.0, s) * 100))
+    sec, cs = divmod(total_cs, 100)
+    m, sec = divmod(sec, 60)
+    h, m = divmod(m, 60)
+    return f"{h}:{m:02d}:{sec:02d}.{cs:02d}"
+
+
+def _ass_field(text: str) -> str:
+    """Name field: a comma would shift every following Dialogue field."""
+    return " ".join((text or "").replace(",", " ").split())
+
+
+def _ass_text(text: str) -> str:
+    text = (text or "").replace("{", "\\{").replace("}", "\\}")
+    return "\\N".join(text.splitlines())
 
 
 def export_srt(subtitles: List[Dict], path: str):
@@ -145,7 +157,7 @@ def export_ass(
             continue
 
         character = sub.get("character", "")
-        text = sub["text"].replace("{", "\\{").replace("}", "\\}")
+        text = _ass_text(sub["text"])
         y = char_y.get(character, br_top + track_h // 2)
         style = char_style.get(character, "BR_0")
 
@@ -169,7 +181,7 @@ def export_ass(
         tagged = f"{{\\an4\\move({x1},{y},{x2},{y})}}{text}"
         lines.append(
             f"Dialogue: 2,{_to_ass_time(event_start)},{_to_ass_time(event_end)},"
-            f"{style},{character},0,0,0,,{tagged}"
+            f"{style},{_ass_field(character)},0,0,0,,{tagged}"
         )
 
     with open(path, "w", encoding="utf-8") as f:
@@ -238,7 +250,7 @@ def export_ass_karaoke(subtitles: List[Dict], path: str):
 
         lines.append(
             f"Dialogue: 0,{_to_ass_time(t_start)},{_to_ass_time(t_end)},"
-            f"{style},{character},0,0,0,,{tagged}"
+            f"{style},{_ass_field(character)},0,0,0,,{tagged}"
         )
 
     with open(path, "w", encoding="utf-8") as f:
@@ -247,11 +259,14 @@ def export_ass_karaoke(subtitles: List[Dict], path: str):
 
 def _to_detx_time(s: float, fps: float = 25.0) -> str:
     s = max(0.0, s)
-    h = int(s // 3600)
-    m = int((s % 3600) // 60)
-    sec = int(s % 60)
-    frame = int(round((s % 1) * fps))
-    frame = min(frame, int(fps) - 1)
+    whole = int(s)
+    frame = int(round((s - whole) * fps))
+    # Nominal base: 29.97 counts frames 0..29, 23.976 counts 0..23.
+    if frame >= max(1, round(fps)):
+        whole += 1
+        frame = 0
+    h, rem = divmod(whole, 3600)
+    m, sec = divmod(rem, 60)
     return f"{h:02d}:{m:02d}:{sec:02d}:{frame:02d}"
 
 
@@ -383,6 +398,7 @@ def export_croisille(
         if c not in seen and not sub.get("ambiance"):
             seen.append(c)
     has_amb = any(sub.get("ambiance") for sub in subtitles)
+    title = html_escape(title or "")
     rows = [c or "(défaut)" for c in seen]
     if has_amb:
         rows.append("[ambiance]")
@@ -421,7 +437,7 @@ def export_croisille(
             f'<td class="{"on" if ci in grid[ri] else "off"}">{"●" if ci in grid[ri] else "·"}</td>'
             for ci in range(len(cols))
         )
-        html_rows.append(f"<tr><th>{row}</th>{cells}</tr>")
+        html_rows.append(f"<tr><th>{html_escape(row)}</th>{cells}</tr>")
 
     col_headers = "".join(
         f'<th><div class="bnum">B{b.get("number", ci + 1)}</div>'

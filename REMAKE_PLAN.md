@@ -140,6 +140,40 @@ All 9 formats pass. Two design issues:
 
 ---
 
+## 5b · Usable v1 — audit pass (2026-10-14, branch `feat/usable-v1`)
+
+Done: 3 parallel audits (backend / editor / app shell) → ~80 logic/UI/UX fixes,
+Dubpack export shipped, cancel really kills ffmpeg (Chocolatey shim → process-tree
+kill), path-traversal guard, reload restores view + open clip.
+Gates: `npm run lint` 0 errors · Vitest 25/25 · `vite build` OK · backend TestClient
+scenarios · live UI smoke (library, editor playback, Dubpack job + cancel).
+
+### Ordered next steps
+
+**A — product decisions ✅ (2026-10-14)**
+1. Dubpack OGV → silent audio; audio = `_backing_track` (bed) + per-line samples (Choicer Voicer spec + M&E convention)
+2. Clip delete → also removes takes, exports, proxy/bed/stems
+3. `hidden` / `take` persisted; hidden = dimmed in list, off band/timeline/playback, excluded from all exports
+4. Undo coalesces typing bursts (1 s window per réplique field)
+5. Keyboard/toolbar edits + seeks use band time (video + `brOffset`)
+6. Preferences « Bande rythmo » style/police = band defaults, synced with the editor picker
+7. `R` record toggle, `E` export
+
+**B — small fixes ✅** re-download 410, remux `job_id`, Dubpack cues past end, leaks + job auto-prune,
+ASS re-import, library duration + card actions, translate merge, error boundary.
+
+**B2 — leftovers (open)**
+- [ ] Header « Enregistrer (R) » / Voix « Enregistrer la prise » buttons only open the recorder (R key toggles)
+- [ ] Time base still video time in RecorderPanel « Écouter avec vidéo » and ExportPanel range « au curseur » — align with band time when `brOffset` ≠ 0 (mix placement too)
+- [ ] Keyboard I/O don't clamp start/end like the toolbar buttons
+- [ ] Sync `/export` mp4 and `/mp4-canvas` outputs not recorded in export history → never cleaned
+- [ ] Stale `exports/<uuid>/` staging dirs from pre-fix cancels — delete by hand
+
+**C — Phase 2 refactor** (section 5) → **D — Phase 3 pro workflow** → **E — users/auth** →
+**F — integrations (Stremio, qBittorrent, Plex series drill-down)** → **G — gamification** (CLAUDE.md ideas).
+
+---
+
 ## 6 · Explicit non-goals (for now)
 - PostgreSQL migration (WAL suffices ≤5 concurrent users)
 - Full TypeScript rewrite (incremental `types/` only)

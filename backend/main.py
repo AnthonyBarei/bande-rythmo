@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import os
@@ -30,6 +31,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def reject_path_traversal(request: Request, call_next):
+    # Routes build file paths from {clip_id}; ids are UUIDs, never path parts.
+    path = request.url.path
+    if path.startswith("/api/") and (".." in path or "\\" in path):
+        return JSONResponse({"detail": "Invalid path"}, status_code=400)
+    return await call_next(request)
 
 for d in ("segments", "exports", "thumbnails", "memes", "sources", "takes", "uploads/fonts"):
     os.makedirs(d, exist_ok=True)

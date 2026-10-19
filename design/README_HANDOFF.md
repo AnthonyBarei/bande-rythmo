@@ -32,7 +32,7 @@ Then the 🟡 items: one reusable `<VideoPlayer>`, explicit clickable status lif
 
 ## Ground truth to respect
 
-- **Navigation is `Importer · Mes Clips · Memes · Réglages`.** Doublage is reached **contextually** (open a clip → Doubler) — do **not** add a Doublage nav item, even though the mocks show one for layout convenience.
+- **Navigation is `Bibliothèque · Importer · Éditeur · Studio · Atelier` (+ `Activité · Réglages`).** Éditeur and Studio are in the rail, matching `redesign.html` — accepted direction (supersedes the earlier "no Doublage nav item" rule). Both open the active clip (or the first clip); Studio lands on the recorder.
 - **`Réglages` has no design yet** — needs Whisper model + default language, Plex connection, export defaults, theme/accent.
 - **Feature name is "Meme"** (no accent) in the UI. Leave the French word *même* ("same") alone.
 - **Don't rebuild what works** — auto-save, the keyboard model, the export pipeline, the elastic-text engine are already correct. The specs extend; they don't replace.

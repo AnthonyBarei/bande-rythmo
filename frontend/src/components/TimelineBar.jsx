@@ -1,19 +1,19 @@
 import React, { useRef, useState, useEffect } from 'react'
+import { Btn, Icon, ICONS, T, alpha } from '../ui'
+import { MARK_ID } from '../utils/inOut'
+import { fmtHMS } from '../utils/duration'
 
 const EDGE = 8
 const MIN_DUR = 0.2
 const MIN_ZOOM = 1
 const MAX_ZOOM = 20
-
-function fmtClock(t) {
-  const m = Math.floor(t / 60)
-  const s = Math.floor(t % 60)
-  return `${m}:${String(s).padStart(2, '0')}`
-}
+const LABEL_STEPS = [5, 10, 30, 60, 120, 300, 600, 1800, 3600]
+const MAX_LABELS = 10
+const TIMELINE_HINTS = ['glisser pour créer', 'Alt + molette pour zoomer', 'Suppr retire le bloc']
 
 export default function TimelineBar({
   duration, currentTime,
-  pendingClips, savedClips,
+  pendingClips, savedClips, markRange = null, markIn = null,
   onSeek, onAdd, onUpdate, onRemove,
 }) {
   const trackRef = useRef(null)
@@ -23,14 +23,14 @@ export default function TimelineBar({
   const [draft, setDraft] = useState(null)
   const [focusedId, setFocusedId] = useState(null)
   const dragRef = useRef(null)
-  const miniDragRef = useRef(null)
+  const [miniDrag, setMiniDrag] = useState(null)
+  const miniCleanupRef = useRef(null)
 
   const viewDur = duration / zoom
   const maxViewStart = Math.max(0, duration - viewDur)
   const vs = Math.min(Math.max(0, viewStart), maxViewStart)
 
   function trackW() { return trackRef.current?.getBoundingClientRect().width || 1 }
-  function miniW() { return miniRef.current?.getBoundingClientRect().width || 1 }
   function tToX(t, w) { return ((t - vs) / viewDur) * w }
   function xToT(x, w) { return Math.max(0, Math.min(duration, vs + (x / w) * viewDur)) }
 
@@ -39,8 +39,10 @@ export default function TimelineBar({
     return Math.max(0, Math.min(r.width, e.clientX - r.left))
   }
 
+  const editable = markRange ? [...pendingClips, markRange] : pendingClips
+
   function hitTest(x, w) {
-    for (const c of pendingClips) {
+    for (const c of editable) {
       const cx0 = tToX(c.start, w)
       const cx1 = tToX(c.end, w)
       if (x >= cx0 - EDGE && x <= cx1 + EDGE) {
@@ -125,46 +127,64 @@ export default function TimelineBar({
     setViewStart(Math.max(0, Math.min(duration - ndur, center - ndur / 2)))
   }
 
-  // --- Minimap interactions ---
+  // --- Minimap: drag the viewport window (pan), its edges (zoom), or click elsewhere to center it ---
   function onMiniDown(e) {
-    const w = miniW(); const x = localX(e, miniRef)
+    if (e.button !== 0 || !duration) return
+    e.preventDefault()
+    const box = miniRef.current.getBoundingClientRect()
+    const w = box.width || 1
+    const xAt = ev => Math.max(0, Math.min(w, ev.clientX - box.left))
+    const x = xAt(e)
     const winL = (vs / duration) * w
     const winR = ((vs + viewDur) / duration) * w
-    if (x >= winL - EDGE && x <= winL + EDGE) {
-      miniDragRef.current = { type: 'resize-left' }
-    } else if (x >= winR - EDGE && x <= winR + EDGE) {
-      miniDragRef.current = { type: 'resize-right' }
-    } else if (x > winL && x < winR) {
-      miniDragRef.current = { type: 'pan', offset: x - winL }
-    } else {
-      // recenter
-      const ct = (x / w) * duration
-      setViewStart(Math.max(0, Math.min(maxViewStart, ct - viewDur / 2)))
-      miniDragRef.current = { type: 'pan', offset: viewDur / duration * w / 2 }
+    const start0 = vs, end0 = vs + viewDur, maxStart = maxViewStart
+    const clampStart = t => Math.max(0, Math.min(maxStart, t))
+    let type, offset = 0
+    if (Math.abs(x - winL) <= EDGE && winR - winL > 2 * EDGE) type = 'resize-left'
+    else if (Math.abs(x - winR) <= EDGE && winR - winL > 2 * EDGE) type = 'resize-right'
+    else if (x >= winL && x <= winR) { type = 'pan'; offset = x - winL }
+    else {
+      type = 'pan'; offset = (winR - winL) / 2
+      setViewStart(clampStart((x - offset) / w * duration))
     }
-    e.preventDefault()
+    const move = ev => {
+      const mx = xAt(ev)
+      if (type === 'pan') {
+        setViewStart(clampStart((mx - offset) / w * duration))
+      } else if (type === 'resize-left') {
+        const nd = Math.max(duration / MAX_ZOOM, Math.min(end0, end0 - (mx / w) * duration))
+        setZoom(duration / nd)
+        setViewStart(Math.max(0, end0 - nd))
+      } else {
+        const nd = Math.max(duration / MAX_ZOOM, Math.min(duration - start0, (mx / w) * duration - start0))
+        setZoom(duration / nd)
+        setViewStart(start0)
+      }
+    }
+    const stop = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', stop)
+      window.removeEventListener('pointercancel', stop)
+      miniCleanupRef.current = null
+      setMiniDrag(null)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', stop)
+    window.addEventListener('pointercancel', stop)
+    miniCleanupRef.current = stop
+    setMiniDrag(type)
   }
 
-  function onMiniMove(e) {
-    const md = miniDragRef.current
-    if (!md) return
-    const w = miniW(); const x = localX(e, miniRef)
-    if (md.type === 'pan') {
-      const newL = (x - md.offset) / w * duration
-      setViewStart(Math.max(0, Math.min(maxViewStart, newL)))
-    } else if (md.type === 'resize-left') {
-      const newStart = (x / w) * duration
-      const end = vs + viewDur
-      const nd = Math.max(duration / MAX_ZOOM, Math.min(duration, end - newStart))
-      setZoom(duration / nd)
-      setViewStart(Math.max(0, end - nd))
-    } else if (md.type === 'resize-right') {
-      const newEnd = (x / w) * duration
-      const nd = Math.max(duration / MAX_ZOOM, Math.min(duration - vs, newEnd - vs))
-      setZoom(duration / nd)
-    }
-  }
-  function onMiniUp() { miniDragRef.current = null }
+  useEffect(() => () => miniCleanupRef.current?.(), [])
+
+  // React's onWheel is passive → preventDefault is ignored and Alt+wheel also
+  // scrolls the page. Attach a non-passive native listener instead.
+  useEffect(() => {
+    const el = trackRef.current
+    if (!el) return
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  })
 
   // --- Delete focused pending clip ---
   useEffect(() => {
@@ -182,186 +202,147 @@ export default function TimelineBar({
 
   if (!duration) return null
 
-  // Adaptive ruler ticks
-  const step = viewDur > 1800 ? 300 : viewDur > 600 ? 120 : viewDur > 300 ? 60 : viewDur > 60 ? 30 : viewDur > 20 ? 10 : 5
+  // Ruler: labelled ticks every 10 s on short views (coarser when zoomed out), minor tick halfway.
+  // Labels are ≥ 5 s apart, so frames are dropped: HH:MM:SS (FIXES_R6 #13).
+  const labelStep = LABEL_STEPS.find(s => viewDur / s <= MAX_LABELS) || LABEL_STEPS[LABEL_STEPS.length - 1]
+  const step = labelStep / 2
   const ticks = []
   for (let t = Math.ceil(vs / step) * step; t <= vs + viewDur; t += step) ticks.push(t)
+  const empty = !pendingClips.length && !savedClips.length && !draft && !markRange && markIn == null
 
   return (
-    <div style={{ background: 'var(--surface)', borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)' }}>
-      {/* (a) Zoom control bar */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, height: 36, padding: '0 12px', borderBottom: '1px solid var(--border)' }}>
-        <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: 1, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>TIMELINE</span>
-        <span style={{ fontSize: 10.5, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>
-          {fmtClock(vs)} – {fmtClock(vs + viewDur)} sur {fmtClock(duration)}
+    <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.r.card, overflow: 'hidden', flexShrink: 0 }}>
+      <div style={{ height: 38, padding: '0 12px', display: 'flex', alignItems: 'center', gap: 8, background: T.bg2, borderBottom: `1px solid ${T.border}` }}>
+        <span style={{ fontSize: T.fs.micro, letterSpacing: 1.2, color: T.text3, fontWeight: 700 }}>TIMELINE</span>
+        <span style={{ fontSize: T.fs.xs, color: T.text3, fontFamily: T.fontMono, whiteSpace: 'nowrap' }}>{fmtHMS(vs)} – {fmtHMS(vs + viewDur)} sur {fmtHMS(duration)}</span>
+        {/* One line, whole phrases only: a phrase that doesn't fit wraps onto the
+            hidden 2nd line instead of being cut to "g…" (narrow windows). The
+            leading empty span lets even the first phrase wrap away. */}
+        <span data-fit-hints title={TIMELINE_HINTS.join(' · ')} style={{
+          flex: 1, minWidth: 0, height: 14, overflow: 'hidden', display: 'flex', flexWrap: 'wrap', columnGap: 4,
+          fontSize: 10.5, lineHeight: '14px', color: T.text4, marginLeft: 6,
+        }}>
+          <span aria-hidden="true" style={{ width: 0, height: 14 }} />
+          {TIMELINE_HINTS.map((h, i) => <span key={h} style={{ whiteSpace: 'nowrap' }}>{i ? '· ' : ''}{h}</span>)}
         </span>
-        <div style={{ flex: 1 }} />
-        <button onClick={() => zoomTo(zoom - 0.5)} style={zBtn}>−</button>
-        <input
-          type="range" min={MIN_ZOOM} max={MAX_ZOOM} step={0.5} value={zoom}
-          onChange={e => zoomTo(Number(e.target.value))}
-          style={{ width: 120, color: 'var(--accent)' }}
-        />
-        <button onClick={() => zoomTo(zoom + 0.5)} style={zBtn}>+</button>
-        <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--accent)', minWidth: 34 }}>{zoom.toFixed(1)}×</span>
-        <button onClick={() => { setZoom(1); setViewStart(0) }} style={{ ...zBtn, width: 'auto', padding: '0 8px' }}>Tout voir</button>
+        <Btn size="sm" icon={ICONS.zoomOut} title="Dézoomer" onClick={() => zoomTo(zoom - 0.5)} />
+        <input type="range" min={MIN_ZOOM} max={MAX_ZOOM} step={0.5} value={zoom} onChange={e => zoomTo(Number(e.target.value))}
+          style={{ width: 110, color: T.accent, '--pct': `${((zoom - MIN_ZOOM) / (MAX_ZOOM - MIN_ZOOM)) * 100}%` }} />
+        <Btn size="sm" icon={ICONS.zoomIn} title="Zoomer" onClick={() => zoomTo(zoom + 0.5)} />
+        <span style={{ fontSize: T.fs.xs, color: T.accent, fontFamily: T.fontMono, fontWeight: 600, minWidth: 32, textAlign: 'right' }}>{zoom.toFixed(1)}×</span>
+        <Btn size="sm" onClick={() => { setZoom(1); setViewStart(0) }}>Tout voir</Btn>
       </div>
 
-      {/* (b) Main zoomed timeline */}
+      {/* track */}
       <div
         ref={trackRef}
         onMouseDown={onTrackDown}
         onMouseMove={onTrackMove}
         onMouseUp={onTrackUp}
         onMouseLeave={onTrackUp}
-        onWheel={onWheel}
-        style={{ position: 'relative', height: 88, background: 'var(--bg)', cursor: 'crosshair', userSelect: 'none', overflow: 'hidden' }}
+        style={{ height: 84, position: 'relative', background: 'repeating-linear-gradient(90deg,transparent 0 7px,rgba(255,255,255,.012) 7px 8px)', cursor: 'crosshair', userSelect: 'none', overflow: 'hidden' }}
       >
-        {/* Ruler */}
-        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 18, background: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
-          {ticks.map((t, i) => {
-            const x = ((t - vs) / viewDur) * 100
-            const major = i % 2 === 0
+        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 18, background: T.bg2, borderBottom: `1px solid ${T.border}` }}>
+          {ticks.map(t => {
+            const major = Math.abs(t / labelStep - Math.round(t / labelStep)) < 1e-6
             return (
-              <div key={t} style={{ position: 'absolute', left: `${x}%`, top: 0, height: '100%', pointerEvents: 'none' }}>
-                <div style={{ position: 'absolute', top: 6, width: 1, height: major ? 8 : 5, background: 'var(--border3)' }} />
-                {major && (
-                  <div style={{ position: 'absolute', top: 2, left: 3, fontSize: 9, color: 'var(--text3)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>
-                    {fmtClock(t)}
-                  </div>
-                )}
+              <div key={t} style={{ position: 'absolute', left: `${((t - vs) / viewDur) * 100}%`, top: 0, height: '100%', pointerEvents: 'none' }}>
+                <div style={{ position: 'absolute', bottom: 0, width: 1, height: major ? 6 : 4, background: T.border3 }} />
+                {major && <div style={{ position: 'absolute', top: 2, left: 3, fontSize: 9, color: T.text4, fontFamily: T.fontMono, whiteSpace: 'nowrap' }}>{fmtHMS(t)}</div>}
               </div>
             )
           })}
         </div>
-
-        {/* Pinstripe */}
-        <div style={{ position: 'absolute', top: 18, left: 0, right: 0, bottom: 0, backgroundImage: 'repeating-linear-gradient(90deg, transparent, transparent 24px, rgba(255,255,255,0.02) 24px, rgba(255,255,255,0.02) 25px)' }} />
-
-        {/* Saved clips */}
-        {savedClips.map(c => {
-          const l = ((c.start - vs) / viewDur) * 100
-          const w = ((c.end - c.start) / viewDur) * 100
-          return (
+        <div style={{ position: 'absolute', top: 18, left: 0, right: 0, bottom: 0 }}>
+          {empty && (
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: T.fs.sm, color: T.text3, pointerEvents: 'none' }}>
+              Glissez sur la timeline pour délimiter un clip
+            </div>
+          )}
+          {savedClips.map(c => (
             <div key={c.clip_id} title={c.name} style={{
-              position: 'absolute', top: 24, bottom: 6, left: `${l}%`, width: `${w}%`,
-              background: 'rgba(94,194,124,0.16)', border: '1px solid var(--success)',
-              borderRadius: 4, pointerEvents: 'none', display: 'flex', alignItems: 'center', paddingLeft: 5,
+              position: 'absolute', left: `${((c.start - vs) / viewDur) * 100}%`, width: `${((c.end - c.start) / viewDur) * 100}%`,
+              top: 12, bottom: 12, borderRadius: 5, background: 'rgba(94,194,124,.18)', border: `1.5px solid ${T.success}`, minWidth: 4, pointerEvents: 'none',
             }}>
-              <span style={{ fontSize: 9, color: 'var(--success)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                ✓ {c.name}
-              </span>
+              <div style={{ position: 'absolute', top: -15, left: 0 }}><Icon d={ICONS.check} size={10} stroke={T.success} sw={2.4} /></div>
             </div>
-          )
-        })}
+          ))}
 
-        {/* Pending clips */}
-        {pendingClips.map((c, idx) => {
-          const focused = focusedId === c._id
-          const l = ((c.start - vs) / viewDur) * 100
-          const w = ((c.end - c.start) / viewDur) * 100
-          return (
-            <div key={c._id}>
-              <div style={{
-                position: 'absolute', top: 24, bottom: 6, left: `${l}%`, width: `${w}%`,
-                background: 'rgba(245,197,24,0.13)',
-                border: `1.5px solid ${focused ? 'var(--accent)' : 'rgba(245,197,24,0.6)'}`,
-                borderRadius: 4, cursor: 'grab',
-              }}>
-                <div style={{ position: 'absolute', left: -3, top: 0, bottom: 0, width: 6, cursor: 'ew-resize', background: 'rgba(245,197,24,0.5)' }} />
-                <div style={{ position: 'absolute', right: -3, top: 0, bottom: 0, width: 6, cursor: 'ew-resize', background: 'rgba(245,197,24,0.5)' }} />
-              </div>
-              <div style={{
-                position: 'absolute', top: 10, left: `${l}%`,
-                fontSize: 9, fontWeight: 700, color: 'var(--accent)', fontFamily: 'var(--font-mono)',
-                pointerEvents: 'none', whiteSpace: 'nowrap',
-              }}>
-                #{idx + 1}
-              </div>
-            </div>
-          )
-        })}
-
-        {/* Draft */}
-        {draft && draft.end - draft.start > 0.01 && (() => {
-          const l = ((draft.start - vs) / viewDur) * 100
-          const w = ((draft.end - draft.start) / viewDur) * 100
-          return (
-            <div style={{
-              position: 'absolute', top: 24, bottom: 6, left: `${l}%`, width: `${w}%`,
-              border: '2px dashed var(--accent)', borderRadius: 4, pointerEvents: 'none',
+          {pendingClips.map((c, idx) => (
+            <div key={c._id} style={{
+              position: 'absolute', left: `${((c.start - vs) / viewDur) * 100}%`, width: `${((c.end - c.start) / viewDur) * 100}%`,
+              top: 12, bottom: 12, borderRadius: 5, background: alpha(T.accent, '26'),
+              border: `1.5px solid ${T.accent}`, minWidth: 4, cursor: 'grab',
+              boxShadow: focusedId === c._id ? `0 0 0 2px ${alpha(T.accent, '55')}` : 'none',
             }}>
-              <div style={{ position: 'absolute', top: -14, left: 0, fontSize: 9, color: 'var(--accent)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>
-                {(draft.end - draft.start).toFixed(1)}s
-              </div>
+              <div style={{ position: 'absolute', left: -3, top: 0, bottom: 0, width: 6, cursor: 'ew-resize' }} />
+              <div style={{ position: 'absolute', right: -3, top: 0, bottom: 0, width: 6, cursor: 'ew-resize' }} />
+              <div style={{ position: 'absolute', top: -15, left: 0, fontSize: 9, color: T.accent, fontWeight: 700, fontFamily: T.fontMono, whiteSpace: 'nowrap', pointerEvents: 'none' }}>#{idx + 1}</div>
             </div>
-          )
-        })()}
+          ))}
 
-        {/* Playhead */}
-        {currentTime >= vs && currentTime <= vs + viewDur && (
-          <div style={{
-            position: 'absolute', top: 0, bottom: 0,
-            left: `${((currentTime - vs) / viewDur) * 100}%`, width: 2,
-            background: 'var(--text)', transform: 'translateX(-1px)', pointerEvents: 'none', zIndex: 10,
-            boxShadow: '0 0 6px rgba(255,255,255,.4)',
-          }}>
+          {markRange && (
+            <div title="Plage IN → OUT du lecteur" style={{
+              position: 'absolute', left: `${((markRange.start - vs) / viewDur) * 100}%`, width: `${((markRange.end - markRange.start) / viewDur) * 100}%`,
+              top: 12, bottom: 12, borderRadius: 5, background: alpha(T.info, '22'), minWidth: 4, cursor: 'grab',
+              borderTop: `1.5px dashed ${T.info}`, borderBottom: `1.5px dashed ${T.info}`, borderLeft: `2px solid ${T.info}`, borderRight: `2px solid ${T.accent}`,
+              boxShadow: focusedId === MARK_ID ? `0 0 0 2px ${alpha(T.info, '55')}` : 'none',
+            }}>
+              <div style={{ position: 'absolute', left: -3, top: 0, bottom: 0, width: 6, cursor: 'ew-resize' }} />
+              <div style={{ position: 'absolute', right: -3, top: 0, bottom: 0, width: 6, cursor: 'ew-resize' }} />
+              <div style={{ position: 'absolute', top: -15, left: 0, fontSize: 9, color: T.info, fontWeight: 700, fontFamily: T.fontMono, whiteSpace: 'nowrap', pointerEvents: 'none' }}>#{pendingClips.length + 1} IN→OUT</div>
+            </div>
+          )}
+
+          {!markRange && markIn != null && markIn >= vs && markIn <= vs + viewDur && (
+            <div title="IN" style={{ position: 'absolute', left: `${((markIn - vs) / viewDur) * 100}%`, top: 6, bottom: 6, width: 2, background: T.info, pointerEvents: 'none' }}>
+              <div style={{ position: 'absolute', top: -2, left: 3, fontSize: 9, color: T.info, fontWeight: 700, fontFamily: T.fontMono, whiteSpace: 'nowrap' }}>IN</div>
+            </div>
+          )}
+
+          {draft && draft.end - draft.start > 0.01 && (
             <div style={{
-              position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)', width: 0, height: 0,
-              borderLeft: '4px solid transparent', borderRight: '4px solid transparent', borderTop: '6px solid var(--text)',
-            }} />
-          </div>
-        )}
+              position: 'absolute', left: `${((draft.start - vs) / viewDur) * 100}%`, width: `${((draft.end - draft.start) / viewDur) * 100}%`,
+              top: 12, bottom: 12, borderRadius: 5, background: 'transparent', border: `2px dashed ${T.accent}`, minWidth: 4, pointerEvents: 'none',
+            }}>
+              <div style={{ position: 'absolute', top: -15, left: 0, fontSize: 9, color: T.accent, fontWeight: 700, fontFamily: T.fontMono, whiteSpace: 'nowrap' }}>{(draft.end - draft.start).toFixed(1)}s</div>
+            </div>
+          )}
+
+          {currentTime >= vs && currentTime <= vs + viewDur && (
+            <div style={{ position: 'absolute', left: `${((currentTime - vs) / viewDur) * 100}%`, top: 0, bottom: 0, width: 2, background: '#fff', boxShadow: '0 0 6px rgba(255,255,255,.5)', pointerEvents: 'none' }}>
+              <div style={{ position: 'absolute', top: 0, left: -5, width: 12, height: 6, background: '#fff', clipPath: 'polygon(0 0,100% 0,50% 100%)' }} />
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* (c) Overview minimap */}
+      {/* minimap */}
       <div
         ref={miniRef}
-        onMouseDown={onMiniDown}
-        onMouseMove={onMiniMove}
-        onMouseUp={onMiniUp}
-        onMouseLeave={onMiniUp}
-        style={{ position: 'relative', height: 28, background: 'var(--bg2)', borderTop: '1px solid var(--border)', cursor: 'pointer', userSelect: 'none', overflow: 'hidden' }}
+        onPointerDown={onMiniDown}
+        title="Glisser la fenêtre pour naviguer · clic pour centrer"
+        style={{ height: 26, background: T.bg2, borderTop: `1px solid ${T.border}`, position: 'relative', cursor: miniDrag ? (miniDrag === 'pan' ? 'grabbing' : 'ew-resize') : 'pointer', userSelect: 'none', overflow: 'hidden', touchAction: 'none' }}
       >
         {savedClips.map(c => (
-          <div key={c.clip_id} style={{
-            position: 'absolute', top: 9, height: 10,
-            left: `${(c.start / duration) * 100}%`, width: `${((c.end - c.start) / duration) * 100}%`,
-            background: 'var(--success)', opacity: 0.7, borderRadius: 2,
-          }} />
+          <div key={c.clip_id} style={{ position: 'absolute', left: `${(c.start / duration) * 100}%`, width: `${Math.max(0.4, ((c.end - c.start) / duration) * 100)}%`, top: 6, bottom: 6, background: T.success, opacity: 0.7, borderRadius: 1 }} />
         ))}
-        {pendingClips.map(c => (
-          <div key={c._id} style={{
-            position: 'absolute', top: 9, height: 10,
-            left: `${(c.start / duration) * 100}%`, width: `${((c.end - c.start) / duration) * 100}%`,
-            background: 'var(--accent)', opacity: 0.7, borderRadius: 2,
-          }} />
+        {editable.map(c => (
+          <div key={c._id} style={{ position: 'absolute', left: `${(c.start / duration) * 100}%`, width: `${Math.max(0.4, ((c.end - c.start) / duration) * 100)}%`, top: 6, bottom: 6, background: c._id === MARK_ID ? T.info : T.accent, opacity: 0.7, borderRadius: 1 }} />
         ))}
-        {/* Playhead */}
-        <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${(currentTime / duration) * 100}%`, width: 1.5, background: 'var(--text)', opacity: 0.6 }} />
-        {/* View window */}
+        <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${(currentTime / duration) * 100}%`, width: 1.5, background: T.text, opacity: 0.6, pointerEvents: 'none' }} />
         <div style={{
-          position: 'absolute', top: 0, bottom: 0,
-          left: `${(vs / duration) * 100}%`, width: `${(viewDur / duration) * 100}%`,
-          background: 'rgba(245,197,24,0.10)', border: '1px solid var(--accent)', boxSizing: 'border-box',
+          position: 'absolute', left: `${(vs / duration) * 100}%`, width: `${(viewDur / duration) * 100}%`, top: 2, bottom: 2,
+          background: alpha(T.accent, miniDrag ? '2e' : '1a'), border: `1px solid ${T.accent}`, borderRadius: 4,
+          cursor: miniDrag === 'pan' ? 'grabbing' : 'grab',
         }}>
+          <div style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%,-50%)', display: 'flex', gap: 2, pointerEvents: 'none' }}>
+            {[0, 1, 2].map(i => <div key={i} style={{ width: 1.5, height: 8, background: T.accent, borderRadius: 1 }} />)}
+          </div>
           <div style={{ position: 'absolute', left: -3, top: 0, bottom: 0, width: 6, cursor: 'ew-resize' }} />
           <div style={{ position: 'absolute', right: -3, top: 0, bottom: 0, width: 6, cursor: 'ew-resize' }} />
         </div>
       </div>
-
-      {/* (d) Helper tip */}
-      <div style={{ padding: '6px 12px', background: 'var(--bg)', fontSize: 10, color: 'var(--text4)', fontFamily: 'var(--font-mono)', display: 'flex', gap: 14, flexWrap: 'wrap' }}>
-        <span>Cliquer-glisser pour créer un clip</span>
-        <span>⌥ + molette pour zoomer</span>
-        <span>Suppr retirer le bloc</span>
-      </div>
     </div>
   )
-}
-
-const zBtn = {
-  minWidth: 30, height: 30, background: 'var(--surface2)', color: 'var(--text2)',
-  border: '1px solid var(--border2)', borderRadius: 9, fontSize: 14, cursor: 'pointer',
-  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
 }

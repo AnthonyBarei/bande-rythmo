@@ -4,15 +4,18 @@ const STORAGE_KEY = 'br_settings'
 
 const DEFAULTS = {
   accent: '#f5c518',
+  // Bande rythmo look — single source of truth for the editor band AND the
+  // export (WYSIWYG). Changed from Préférences or the editor's Affichage menu.
   brStyle: 'classique',
+  brFont: 'cursive',
   density: 'normal',
   // Whisper transcription defaults — applied when a clip is opened without override.
   whisperLang: 'fr',                // fr | en | auto | …
   whisperModel: 'large-v3',         // mirrors backend WHISPER_MODEL env var, info-only here
   // Export defaults — pre-filled in ExportPanel form.
-  exportBrFont: 'atkinson',
-  exportBrStyle: 'classique',
   exportDetectionBurn: false,
+  // Studio « Écouter sur l'image » — VO volume (0..1) under the take: 0 / .15 / .5.
+  listenVoLevel: 0.15,
 }
 
 const DENSITY_FONT = { compact: 13, normal: 14, comfortable: 15 }
@@ -34,22 +37,49 @@ function lighten(hex, amount) {
   return `#${hx(r)}${hx(g)}${hx(b)}`
 }
 
+// Primary-button hover: the reference's #ffd83a for the default yellow,
+// a lightened accent for any other swatch.
+function accentHover(hex) {
+  return hex.toLowerCase() === DEFAULTS.accent ? '#ffd83a' : lighten(hex, 0.2)
+}
+
 function applySettings(s) {
   const root = document.documentElement
   const { r, g, b } = hexToRgb(s.accent)
   root.style.setProperty('--accent', s.accent)
   root.style.setProperty('--accent-soft', `rgba(${r},${g},${b},0.13)`)
-  root.style.setProperty('--accent-dim', `rgba(${r},${g},${b},0.06)`)
+  root.style.setProperty('--accent-dim', `rgba(${r},${g},${b},0.13)`)
+  root.style.setProperty('--accent-ring', `rgba(${r},${g},${b},0.27)`)
+  root.style.setProperty('--accent-glow', `rgba(${r},${g},${b},0.33)`)
   root.style.setProperty('--accent-text', lighten(s.accent, 0.25))
+  root.style.setProperty('--accent-hover', accentHover(s.accent))
   root.style.fontSize = `${DENSITY_FONT[s.density] || 14}px`
+}
+
+// Pre-unification keys: the editor kept its font in 'br-font'; Préférences had
+// unused exportBrFont / exportBrStyle duplicates. Read once, then dropped.
+const LEGACY_FONT_KEY = 'br-font'
+
+function migrate(stored) {
+  const { exportBrFont: _font, exportBrStyle: _style, ...rest } = stored
+  if (rest.brFont) return rest
+  try {
+    const legacy = localStorage.getItem(LEGACY_FONT_KEY)
+    if (legacy) rest.brFont = legacy
+  } catch (e) {
+    console.warn('Migration de la police BR impossible', e)
+  }
+  return rest
 }
 
 function load() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) return { ...DEFAULTS, ...JSON.parse(raw) }
-  } catch (_) {}
-  return { ...DEFAULTS }
+    return { ...DEFAULTS, ...migrate(raw ? JSON.parse(raw) : {}) }
+  } catch (e) {
+    console.warn('Préférences illisibles — valeurs par défaut', e)
+    return { ...DEFAULTS }
+  }
 }
 
 const SettingsContext = createContext(null)
@@ -61,7 +91,8 @@ export function SettingsProvider({ children }) {
     applySettings(settings)
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(settings))
-    } catch (_) {}
+      localStorage.removeItem(LEGACY_FONT_KEY)
+    } catch { /* storage unavailable — settings stay in memory */ }
   }, [settings])
 
   function update(patch) {

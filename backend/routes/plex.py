@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from services.ffmpeg_service import _rate
 from services.plex_service import (
     load_config, save_config, test_connection, probe_local,
     plex_get, stream_url, thumb_url,
@@ -122,7 +123,7 @@ def _parse_plex_streams(plex_streams: list) -> dict:
                 parts_label.append(f"{s['width']}x{s.get('height', '?')}")
             if lang:
                 parts_label.append(lang)
-            video_streams.append({"relative_index": len(video_streams), "label": " · ".join(parts_label)})
+            video_streams.append({"relative_index": len(video_streams), "label": " · ".join(parts_label), "fps": _rate(s.get("frameRate"))})
         elif stream_type == 2:  # audio
             parts_label = [codec]
             if s.get("channels"):
@@ -131,7 +132,7 @@ def _parse_plex_streams(plex_streams: list) -> dict:
                 parts_label.append(lang)
             if title and title not in parts_label:
                 parts_label.append(title)
-            audio_streams.append({"relative_index": len(audio_streams), "label": " · ".join(parts_label)})
+            audio_streams.append({"relative_index": len(audio_streams), "label": " · ".join(parts_label), "codec": codec, "channels": s.get("channels"), "sample_rate": s.get("samplingRate"), "language": lang or None})
     return {"video_streams": video_streams, "audio_streams": audio_streams}
 
 

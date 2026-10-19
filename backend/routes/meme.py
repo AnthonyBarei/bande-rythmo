@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import uuid
 import asyncio
@@ -6,6 +7,8 @@ import asyncio
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from fastapi.responses import FileResponse
 from PIL import Image, ImageDraw, ImageFont, ImageSequence
+
+log = logging.getLogger("br.meme")
 
 router = APIRouter()
 
@@ -120,8 +123,8 @@ def _apply_texts(img: Image.Image, texts_data: list[dict]) -> Image.Image:
 
 
 def _render_image(in_path: str, out_path: str, texts_data: list[dict], out_ext: str):
-    img = Image.open(in_path)
-    out = _apply_texts(img.convert("RGBA"), texts_data)
+    with Image.open(in_path) as img:
+        out = _apply_texts(img.convert("RGBA"), texts_data)
     if out_ext == "webp":
         out.save(out_path, quality=92)
     else:
@@ -129,19 +132,20 @@ def _render_image(in_path: str, out_path: str, texts_data: list[dict], out_ext: 
 
 
 def _render_gif(in_path: str, out_path: str, texts_data: list[dict]):
-    src = Image.open(in_path)
     frames, durations = [], []
-    for frame in ImageSequence.Iterator(src):
-        composed = _apply_texts(frame.convert("RGBA"), texts_data)
-        frames.append(composed)
-        durations.append(frame.info.get("duration", 100))
+    with Image.open(in_path) as src:
+        loop = src.info.get("loop", 0)
+        for frame in ImageSequence.Iterator(src):
+            composed = _apply_texts(frame.convert("RGBA"), texts_data)
+            frames.append(composed)
+            durations.append(frame.info.get("duration", 100))
     if not frames:
         raise ValueError("Empty GIF")
     first = frames[0].convert("P", palette=Image.ADAPTIVE)
     rest  = [f.convert("P", palette=Image.ADAPTIVE) for f in frames[1:]]
     first.save(
         out_path, save_all=True, append_images=rest,
-        duration=durations, loop=src.info.get("loop", 0),
+        duration=durations, loop=loop,
         disposal=2, optimize=False,
     )
 
@@ -180,5 +184,10 @@ async def generate(
             media = "image/png"
     except Exception as e:
         raise HTTPException(500, f"Render failed: {e}")
+    finally:
+        try:
+            os.remove(in_path)
+        except OSError:
+            log.warning("could not remove meme input %s", in_path, exc_info=True)
 
     return FileResponse(out_path, filename=f"meme.{out_ext}", media_type=media)

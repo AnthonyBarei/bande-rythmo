@@ -1,7 +1,9 @@
+import logging
 import os
 import struct
 import subprocess
 import tempfile
+import threading
 import warnings
 import wave
 import torch
@@ -13,8 +15,12 @@ ProgressFn = Callable[[str, float], None]
 # Cancel callback: returns True to abort early.
 CancelFn = Callable[[], bool]
 
+log = logging.getLogger("br.whisper")
+
 _model: Optional[WhisperModel] = None
 _diarize_pipeline = None
+# Two jobs starting together must not each load a multi-GB model.
+_load_lock = threading.Lock()
 
 _DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 _COMPUTE_TYPE = "float16" if _DEVICE == "cuda" else "int8"
@@ -23,12 +29,18 @@ _MODEL_NAME = os.getenv("WHISPER_MODEL", "large-v3")
 
 def _get_model() -> WhisperModel:
     global _model
-    if _model is None:
-        _model = WhisperModel(_MODEL_NAME, device=_DEVICE, compute_type=_COMPUTE_TYPE)
+    with _load_lock:
+        if _model is None:
+            _model = WhisperModel(_MODEL_NAME, device=_DEVICE, compute_type=_COMPUTE_TYPE)
     return _model
 
 
 def _get_diarize_pipeline():
+    with _load_lock:
+        return _load_diarize_pipeline()
+
+
+def _load_diarize_pipeline():
     global _diarize_pipeline
     if _diarize_pipeline is None:
         hf_token = os.getenv("HF_TOKEN")
@@ -81,6 +93,7 @@ def _build_diarization_map(wav_path: str) -> Dict[tuple, str]:
             for turn, _, speaker in diarization.itertracks(yield_label=True)
         }
     except Exception:
+        log.warning("diarization failed — characters left blank", exc_info=True)
         return {}
 
 
@@ -137,16 +150,21 @@ def transcribe_segment(
     diar_map: Dict[tuple, str] = {}
 
     try:
-        subprocess.run(
-            [
-                "ffmpeg", "-y", "-i", path,
-                "-vn", "-c:a", "pcm_s16le", "-ar", "16000", "-ac", "1",
-                "-af", "aresample=first_pts=0",
-                wav_path,
-            ],
-            check=True,
-            capture_output=True,
-        )
+        try:
+            subprocess.run(
+                [
+                    "ffmpeg", "-y", "-i", path,
+                    "-vn", "-c:a", "pcm_s16le", "-ar", "16000", "-ac", "1",
+                    "-af", "aresample=first_pts=0",
+                    wav_path,
+                ],
+                check=True,
+                capture_output=True,
+            )
+        except subprocess.CalledProcessError as exc:
+            log.error("audio extraction failed for %s: %s", path,
+                      (exc.stderr or b"").decode(errors="replace")[-400:])
+            raise RuntimeError("Extraction audio impossible — le clip a-t-il une piste audio ?")
         emit("Transcription", 0.05)
         if aborted():
             return output

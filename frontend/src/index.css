@@ -27,49 +27,79 @@ input[type="range"]::-webkit-slider-runnable-track {
   background: linear-gradient(
     to right,
     currentColor var(--pct, 0%),
-    #1e1e1e var(--pct, 0%)
+    var(--surface3) var(--pct, 0%)
   );
 }
 
 :root {
+  /* Tokens = design_handoff_redesign_v2/reference/redesign/foundation.jsx → T */
   /* Backgrounds */
-  --bg:        #0a0a0c;
-  --bg2:       #0e0e11;
-  --surface:   #131318;
-  --surface2:  #1a1a20;
-  --surface3:  #23232b;
+  --bg:        #0b0b0d;
+  --bg2:       #101013;
+  --surface:   #16161a;
+  --surface2:  #1c1c21;
+  --surface3:  #24242b;
   --hover:     #2a2a33;
 
   /* Strokes */
-  --border:    #26262e;
-  --border2:   #33333d;
-  --border3:   #44444f;
+  --border:    #26262d;
+  --border2:   #32323b;
+  --border3:   #3f3f4a;
 
   /* Text */
-  --text:      #ededf0;
-  --text2:     #9c9ca6;
-  --text3:     #7a7a85;   /* reviewed: lighter for legible meta (≈4.4:1 on bg) */
-  --text4:     #565660;   /* reviewed: lighter for hints/disabled */
+  --text:      #ECECEF;
+  --text2:     #A6A6AE;
+  --text3:     #7A7A85;
+  --text4:     #565660;
 
-  /* Yellow accent */
-  --accent:      #f5c518;
-  --accent-soft: rgba(245,197,24,0.13);
-  --accent-dim:  rgba(245,197,24,0.06);
-  --accent-text: #ffd84a;
+  /* Yellow accent — swappable from Réglages (SettingsContext rewrites these) */
+  --accent:       #F5C518;
+  --accent-dim:   rgba(245,197,24,0.13);
+  --accent-soft:  rgba(245,197,24,0.13);
+  --accent-hover: #ffd83a;
+  --accent-text:  #f8d452;
+  --accent-ring:  rgba(245,197,24,0.27);
+  --accent-glow:  rgba(245,197,24,0.33);
+
+  /* Character tracks — mirrors config/tracks.js TRACK_HEXES (LÉA · MARC · SARAH · NOAH) */
+  --track-1: #F5C518;
+  --track-2: #5AA9F0;
+  --track-3: #F06AA0;
+  --track-4: #5EC27C;
 
   /* Semantic */
-  --danger:    #e85d5d;
-  --success:   #5ec27c;
-  --info:      #7ec0ff;
-  --danger-soft:  rgba(232,93,93,0.13);
+  --danger:    #E8595D;
+  --success:   #5EC27C;
+  --info:      #5AA9F0;
+  --violet:    #A98BF0;
+  --danger-soft:  rgba(232,89,93,0.13);
   --success-soft: rgba(94,194,124,0.13);
-  --info-soft:    rgba(126,192,255,0.13);
+  --info-soft:    rgba(90,169,240,0.13);
 
+  /* Radii — chip 6 · ctl 9 · card 14 · lg 18 */
+  --r-chip: 6px;
+  --r-ctl:  9px;
+  --r-card: 14px;
+  --r-lg:   18px;
   --radius:    6px;
   --radius-lg: 10px;
 
-  --font-ui:   'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --font-mono: 'JetBrains Mono', 'Courier New', monospace;
+  /* Shadows */
+  --shadow:   0 8px 30px rgba(0,0,0,.40);
+  --shadow-l: 0 18px 60px rgba(0,0,0,.55);
+
+  /* Type scale — 11 / 12 / 13 / 14 / 16 / 20 / 26 / 34 */
+  --fs-micro: 11px;
+  --fs-xs:    12px;
+  --fs-sm:    13px;
+  --fs-base:  14px;
+  --fs-md:    16px;
+  --fs-lg:    20px;
+  --fs-xl:    26px;
+  --fs-xxl:   34px;
+
+  --font-ui:   'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', monospace;
   --font-br:   'JetBrains Mono', 'Courier New', monospace;
 
   /* Z-index scale (DOUBLAGE_IA_REVIEW §8) — one source of truth, no scattered 9999s. */
@@ -86,14 +116,13 @@ html, body, #root {
   color: var(--text);
   font-family: var(--font-ui);
   font-size: 14px;
-  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
 
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: var(--surface); }
-::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #444; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #2a2a33; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #3a3a45; }
 
 input, textarea {
   font-family: var(--font-ui);
@@ -112,7 +141,9 @@ input:focus, textarea:focus { border-color: var(--accent); }
    :focus-visible, so this stays invisible for mouse users but gives keyboard
    navigators a clear accent ring on every interactive element. box-shadow
    (not outline) so it isn't suppressed by the many inline `outline:none`s and
-   doesn't shift layout. */
+   doesn't shift layout. !important: the ui.jsx primitives set an inline
+   box-shadow (Btn: 'none' or the primary glow, swatches, cards…), which would
+   otherwise win over this rule and hide the ring (final acceptance pass). */
 button:focus-visible,
 select:focus-visible,
 a:focus-visible,
@@ -120,9 +151,48 @@ a:focus-visible,
 [tabindex]:focus-visible,
 input:focus-visible,
 textarea:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
-  border-radius: var(--radius);
+  outline: none !important;
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent) !important;
+}
+/* Visually hidden native inputs (Réglages custom-accent swatch: opacity 0
+   colour input inside a label) — draw the ring on the visible label. */
+label:has(> input:focus-visible) {
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent) !important;
+}
+/* Input primitive (ui.jsx Input) — FINAL_REVIEW #3. */
+.ui-input {
+  display: flex; align-items: center; gap: 8px; min-width: 0; box-sizing: border-box;
+  height: 32px; padding: 0 10px; cursor: text;
+  background: var(--bg2); border: 1px solid var(--border2); border-radius: 9px;
+  transition: border-color .15s;
+}
+.ui-input--sm { height: 28px; padding: 0 8px; gap: 6px; }
+.ui-input--lg { height: 44px; padding: 0 14px; gap: 12px; }
+.ui-input:focus-within { border-color: var(--accent); }
+.ui-input > input {
+  flex: 1; min-width: 0; height: 100%; box-sizing: border-box; padding: 0; margin: 0;
+  background: transparent; border: none; border-radius: 0; outline: none;
+  color: var(--text); font-family: var(--font-ui); font-size: 13px;
+}
+.ui-input--sm > input { font-size: 12px; }
+.ui-input--lg > input { font-size: 16px; }
+.ui-input > input::placeholder { color: var(--text3); opacity: 1; }
+
+/* Text inputs inside a pill / field wrapper (ui.jsx Input, library search,
+   Importer TC field): the ring goes on the rounded wrapper, not as a rectangle
+   inside it (FINAL_REVIEW #6). Text inputs always match :focus-visible, so
+   :focus-within on the wrapper shows the ring exactly when the input would. */
+.field-ring input:focus-visible,
+.field-ring textarea:focus-visible {
+  box-shadow: none !important;
+}
+.field-ring:focus-within {
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent) !important;
+}
+/* Flush controls inside an overflow-clipped strip (library filter tabs, card
+   action cells): the outer ring would be cut, so draw it inside the box. */
+.focus-inset:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--accent) !important;
 }
 
 @keyframes brspin { to { transform: rotate(360deg); } }
@@ -137,25 +207,9 @@ button {
   outline: none;
 }
 button:disabled { opacity: 0.35; cursor: not-allowed; }
-button:not(:disabled):hover { opacity: 0.88; }
-button:not(:disabled):active { opacity: 0.75; }
-
-/* Keyboard-only focus rings — visible accent outline for buttons, inputs, links.
-   Pointer focus stays clean. WCAG 2.4.7. */
-:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-  border-radius: 4px;
-}
-button:focus-visible,
-[role="button"]:focus-visible,
-a:focus-visible,
-input:focus-visible,
-textarea:focus-visible,
-select:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
+/* Legacy hover feedback — ui.jsx primitives (data-rd) own their hover states. */
+button:not(:disabled):not([data-rd]):hover { opacity: 0.88; }
+button:not(:disabled):not([data-rd]):active { opacity: 0.75; }
 
 video { display: block; }
 
@@ -164,3 +218,26 @@ video { display: block; }
 /* Réplique rows — actions reveal on hover (clean rows, prototype) */
 .sub-row .row-actions { opacity: 0; transition: opacity 0.12s; pointer-events: none; }
 .sub-row:hover .row-actions, .sub-row:focus-within .row-actions { opacity: 1; pointer-events: auto; }
+
+/* Library card — action row + "+ Projet" chip reveal on hover / keyboard focus
+   (FINAL_REVIEW #2). CSS, not React state: :focus-within matches as soon as
+   focus enters the card, so a fast Tab already finds the row visible. */
+.clip-card .clip-card-actions {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  opacity: 0; visibility: hidden; transform: translateY(8px);
+  transition: opacity .15s, transform .15s, visibility .15s;
+}
+.clip-card .clip-card-project { opacity: 0; }
+.clip-card:hover .clip-card-actions,
+.clip-card:focus-within .clip-card-actions {
+  opacity: 1; visibility: visible; transform: none;
+  /* Visible at once (no visibility transition on reveal): a transition would
+     keep the row hidden until the next frame and a fast Tab would skip it. */
+  transition: opacity .15s, transform .15s, visibility 0s;
+}
+.clip-card:hover .clip-card-project,
+.clip-card:focus-within .clip-card-project { opacity: 1; }
+@media (hover: none) {
+  .clip-card .clip-card-actions { position: static; opacity: 1; visibility: visible; transform: none; }
+  .clip-card .clip-card-project { opacity: 1; }
+}

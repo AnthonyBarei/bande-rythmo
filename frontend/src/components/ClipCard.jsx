@@ -1,38 +1,38 @@
-import React, { useState, useEffect } from 'react'
-import { Icon, ICONS } from '../Icons'
-import { Avatar } from '../ui'
+import React, { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
+import { T, Icon, ICONS, Avatar, Btn, Dot, alpha, pressable } from '../ui'
+import { TRACK_HEXES } from '../config/tracks'
+import { useToast } from '../ToastContext'
+import { fmtDuration } from '../utils/duration'
 
-const fmt = t => {
-  const m = Math.floor(t / 60)
-  const s = (t % 60).toFixed(0).padStart(2, '0')
-  return `${m}:${s}`
-}
-
+// Reference data.jsx → STATUS (alpha '24' = .14, keeps the accent swappable).
 const STATUS = {
-  todo:    { label: 'À faire',  bg: 'rgba(255,255,255,0.04)', fg: 'var(--text2)' },
-  dubbing: { label: 'Doublage', bg: 'var(--accent-soft)',     fg: 'var(--accent)' },
-  review:  { label: 'À revoir', bg: 'var(--info-soft)',       fg: 'var(--info)' },
-  done:    { label: 'Validé',   bg: 'var(--success-soft)',    fg: 'var(--success)' },
+  todo:    { label: 'À faire',  color: T.text3,   bg: T.surface2 },
+  dubbing: { label: 'Doublage', color: T.accent,  bg: alpha(T.accent, '24') },
+  review:  { label: 'À revoir', color: T.info,    bg: alpha(T.info, '24') },
+  done:    { label: 'Validé',   color: T.success, bg: alpha(T.success, '24') },
 }
 const STATUS_CYCLE = ['todo', 'dubbing', 'review', 'done']
 
-// Stable hash → hue, for thumbnail fallback color
 function hashHue(str) {
   let h = 0
   for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) | 0
   return Math.abs(h) % 360
 }
 
-const TRACK_HEX = ['#f5c518', '#7ec0ff', '#f08aaf', '#7ed4a8']
-
-export default function ClipCard({ clip, onDub, onMeme, onDelete, onRename, onStatusChange, onAssignProject }) {
+export default function ClipCard({ clip, onDub, onRecord, onMeme, onDelete, onRename, onStatusChange, onAssignProject }) {
+  const toast = useToast()
   const [editingName, setEditingName] = useState(false)
   const [nameInput, setNameInput] = useState(clip.name)
-  const [hover, setHover] = useState(false)
+  const [h, setH] = useState(false)
   const [watching, setWatching] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [mp3Busy, setMp3Busy] = useState(false)
+  const renameDoneRef = useRef(false)
   const duration = clip.end - clip.start
-  const status = STATUS[clip.status] || STATUS.todo
+  const curStatusKey = clip.status || 'todo'
+  const st = STATUS[curStatusKey] || STATUS.todo
+  const nextStatusKey = STATUS_CYCLE[(STATUS_CYCLE.indexOf(curStatusKey) + 1) % STATUS_CYCLE.length]
 
   useEffect(() => {
     if (!watching) return
@@ -41,115 +41,154 @@ export default function ClipCard({ clip, onDub, onMeme, onDelete, onRename, onSt
     return () => window.removeEventListener('keydown', onKey)
   }, [watching])
 
-  const hasSubtitles = clip.subtitles && clip.subtitles.length > 0
+  const replCount = clip.subtitles?.length || 0
   const segmentUrl = clip.segment_path ? `/${clip.segment_path}` : null
   const thumbSrc = clip.thumbnail_path ? `/${clip.thumbnail_path}` : null
+  const hue = hashHue(clip.name || clip.clip_id)
 
-  // Unique characters → stacked avatars
   const chars = []
   for (const s of clip.subtitles || []) {
     const c = s.character || ''
     if (c && !chars.includes(c)) chars.push(c)
   }
+  // FIXES_R8 #7: the hover action row covers the meta row — the thumbnail
+  // tooltip carries the same information.
+  const metaTip = [
+    clip.name,
+    `${replCount} répl.`,
+    chars.length ? chars.join(', ') : null,
+    clip.project ? `Projet : ${clip.project}` : null,
+  ].filter(Boolean).join(' · ')
 
+  // Enter/Escape unmount the input, which also fires blur — commit only once.
   function submitRename() {
+    if (renameDoneRef.current) return
+    renameDoneRef.current = true
     const n = nameInput.trim()
     if (n && n !== clip.name) onRename(clip.clip_id, n)
     setEditingName(false)
   }
 
-  function cycleStatus(e) {
+  function startRename(e) {
     e.stopPropagation()
-    const next = STATUS_CYCLE[(STATUS_CYCLE.indexOf(clip.status || 'todo') + 1) % STATUS_CYCLE.length]
-    onStatusChange(clip.clip_id, next)
+    renameDoneRef.current = false
+    setNameInput(clip.name)
+    setEditingName(true)
   }
 
-  const curStatusKey = clip.status || 'todo'
-  const nextStatusKey = STATUS_CYCLE[(STATUS_CYCLE.indexOf(curStatusKey) + 1) % STATUS_CYCLE.length]
-  const nextLabel = STATUS[nextStatusKey].label
+  function cycleStatus(e) {
+    e.stopPropagation()
+    onStatusChange(clip.clip_id, nextStatusKey)
+  }
 
-  const hue = hashHue(clip.name || clip.clip_id)
+  async function exportMp3() {
+    if (mp3Busy) return
+    setMp3Busy(true)
+    try {
+      const res = await fetch('/api/export/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ segment_id: clip.clip_id, subtitles: [], format: 'mp3' }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.detail || `HTTP ${res.status}`)
+      }
+      const url = URL.createObjectURL(await res.blob())
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${clip.name || clip.clip_id}.mp3`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+    } catch (err) {
+      console.error(err)
+      toast.error(`Export MP3 échoué : ${err.message}`)
+    } finally {
+      setMp3Busy(false)
+    }
+  }
+
+  const cells = [
+    { ic: ICONS.mic, title: 'Enregistrer — Studio', fn: () => (onRecord || onDub)(clip) },
+    { label: 'MP3', title: 'Exporter MP3 — audio uniquement', fn: exportMp3, busy: mp3Busy },
+    { label: 'GIF', title: 'Créer un GIF depuis ce clip (Atelier)', fn: () => onMeme(clip, 'video') },
+    confirmDelete
+      ? { ic: ICONS.check, danger: true, title: 'Confirmer la suppression', fn: () => onDelete(clip.clip_id) }
+      : { ic: ICONS.trash, danger: true, title: 'Supprimer', fn: () => setConfirmDelete(true) },
+  ]
 
   return (
     <div
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => { setHover(false); setConfirmDelete(false) }}
-      style={{
-        background: 'var(--surface)',
-        border: `1px solid ${hover ? 'var(--border2)' : 'var(--border)'}`,
-        borderRadius: 14,
-        overflow: 'hidden',
-        display: 'flex',
-        flexDirection: 'column',
-        transition: 'border-color 0.15s, transform 0.15s, box-shadow 0.15s',
-        transform: hover ? 'translateY(-3px)' : 'none',
-        boxShadow: hover ? '0 8px 30px rgba(0,0,0,0.4)' : 'none',
-        cursor: 'pointer',
-      }}
+      onMouseEnter={() => setH(true)}
+      onMouseLeave={() => { setH(false); setConfirmDelete(false) }}
       onClick={() => onDub(clip)}
-    >
-      {/* Thumbnail */}
-      <div style={{ position: 'relative', aspectRatio: '16/9', background: `hsl(${hue} 32% 16%)` }}>
-        {thumbSrc ? (
-          <img src={thumbSrc} alt={clip.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-        ) : null}
-        {/* Scan-line overlay */}
-        <div style={{
-          position: 'absolute', inset: 0,
-          background: 'repeating-linear-gradient(0deg, transparent 0 3px, rgba(0,0,0,.18) 3px 4px)',
-          pointerEvents: 'none',
-        }} />
-        {/* Status pill — click cycles todo → dubbing → review → done.
-            Discoverability: explicit chevron + tooltip showing next state. */}
+      className="clip-card"
+      style={{
+        background: T.surface, border: `1px solid ${h ? T.border2 : T.border}`, borderRadius: T.r.card,
+        overflow: 'hidden', cursor: 'pointer', transition: 'border-color .15s, transform .15s, box-shadow .15s',
+        transform: h ? 'translateY(-3px)' : 'none', boxShadow: h ? T.shadow : 'none',
+        display: 'flex', flexDirection: 'column', position: 'relative',
+      }}>
+      {/* Thumb */}
+      <div title={metaTip} style={{
+        height: 168, flexShrink: 0, position: 'relative',
+        background: `linear-gradient(135deg, hsl(${hue},22%,20%), hsl(${hue + 40},20%,12%))`,
+      }}>
+        {thumbSrc && <img src={thumbSrc} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />}
+        <div style={{ position: 'absolute', inset: 0, background: 'repeating-linear-gradient(0deg, transparent 0 3px, rgba(0,0,0,.16) 3px 4px)' }} />
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <button
+            data-rd
+            onClick={e => { e.stopPropagation(); if (segmentUrl) setWatching(true) }}
+            title="Voir le clip"
+            style={{
+              width: 48, height: 48, borderRadius: '50%', background: 'rgba(0,0,0,.45)',
+              border: '1px solid rgba(255,255,255,.22)', backdropFilter: 'blur(8px)', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
+              opacity: h ? 1 : 0.85, transform: h ? 'scale(1.08)' : 'scale(1)', transition: 'all .15s',
+            }}>
+            <Icon d={ICONS.play} size={18} fill="#fff" stroke="#fff" />
+          </button>
+        </div>
         <button
+          data-rd
           onClick={cycleStatus}
-          title={`Statut : ${status.label} — cliquer pour passer à « ${nextLabel} »`}
+          title={`Statut : ${st.label} — cliquer pour passer à « ${STATUS[nextStatusKey].label} »`}
           style={{
-            position: 'absolute', top: 8, left: 8,
-            display: 'inline-flex', alignItems: 'center', gap: 5,
-            background: status.bg, color: status.fg,
-            fontSize: 9.5, fontWeight: 700, letterSpacing: 1.2,
-            textTransform: 'uppercase', padding: '4px 8px',
-            borderRadius: 4, border: '1px solid rgba(255,255,255,0.10)',
-            cursor: 'pointer',
-            minHeight: 22,
-          }}
-          onMouseEnter={e => { e.currentTarget.style.background = 'var(--surface3)' }}
-          onMouseLeave={e => { e.currentTarget.style.background = status.bg }}
-        >
-          {status.label}
-          <span style={{ fontSize: 8, opacity: 0.8 }}>▸</span>
-        </button>
-        {/* Duration pill */}
+            position: 'absolute', top: 10, left: 10, padding: '3px 9px', borderRadius: 6, border: 'none',
+            fontSize: 10, fontWeight: 700, letterSpacing: 0.8, textTransform: 'uppercase',
+            background: st.bg, color: st.color, backdropFilter: 'blur(6px)', cursor: 'pointer', fontFamily: T.fontUI,
+          }}>{st.label}</button>
+        {onAssignProject && (
+          /* Top-right of the thumbnail so the hover action row never covers it.
+             "+ Projet" only on hover / focus (FIXES_R5 #8, CSS .clip-card-project);
+             an assigned project always shows. */
+          <button
+            data-rd
+            className={clip.project ? undefined : 'clip-card-project'}
+            onClick={e => { e.stopPropagation(); onAssignProject(clip.clip_id) }}
+            title={clip.project ? `Projet : ${clip.project} — cliquez pour changer` : 'Assigner à un projet'}
+            style={{
+              position: 'absolute', top: 10, right: 10, maxWidth: 140, padding: '3px 9px', borderRadius: 6, border: 'none',
+              display: 'inline-flex', alignItems: 'center', gap: 5, overflow: 'hidden',
+              fontSize: 11, fontWeight: 600, fontFamily: T.fontUI, cursor: 'pointer',
+              background: 'rgba(0,0,0,.6)', color: clip.project ? T.accent : '#fff', backdropFilter: 'blur(6px)',
+              transition: 'opacity .15s',
+            }}>
+            <Icon d={clip.project ? ICONS.folder : ICONS.plus} size={12} stroke="currentColor" style={{ flexShrink: 0 }} />
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{clip.project || 'Projet'}</span>
+          </button>
+        )}
         <div style={{
-          position: 'absolute', bottom: 8, right: 8,
-          background: 'rgba(0,0,0,0.7)', color: '#fff',
-          fontSize: 10, fontWeight: 600, padding: '2px 6px', borderRadius: 4,
-          fontFamily: 'var(--font-mono)',
-        }}>
-          {fmt(duration)}
-        </div>
-        {/* Blurred play button */}
-        <div style={{
-          position: 'absolute', inset: 0,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          opacity: hover ? 1 : 0.85, transition: 'opacity 0.15s',
-        }}>
-          <div style={{
-            width: 48, height: 48, borderRadius: '50%',
-            background: 'rgba(0,0,0,0.45)', border: '1px solid rgba(255,255,255,0.22)',
-            backdropFilter: 'blur(8px)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: '#fff', paddingLeft: 3,
-            transform: hover ? 'scale(1.08)' : 'scale(1)', transition: 'transform 0.15s',
-          }}>
-            <Icon d={ICONS.play} size={18} fill="#fff" />
-          </div>
-        </div>
+          position: 'absolute', bottom: 10, right: 10, padding: '2px 8px', borderRadius: 5,
+          fontFamily: T.fontMono, fontSize: 11, fontWeight: 600, background: 'rgba(0,0,0,.7)', color: '#fff',
+        }}>{fmtDuration(duration)}</div>
       </div>
 
       {/* Body */}
-      <div style={{ padding: '11px 14px', flex: 1 }}>
+      <div style={{ padding: '13px 15px', display: 'flex', flexDirection: 'column', gap: 10 }}>
         {editingName ? (
           <input
             autoFocus
@@ -160,43 +199,28 @@ export default function ClipCard({ clip, onDub, onMeme, onDelete, onRename, onSt
             onKeyDown={e => {
               e.stopPropagation()
               if (e.key === 'Enter') submitRename()
-              if (e.key === 'Escape') setEditingName(false)
+              if (e.key === 'Escape') { renameDoneRef.current = true; setEditingName(false) }
             }}
-            style={{ width: '100%', fontSize: 13, fontWeight: 500 }}
+            style={{
+              width: '100%', fontSize: T.fs.base, fontWeight: 600, lineHeight: 1.35, fontFamily: T.fontUI,
+              color: T.text, background: T.surface2, border: `1px solid ${T.accent}`, borderRadius: T.r.chip,
+              padding: '0 6px', outline: 'none',
+            }}
           />
         ) : (
-          <div
-            onClick={e => { e.stopPropagation(); setEditingName(true); setNameInput(clip.name) }}
-            style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', textWrap: 'pretty', marginBottom: 5 }}
-            title="Cliquez pour renommer"
-          >
-            {clip.name}
-          </div>
+          <div onClick={startRename} {...pressable(true)} title="Cliquez pour renommer"
+            style={{ fontSize: T.fs.base, fontWeight: 600, lineHeight: 1.35, textWrap: 'pretty' }}>{clip.name}</div>
         )}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 10.5, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>
-          <span>{hasSubtitles ? `${clip.subtitles.length} répl.` : 'aucune réplique'}</span>
-          {onAssignProject && (
-            <button
-              onClick={e => { e.stopPropagation(); onAssignProject(clip.clip_id) }}
-              title={clip.project ? `Projet : ${clip.project} — cliquez pour changer` : 'Assigner à un projet'}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 6px',
-                background: clip.project ? 'var(--accent-soft)' : 'transparent',
-                color: clip.project ? 'var(--accent)' : 'var(--text4)',
-                border: `1px solid ${clip.project ? 'rgba(245,197,24,0.35)' : 'var(--border)'}`,
-                borderRadius: 99, fontSize: 9.5, cursor: 'pointer', fontFamily: 'var(--font-ui)',
-                maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-              }}>
-              {clip.project
-                ? <><Icon d={ICONS.folder} size={10} /> {clip.project}</>
-                : '+ projet'}
-            </button>
-          )}
+        {/* minHeight = avatar size: every body is as tall, so the 44px hover row
+            only ever covers the meta row, never the title (final pass). */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minHeight: 22 }}>
+          <span style={{ fontSize: T.fs.xs, color: T.text3, fontFamily: T.fontMono }}>{replCount} répl.</span>
+          {chars.length > 0 && <Dot color={T.border3} size={3} />}
           {chars.length > 0 && (
-            <div style={{ display: 'flex', alignItems: 'center' }}>
-              {chars.slice(0, 4).map((c, i) => (
-                <div key={c} title={c} style={{ marginLeft: i === 0 ? 0 : -6 }}>
-                  <Avatar name={c} color={TRACK_HEX[i % TRACK_HEX.length]} size={22} />
+            <div style={{ display: 'flex' }}>
+              {chars.slice(0, 4).map((ch, i) => (
+                <div key={ch} title={ch} style={{ marginLeft: i ? -6 : 0 }}>
+                  <Avatar name={ch} color={TRACK_HEXES[i % TRACK_HEXES.length]} size={22} />
                 </div>
               ))}
             </div>
@@ -204,80 +228,56 @@ export default function ClipCard({ clip, onDub, onMeme, onDelete, onRename, onSt
         </div>
       </div>
 
-      {/* Action row — reveals on hover (prototype) */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto auto', borderTop: '1px solid var(--border)', opacity: hover ? 1 : 0, maxHeight: hover ? 44 : 0, overflow: 'hidden', transition: 'opacity 0.15s, max-height 0.15s' }}>
-        <ActionBtn onClick={e => { e.stopPropagation(); onDub(clip) }} accent flex title="Doublage">
-          Doubler
-        </ActionBtn>
-        <ActionBtn onClick={e => { e.stopPropagation(); setWatching(true) }} title="Voir le clip">
-          <Icon d={ICONS.play} size={13} />
-        </ActionBtn>
-        <ActionBtn onClick={e => { e.stopPropagation(); onMeme(clip, 'video') }} title="Créer un GIF depuis ce clip">
-          GIF
-        </ActionBtn>
-        <ActionBtn onClick={e => { e.stopPropagation(); onMeme(clip) }} title="Créer un meme — image, GIF ou audio">
-          Meme
-        </ActionBtn>
-        {confirmDelete ? (
-          <ActionBtn onClick={e => { e.stopPropagation(); onDelete(clip.clip_id) }} danger title="Confirmer la suppression" last>
-            <Icon d={ICONS.check} size={13} />
-          </ActionBtn>
-        ) : (
-          <ActionBtn onClick={e => { e.stopPropagation(); setConfirmDelete(true) }} danger title="Supprimer" last>
-            <Icon d={ICONS.trash} size={13} />
-          </ActionBtn>
-        )}
+      {/* Actions — revealed on hover / keyboard focus by CSS (.clip-card-actions
+          in index.css, FIXES_R8 #7 + FINAL_REVIEW #2): overlaid on the bottom of
+          the body, sliding up 8px with a fade, so the card height never changes.
+          :focus-within applies before the next Tab, so fast Tab presses reach
+          the row. Touch screens (hover: none) keep it in flow, always visible. */}
+      <div className="clip-card-actions" style={{
+        display: 'grid', gridTemplateColumns: '1fr auto auto auto auto', borderTop: `1px solid ${T.border}`, height: 44, flexShrink: 0,
+        background: T.surface, overflow: 'hidden',
+      }}>
+        <button data-rd className="focus-inset" onClick={e => { e.stopPropagation(); onDub(clip) }} title="Doublage" style={{
+          height: 44, padding: '0 14px', background: 'transparent', border: 'none', borderRight: `1px solid ${T.border}`,
+          color: T.accent, fontWeight: 600, fontSize: T.fs.sm, cursor: 'pointer', fontFamily: T.fontUI,
+          display: 'flex', alignItems: 'center', gap: 7,
+        }}>
+          <Icon d={ICONS.edit} size={15} stroke={T.accent} /> Doubler
+        </button>
+        {cells.map((a, i) => (
+          <button data-rd key={i} className="focus-inset" title={a.title} disabled={a.busy}
+            onClick={e => { e.stopPropagation(); a.fn() }} style={{
+              width: 44, height: 44, background: 'transparent', border: 'none',
+              borderRight: i < 3 ? `1px solid ${T.border}` : 'none',
+              color: a.danger ? alpha(T.danger, 'cc') : T.text3, cursor: a.busy ? 'default' : 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontFamily: T.fontMono, fontSize: 10, fontWeight: 700, opacity: a.busy ? 0.5 : 1,
+            }}>
+            {a.ic ? <Icon d={a.ic} size={15} stroke="currentColor" /> : a.label}
+          </button>
+        ))}
       </div>
 
-      {/* View modal */}
-      {watching && segmentUrl && (
-        <div
+      {watching && segmentUrl && createPortal(
+        <div role="dialog" aria-modal="true" aria-label={clip.name}
           onClick={e => { e.stopPropagation(); if (e.target === e.currentTarget) setWatching(false) }}
           style={{
             position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 'var(--z-modal)',
           }}
         >
-          <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden', maxWidth: '90vw', width: 800 }}>
-            <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ fontSize: 13, fontWeight: 600 }}>{clip.name}</span>
-              <span style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>{fmt(duration)}</span>
+          <div style={{ background: T.bg2, border: `1px solid ${T.border}`, borderRadius: T.r.card, overflow: 'hidden', maxWidth: '90vw', width: 800 }}>
+            <div style={{ padding: '10px 14px', borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: T.fs.sm, fontWeight: 600 }}>{clip.name}</span>
+              <span style={{ fontSize: T.fs.micro, color: T.text3, fontFamily: T.fontMono }}>{fmtDuration(duration)}</span>
               <div style={{ flex: 1 }} />
-              <button onClick={() => setWatching(false)} style={{ color: 'var(--text2)', background: 'none', fontSize: 16, padding: '2px 8px', borderRadius: 3, border: '1px solid var(--border2)' }}>✕</button>
+              <Btn size="sm" icon={ICONS.close} onClick={() => setWatching(false)} title="Fermer" />
             </div>
             <video src={segmentUrl} controls autoPlay style={{ display: 'block', width: '100%', background: '#000' }} />
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
-  )
-}
-
-function ActionBtn({ children, onClick, accent, danger, title, flex, disabled, mono, last }) {
-  const [hover, setHover] = useState(false)
-  return (
-    <button
-      onClick={onClick}
-      title={title}
-      disabled={disabled}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      style={{
-        padding: '8px 11px',
-        background: hover && !disabled
-          ? (danger ? 'var(--danger-soft)' : accent ? 'var(--accent-soft)' : 'var(--hover)')
-          : 'transparent',
-        color: disabled ? 'var(--text3)' : danger ? 'var(--danger)' : accent ? 'var(--accent)' : 'var(--text2)',
-        fontSize: mono ? 10 : 11.5,
-        fontWeight: accent ? 600 : mono ? 700 : 400,
-        fontFamily: mono ? 'var(--font-mono)' : 'var(--font-ui)',
-        borderRight: last ? 'none' : '1px solid var(--border)',
-        borderRadius: 0,
-        transition: 'background 0.1s, color 0.1s',
-        cursor: disabled ? 'default' : 'pointer',
-      }}
-    >
-      {children}
-    </button>
   )
 }

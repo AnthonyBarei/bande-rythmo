@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
-import { Icon, ICONS } from '../Icons'
+import { T, Icon, ICONS, Input, Kbd } from '../ui'
 
-// Command palette (⌘K / Ctrl+K / "/") — fuzzy-ish search over navigation,
-// quick actions, and clips. Keyboard: ↑/↓ move, ↵ run, Esc close.
+// Command palette (⌘K / Ctrl+K / "/") — port of redesign shell.jsx CommandPalette.
+// Search over navigation, quick actions, and clips. Keyboard: ↑/↓ move, ↵ run, Esc close.
 export default function CommandPalette({ open, onClose, onNavigate, onNewClip, onShortcuts, clips = [], onOpenClip }) {
   const [q, setQ] = useState('')
   const [sel, setSel] = useState(0)
@@ -13,24 +13,25 @@ export default function CommandPalette({ open, onClose, onNavigate, onNewClip, o
 
   const items = useMemo(() => {
     const base = [
-      { id: 'nav-import',   icon: ICONS.upload,   label: 'Aller à — Importer',  run: () => onNavigate('import') },
-      { id: 'nav-clips',    icon: ICONS.grid,     label: 'Aller à — Mes Clips',  run: () => onNavigate('clips') },
-      { id: 'nav-memes',    icon: ICONS.smile,    label: 'Aller à — Memes',      run: () => onNavigate('memes') },
-      { id: 'nav-activity', icon: ICONS.activity, label: 'Aller à — Activité',    run: () => onNavigate('activity') },
-      { id: 'nav-settings', icon: ICONS.settings, label: 'Aller à — Réglages',   run: () => onNavigate('settings') },
-      { id: 'act-new',      icon: ICONS.plus,     label: 'Nouveau clip — importer une vidéo', run: () => onNewClip?.() },
-      { id: 'act-help',     icon: ICONS.kbd,      label: 'Raccourcis clavier',   run: () => onShortcuts?.() },
+      { id: 'nav-clips',    ic: ICONS.library,  label: 'Aller à la Bibliothèque',    run: () => onNavigate('clips') },
+      { id: 'nav-import',   ic: ICONS.import,   label: 'Importer une vidéo',         run: () => onNavigate('import') },
+      { id: 'nav-dub',      ic: ICONS.edit,     label: 'Ouvrir l’éditeur BR',     run: () => onNavigate('dub') },
+      { id: 'nav-record',   ic: ICONS.mic,      label: 'Studio d’enregistrement', run: () => onNavigate('record') },
+      { id: 'nav-memes',    ic: ICONS.meme,     label: 'Atelier Meme · GIF · Audio', run: () => onNavigate('memes') },
+      { id: 'nav-activity', ic: ICONS.activity, label: 'Voir l’activité',        run: () => onNavigate('activity') },
+      { id: 'nav-settings', ic: ICONS.settings, label: 'Réglages',                   run: () => onNavigate('settings') },
+      { id: 'act-new',      ic: ICONS.plus,     label: 'Nouveau clip — importer une vidéo', run: () => onNewClip?.() },
+      { id: 'act-help',     ic: ICONS.keyboard, label: 'Raccourcis clavier',         run: () => onShortcuts?.() },
     ]
-    const clipItems = clips.slice(0, 50).map(c => ({
-      id: 'clip-' + c.clip_id, icon: ICONS.film,
-      label: `Ouvrir — ${c.name}`,
+    const clipItems = clips.map(c => ({
+      id: 'clip-' + c.clip_id, ic: ICONS.film,
+      label: `Ouvrir — ${c.name || c.clip_id}`,
       meta: c.project || (c.subtitles?.length ? `${c.subtitles.length} répl.` : ''),
       run: () => onOpenClip?.(c),
     }))
-    const all = [...base, ...clipItems]
     const query = q.trim().toLowerCase()
-    if (!query) return all
-    return all.filter(i => i.label.toLowerCase().includes(query) || (i.meta || '').toLowerCase().includes(query))
+    const match = i => !query || i.label.toLowerCase().includes(query) || (i.meta || '').toLowerCase().includes(query)
+    return [...base.filter(match), ...clipItems.filter(match).slice(0, 50)]
   }, [q, clips, onNavigate, onNewClip, onShortcuts, onOpenClip])
 
   useEffect(() => { if (sel >= items.length) setSel(Math.max(0, items.length - 1)) }, [items.length, sel])
@@ -45,50 +46,31 @@ export default function CommandPalette({ open, onClose, onNavigate, onNewClip, o
   }
 
   return createPortal(
-    <div onClick={onClose} style={{
-      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(3px)',
-      zIndex: 'var(--z-modal)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: '12vh',
-    }}>
-      <div onClick={e => e.stopPropagation()} onKeyDown={onKey} style={{
-        width: 'min(560px, 94vw)', background: 'var(--surface)', border: '1px solid var(--border2)',
-        borderRadius: 12, boxShadow: '0 18px 60px rgba(0,0,0,0.55)', overflow: 'hidden',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
-          <Icon d={ICONS.search} size={18} sw={1.8} />
-          <input ref={inputRef} value={q} onChange={e => { setQ(e.target.value); setSel(0) }}
-            placeholder="Rechercher une commande, un clip…"
-            style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: 'var(--text)', fontSize: 16, fontFamily: 'var(--font-ui)' }} />
-          <Kbd>Esc</Kbd>
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.55)', backdropFilter: 'blur(3px)', zIndex: 'var(--z-modal)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: '12vh' }}>
+      <div onClick={e => e.stopPropagation()} onKeyDown={onKey} style={{ width: 560, background: T.surface, border: `1px solid ${T.border2}`, borderRadius: T.r.card, boxShadow: T.shadowL, overflow: 'hidden' }}>
+        <div style={{ padding: '10px 12px', borderBottom: `1px solid ${T.border}` }}>
+          <Input ref={inputRef} size="lg" icon={ICONS.search} right={<Kbd>Esc</Kbd>}
+            value={q} onChange={e => { setQ(e.target.value); setSel(0) }}
+            placeholder="Rechercher une commande, un clip…" aria-label="Rechercher une commande ou un clip" />
         </div>
         <div style={{ maxHeight: 360, overflow: 'auto', padding: 8 }}>
-          {items.map((it, i) => (
-            <button key={it.id}
-              onMouseEnter={() => setSel(i)}
-              onClick={() => { it.run(); onClose() }}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 12, width: '100%', padding: '10px 12px', borderRadius: 8,
-                background: i === sel ? 'var(--surface2)' : 'transparent', border: 'none', cursor: 'pointer',
-                color: 'var(--text)', textAlign: 'left', fontSize: 13, fontFamily: 'var(--font-ui)', minHeight: 40,
-              }}>
-              <Icon d={it.icon} size={16} sw={1.7} />
-              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.label}</span>
-              {it.meta && <span style={{ fontSize: 10.5, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>{it.meta}</span>}
+          {items.map((c, i) => (
+            <button data-rd key={c.id} onClick={() => { c.run(); onClose() }} onMouseEnter={() => setSel(i)} style={{
+              display: 'flex', alignItems: 'center', gap: 12, width: '100%', padding: '11px 12px', borderRadius: T.r.ctl,
+              background: i === sel ? T.surface2 : 'transparent', border: 'none', cursor: 'pointer', color: T.text, textAlign: 'left',
+              fontSize: T.fs.sm, fontFamily: T.fontUI,
+            }}>
+              <Icon d={c.ic} size={16} stroke={T.text2} />
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.label}</span>
+              {(c.meta || i === sel) && <div style={{ flex: 1 }} />}
+              {c.meta && <span style={{ fontSize: T.fs.micro, color: T.text3, fontFamily: T.fontMono }}>{c.meta}</span>}
               {i === sel && <Kbd>↵</Kbd>}
             </button>
           ))}
-          {items.length === 0 && (
-            <div style={{ padding: 24, textAlign: 'center', color: 'var(--text3)', fontSize: 13 }}>Aucun résultat</div>
-          )}
+          {items.length === 0 && <div style={{ padding: 24, textAlign: 'center', color: T.text3, fontSize: T.fs.sm }}>Aucun résultat</div>}
         </div>
       </div>
     </div>,
     document.body
   )
-}
-
-function Kbd({ children }) {
-  return <span style={{
-    padding: '1px 6px', borderRadius: 5, background: 'var(--surface2)', border: '1px solid var(--border2)',
-    fontFamily: 'var(--font-mono)', fontSize: 10.5, color: 'var(--text2)', lineHeight: 1.6,
-  }}>{children}</span>
 }

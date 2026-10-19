@@ -1,23 +1,36 @@
 import React, { useEffect, useState, useMemo } from 'react'
-import { Icon, ICONS } from '../Icons'
-import { Btn, Chip, Dot, ProgressBar, ScreenHeader } from '../ui'
+import { Btn, Chip, Dot, Icon, ICONS, ProgressBar, ScreenHeader, T, alpha } from '../ui'
 import { useProgress } from '../ProgressContext'
+import { useToast } from '../ToastContext'
+import { downloadUrl } from '../download'
+import { primaryRowKey } from '../utils/primaryRow'
+import { useNow } from '../utils/useNow'
+import { failureGroupKey, groupJobs, siblingsOf } from '../utils/jobGroups'
+import JobError, { DetailsLink, ErrorDetail } from './JobError'
+import { friendlyError } from '../utils/jobErrors'
 
-// Activity center (redesign screen-misc Activity) — one place for all jobs:
-// running (progress + cancel), failed (retry), done (dismiss). Plus the
-// persisted export history (re-download anytime).
+// Activity center — reference screen-misc.jsx Activity · RunRow · DoneRow.
+// Running jobs (progress + cancel), failures (retry), finished jobs of the
+// session followed by the persisted export history (re-download anytime).
 
 const KIND_ICON = {
-  'export-mp4': ICONS.film, 'mp4': ICONS.film, 'export-gif': ICONS.gif, 'gif': ICONS.gif,
+  'export-mp4': ICONS.film, 'mp4': ICONS.film, 'mp4-dubbed': ICONS.film, 'export-gif': ICONS.gif, 'gif': ICONS.gif,
+  'export-dubpack': ICONS.mic, 'dubpack': ICONS.mic,
   'transcribe': ICONS.mic, 'import-batch': ICONS.upload, 'proxy': ICONS.film,
   'vocals': ICONS.audio, 'export': ICONS.download, 'plex-remux': ICONS.film,
 }
 const iconFor = kind => KIND_ICON[kind] || ICONS.activity
 
+const FORMAT_LABEL = {
+  'mp4': 'MP4 + BR', 'mp4-dubbed': 'MP4 doublé', 'gif': 'GIF', 'dubpack': 'Dubpack', 'srt': 'SRT', 'ass': 'ASS',
+  'detx': 'DetX', 'croisille': 'Croisillé', 'mp3': 'MP3', 'wav': 'WAV',
+}
+const formatLabel = f => `Export ${FORMAT_LABEL[f] || (f || '').toUpperCase()}`
+
 function fmtEta(s) {
   if (s == null || !isFinite(s)) return ''
   if (s < 60) return `${Math.round(s)}s`
-  return `${Math.floor(s / 60)}m${String(Math.round(s % 60)).padStart(2, '0')}`
+  return `${Math.floor(s / 60)}min ${String(Math.round(s % 60)).padStart(2, '0')}s`
 }
 function fmtBytes(n) {
   if (!n) return ''
@@ -36,183 +49,203 @@ function fmtWhen(iso) {
   } catch { return '' }
 }
 
-function GroupLabel({ children, color }) {
-  return (
-    <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1.2, color, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 9 }}>
-      {children}
-      <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
-    </div>
-  )
-}
+const DONE_CAP = 10
 
-function Tile({ color, icon, size = 38, r = 9 }) {
-  return (
-    <div style={{ width: size, height: size, flexShrink: 0, borderRadius: r, background: color + '14', border: `1px solid ${color}33`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <Icon d={icon} size={Math.round(size * 0.47)} stroke={color} />
-    </div>
-  )
-}
+const exportTime = e => Date.parse(e.created_at) || 0
 
-export default function ActivityCenter() {
-  const { jobs, cancelByKey, dismiss, retry } = useProgress()
+// A session export job is already listed by its file row — that row competes
+// for the primary button, not the job. Cancelled jobs never do.
+const competesForPrimary = r => r.type === 'export' || (r.j.status === 'done' && !String(r.j.kind || '').startsWith('export'))
+
+export default function ActivityCenter({ onOpenClip }) {
+  const { jobs, history, forget, cancelByKey, dismiss, retry } = useProgress()
   const [exports, setExports] = useState([])
+  const [clips, setClips] = useState({})
+  const [showAll, setShowAll] = useState(false)
+  const now = useNow()
 
   useEffect(() => {
     let live = true
-    const load = () => fetch('/api/export/list').then(r => r.ok ? r.json() : []).then(d => { if (live) setExports(d || []) }).catch(() => {})
+    const load = () => fetch('/api/export/list')
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() })
+      .then(d => { if (live) setExports(d || []) })
+      .catch(e => console.warn('Historique des exports indisponible', e))
     load()
     const t = setInterval(load, 5000)
     return () => { live = false; clearInterval(t) }
   }, [])
 
-  const running = useMemo(() => jobs.filter(j => j.status === 'running'), [jobs])
-  const failed = useMemo(() => jobs.filter(j => j.status === 'error'), [jobs])
-  const finished = useMemo(() => jobs.filter(j => j.status === 'done' || j.status === 'cancelled'), [jobs])
+  useEffect(() => {
+    let live = true
+    fetch('/api/clips/')
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() })
+      .then(d => { if (live) setClips(Object.fromEntries((d || []).map(c => [c.clip_id, c]))) })
+      .catch(e => console.warn('Noms des clips indisponibles', e))
+    return () => { live = false }
+  }, [])
 
-  const doneCount = finished.length + exports.length
+  const running = useMemo(() => jobs.filter(j => j.status === 'running'), [jobs])
+  // FIXES_R5 §2: same kind + clip + error → one row with a ×N chip.
+  const failed = useMemo(() => groupJobs(jobs.filter(j => j.status === 'error'), failureGroupKey), [jobs])
+  const finished = history
+
+  // Newest first: this session's finished jobs, then the persisted export history.
+  const doneRows = useMemo(() => {
+    const sorted = [...exports].sort((a, b) => exportTime(b) - exportTime(a) || (b.id ?? 0) - (a.id ?? 0))
+    return [
+      ...finished.map(j => ({ type: 'job', key: j.key, j, at: j.finishedAt })),
+      ...sorted.map(e => ({ type: 'export', key: `export-${e.id}`, e, at: e.created_at })),
+    ]
+  }, [finished, exports])
+
+  // FIXES_R4 §12: one primary row at most — the newest, if it finished < 10 min ago.
+  const primaryKey = primaryRowKey(doneRows.filter(competesForPrimary), now)
+
+  const doneCount = doneRows.length
+  const hiddenCount = Math.max(0, doneCount - DONE_CAP)
+  const visibleDone = showAll ? doneRows : doneRows.slice(0, DONE_CAP)
   const empty = !running.length && !failed.length && !doneCount
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--bg)' }}>
-      <ScreenHeader
-        kicker="SYSTÈME"
-        title="Activité"
-        right={
-          <div style={{ display: 'flex', gap: 8 }}>
-            <Chip soft color="var(--accent)"><Dot color="var(--accent)" size={7} pulse={running.length > 0} /> {running.length} en cours</Chip>
-            {failed.length > 0 && <Chip soft color="var(--danger)">{failed.length} échec{failed.length > 1 ? 's' : ''}</Chip>}
-            <Chip soft color="var(--text3)">{doneCount} terminé{doneCount > 1 ? 's' : ''}</Chip>
-          </div>
-        }
-      />
-
-      <div style={{ flex: 1, overflow: 'auto', padding: '16px 32px 32px' }}>
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <ScreenHeader kicker="SYSTÈME" title="Activité"
+        right={<div style={{ display: 'flex', gap: 8 }}>
+          {running.length > 0 && <Chip soft color={T.accent}><Dot color={T.accent} size={7} pulse /> {running.length} en cours</Chip>}
+          {failed.length > 0 && <Chip soft color={T.danger}>{failed.length} échec{failed.length > 1 ? 's' : ''}</Chip>}
+          {doneCount > 0 && <Chip soft color={T.text3}>{doneCount} terminé{doneCount > 1 ? 's' : ''}</Chip>}
+        </div>} />
+      <div style={{ flex: 1, overflow: 'auto', padding: '4px 32px 28px' }}>
         {empty && (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60%', gap: 12, color: 'var(--text3)' }}>
-            <Icon d={ICONS.activity} size={40} stroke="var(--text4)" />
-            <div style={{ fontSize: 14, color: 'var(--text2)' }}>Aucune activité</div>
-            <div style={{ fontSize: 12 }}>Les transcriptions, exports et traitements apparaîtront ici.</div>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60%', gap: 12, color: T.text3 }}>
+            <Icon d={ICONS.activity} size={40} stroke={T.text4} />
+            <div style={{ fontSize: T.fs.base, color: T.text2 }}>Aucune activité</div>
+            <div style={{ fontSize: T.fs.xs }}>Les transcriptions, exports et traitements apparaîtront ici.</div>
           </div>
         )}
 
-        {running.length > 0 && (
-          <>
-            <GroupLabel color="var(--accent)">EN COURS · {running.length}</GroupLabel>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 24 }}>
-              {running.map(j => <RunRow key={j.key} j={j} onCancel={() => cancelByKey(j.key)} />)}
-            </div>
-          </>
-        )}
+        {running.length > 0 && <>
+          <GroupLabel color={T.accent}>EN COURS · {running.length}</GroupLabel>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 24 }}>
+            {running.map(j => <RunRow key={j.key} j={j} clip={j.clip || clips[j.clipId]?.name} onCancel={() => cancelByKey(j.key)} />)}
+          </div>
+        </>}
 
-        {failed.length > 0 && (
-          <>
-            <GroupLabel color="var(--danger)">ÉCHECS · {failed.length}</GroupLabel>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 24 }}>
-              {failed.map(j => <FailRow key={j.key} j={j} onRetry={() => retry(j.key)} onDismiss={() => dismiss(j.key)} />)}
-            </div>
-          </>
-        )}
+        {failed.length > 0 && <>
+          <GroupLabel color={T.danger}>ÉCHECS · {failed.length}</GroupLabel>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 24 }}>
+            {failed.map(g => <FailRow key={g.key} j={g} clip={g.clip || clips[g.clipId]?.name}
+              onRetry={() => { siblingsOf(g).forEach(dismiss); retry(g.key) }}
+              onDismiss={() => g.groupKeys.forEach(dismiss)} />)}
+          </div>
+        </>}
 
-        {finished.length > 0 && (
-          <>
-            <GroupLabel color="var(--success)">TERMINÉ · {finished.length}</GroupLabel>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 24 }}>
-              {finished.map(j => <DoneJobRow key={j.key} j={j} onDismiss={() => dismiss(j.key)} />)}
+        {doneCount > 0 && <>
+          <GroupLabel color={T.success}>TERMINÉ · {doneCount}</GroupLabel>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {visibleDone.map(r => r.type === 'job'
+              ? <JobDoneRow key={r.key} j={r.j} clip={clips[r.j.clipId]} primary={r.key === primaryKey} onOpenClip={onOpenClip} onDismiss={() => forget(r.j.key)} />
+              : <ExportRow key={r.key} e={r.e} clip={clips[r.e.clip_id]?.name} primary={r.key === primaryKey} />)}
+          </div>
+          {hiddenCount > 0 && (
+            <div style={{ marginTop: 10 }}>
+              <Btn size="sm" variant="ghost" onClick={() => setShowAll(v => !v)}>
+                {showAll ? 'Afficher moins' : `Voir les ${hiddenCount} plus anciens`}
+              </Btn>
             </div>
-          </>
-        )}
-
-        {exports.length > 0 && (
-          <>
-            <GroupLabel color="var(--text3)">EXPORTS · {exports.length}</GroupLabel>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {exports.map(e => <ExportRow key={e.id} e={e} />)}
-            </div>
-          </>
-        )}
+          )}
+        </>}
       </div>
     </div>
   )
 }
 
-const rowBase = {
-  background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 9,
-  padding: '13px 16px', display: 'flex', alignItems: 'center', gap: 14,
+function GroupLabel({ children, color }) {
+  return <div style={{ fontSize: T.fs.micro, fontWeight: 700, letterSpacing: 1.2, color, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 9 }}>{children}<div style={{ flex: 1, height: 1, background: T.border }} /></div>
 }
 
-function RunRow({ j, onCancel }) {
+function RunRow({ j, clip, onCancel }) {
   const pct = Math.round((j.pct || 0) * 100)
+  const eta = fmtEta(j.eta)
   return (
-    <div style={rowBase}>
-      <Tile color="var(--accent)" icon={iconFor(j.kind)} />
+    <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.r.ctl, padding: '13px 16px', display: 'flex', alignItems: 'center', gap: 14 }}>
+      <div style={{ width: 38, height: 38, flexShrink: 0, borderRadius: 9, background: alpha(T.accent, '14'), border: `1px solid ${alpha(T.accent, '33')}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon d={iconFor(j.kind)} size={18} stroke={T.accent} /></div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
-          <span style={{ fontSize: 14, fontWeight: 600, whiteSpace: 'nowrap' }}>{j.title}</span>
-          {j.clip && <span style={{ fontSize: 12, color: 'var(--text3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{j.clip}</span>}
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}>
-          <ProgressBar pct={pct} />
-          <span style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'var(--font-mono)', minWidth: 90, whiteSpace: 'nowrap' }}>{j.stage || '…'}</span>
-        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}><span style={{ fontSize: T.fs.base, fontWeight: 600, whiteSpace: 'nowrap' }}>{j.title}</span>{clip && <span style={{ fontSize: T.fs.xs, color: T.text3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{clip}</span>}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}><ProgressBar pct={pct} /><span style={{ fontSize: 11, color: T.text2, fontFamily: T.fontMono, minWidth: 100, flexShrink: 0, whiteSpace: 'nowrap' }}>{j.stage || '…'}</span></div>
       </div>
-      <div style={{ textAlign: 'right', minWidth: 56 }}>
-        <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--accent)' }}>{pct}%</div>
-        {j.eta != null && <div style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>~{fmtEta(j.eta)}</div>}
-      </div>
+      <div style={{ textAlign: 'right', minWidth: 60 }}><div style={{ fontSize: T.fs.md, fontWeight: 700, fontFamily: T.fontMono, color: T.accent }}>{pct}%</div>{eta && <div style={{ fontSize: 10, color: T.text3, fontFamily: T.fontMono }}>~{eta}</div>}</div>
       <Btn size="sm" variant="outline" onClick={onCancel}>Annuler</Btn>
     </div>
   )
 }
 
-function FailRow({ j, onRetry, onDismiss }) {
+// FIXES_R6 #10: Détails ▾, Réessayer and ✕ share one centred action group (12px gap).
+function FailRow({ j, clip, onRetry, onDismiss }) {
+  const [open, setOpen] = useState(false)
+  const { detail } = friendlyError(j.error)
   return (
-    <div style={{ ...rowBase, background: 'rgba(232,89,93,0.05)', borderColor: 'rgba(232,89,93,0.27)' }}>
-      <Tile color="var(--danger)" icon={iconFor(j.kind)} />
+    <div style={{ background: 'rgba(232,89,93,.05)', border: `1px solid ${alpha(T.danger, '44')}`, borderRadius: T.r.ctl, padding: '13px 16px', display: 'flex', alignItems: 'center', gap: 14 }}>
+      <div style={{ width: 36, height: 36, flexShrink: 0, borderRadius: 9, background: alpha(T.danger, '14'), border: `1px solid ${alpha(T.danger, '44')}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon d={iconFor(j.kind)} size={17} stroke={T.danger} /></div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13.5, fontWeight: 600 }}>{j.title}</div>
-        <div style={{ fontSize: 12, color: 'var(--danger)', fontFamily: 'var(--font-mono)', marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{j.error || 'Erreur'}</div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <span style={{ fontSize: T.fs.sm, fontWeight: 600, whiteSpace: 'nowrap' }}>{j.title}</span>
+          {j.count > 1 && <Chip soft color={T.danger} style={{ padding: '1px 7px', fontFamily: T.fontMono, fontSize: T.fs.micro }}>×{j.count}</Chip>}
+          {clip && <span style={{ fontSize: T.fs.xs, color: T.text3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{clip}</span>}
+        </div>
+        <div style={{ marginTop: 3 }}><JobError compact hideLinks error={j.error} /></div>
+        {open && <ErrorDetail detail={detail} />}
       </div>
-      {j.retry && <Btn size="sm" variant="primary" icon={ICONS.loop2} onClick={onRetry}>Réessayer</Btn>}
-      <Btn size="sm" variant="outline" icon={ICONS.close} onClick={onDismiss} title="Fermer" />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
+        {detail && <DetailsLink open={open} onToggle={() => setOpen(v => !v)} />}
+        {j.retry && <Btn size="sm" variant="primary" icon={ICONS.loop} onClick={onRetry} title={j.count > 1 ? 'Relancer une seule fois' : undefined}>Réessayer</Btn>}
+        <Btn size="sm" variant="outline" icon={ICONS.close} onClick={onDismiss} title={j.count > 1 ? `Retirer les ${j.count}` : 'Retirer'} />
+      </div>
     </div>
   )
 }
 
-function DoneJobRow({ j, onDismiss }) {
+function DoneRow({ title, clip, file, when, cancelled, action }) {
+  const c = cancelled ? T.text3 : T.success
+  return (
+    <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.r.ctl, padding: '11px 16px', display: 'flex', alignItems: 'center', gap: 14 }}>
+      <div style={{ width: 34, height: 34, flexShrink: 0, borderRadius: 8, background: alpha(c, '14'), border: `1px solid ${alpha(c, '33')}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon d={cancelled ? ICONS.close : ICONS.check} size={17} stroke={c} /></div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}><span style={{ fontSize: T.fs.sm, fontWeight: 600, whiteSpace: 'nowrap' }}>{title}</span>{clip && <span style={{ fontSize: T.fs.xs, color: T.text3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{clip}</span>}</div>
+        <div style={{ fontSize: 10.5, color: T.text3, fontFamily: T.fontMono, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{file}</div>
+      </div>
+      {when && <span style={{ fontSize: 10.5, color: T.text3, fontFamily: T.fontMono }}>{when}</span>}
+      {action}
+    </div>
+  )
+}
+
+// Session job without a file: open its clip when known (DoneRow action 'open'), else dismiss.
+function JobDoneRow({ j, clip, primary, onOpenClip, onDismiss }) {
   const cancelled = j.status === 'cancelled'
-  const color = cancelled ? 'var(--text3)' : 'var(--success)'
+  const canOpen = !cancelled && clip && onOpenClip
   return (
-    <div style={{ ...rowBase, padding: '11px 16px' }}>
-      <Tile color={color} icon={cancelled ? ICONS.close : ICONS.check} size={34} r={8} />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 600 }}>{j.title}</div>
-        <div style={{ fontSize: 10.5, color: 'var(--text3)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>{cancelled ? 'Annulé' : (j.stage || 'Terminé')}</div>
-      </div>
-      <Btn size="sm" variant="outline" icon={ICONS.close} onClick={onDismiss} title="Retirer" />
-    </div>
+    <DoneRow title={j.title} clip={clip?.name} cancelled={cancelled}
+      file={cancelled ? 'Annulé' : (j.stage || 'Terminé')}
+      action={canOpen
+        ? <Btn size="sm" variant={primary ? 'primary' : 'outline'} icon={ICONS.edit} onClick={() => onOpenClip(clip)}>Ouvrir le clip</Btn>
+        : <Btn size="sm" variant="outline" icon={ICONS.close} onClick={onDismiss}>Retirer</Btn>} />
   )
 }
 
-function ExportRow({ e }) {
-  function dl() {
-    const a = document.createElement('a')
-    a.href = `/api/export/download/${e.id}`
-    a.download = e.filename || 'export'
-    a.click()
+function ExportRow({ e, clip, primary }) {
+  const toast = useToast()
+  async function dl() {
+    try {
+      await downloadUrl(`/api/export/download/${e.id}`, e.filename)
+    } catch (err) {
+      toast.error('Téléchargement impossible : ' + err.message)
+    }
   }
+  const size = fmtBytes(e.size_bytes)
   return (
-    <div style={{ ...rowBase, padding: '11px 16px' }}>
-      <Tile color="var(--success)" icon={iconFor(e.format)} size={34} r={8} />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-          <span style={{ fontSize: 13, fontWeight: 600 }}>{(e.format || '').toUpperCase()}</span>
-          <span style={{ fontSize: 11.5, color: 'var(--text3)' }}>{e.filename}</span>
-        </div>
-        <div style={{ fontSize: 10.5, color: 'var(--text3)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
-          {[e.quality, fmtBytes(e.size_bytes), fmtWhen(e.created_at)].filter(Boolean).join(' · ')}
-        </div>
-      </div>
-      <Btn size="sm" variant="primary" icon={ICONS.download} onClick={dl}>Télécharger</Btn>
-    </div>
+    <DoneRow title={formatLabel(e.format)} clip={clip}
+      file={[e.filename, size, e.quality].filter(Boolean).join(' · ')}
+      when={fmtWhen(e.created_at)}
+      action={<Btn size="sm" variant={primary ? 'primary' : 'outline'} icon={ICONS.download} onClick={dl}>Télécharger</Btn>} />
   )
 }
