@@ -2,6 +2,8 @@ import React, { createContext, useCallback, useContext, useEffect, useLayoutEffe
 import { Icon, ICONS } from './Icons'
 import { filenameFromDisposition, saveBlob } from './download'
 import { toastsFor } from './utils/toastScope'
+import { groupJobs, siblingsOf, toastGroupKey } from './utils/jobGroups'
+import JobError from './components/JobError'
 
 /* Progress surface — one place for long ops (Whisper, MP4 burn, Plex remux,
    GIF export, batch clip cut).
@@ -23,6 +25,8 @@ import { toastsFor } from './utils/toastScope'
        retry: async () => 'new-job-id',
        clipId: '…',               // optional — Activité shows the clip name
        queue: 'export',           // optional — the screen that lists this job (no toast there)
+       toast: false,              // optional — tracked + listed in Activité, never toasted
+                                  // (the screen shows its own inline <JobError>)
      })
      handle.cancel()              // user-initiated cancel
 */
@@ -215,6 +219,7 @@ export function ProgressProvider({ children }) {
       title: opts.title || 'Tâche',
       clipId: opts.clipId || null,
       queue: opts.queue || null,
+      toast: opts.toast !== false,
       stage: opts.stage || 'Démarrage…',
       pct: 0, eta: null,
       status: 'running', error: null,
@@ -309,7 +314,12 @@ const SAFE_VAR = '--toast-safe-bottom'
    to jobs outside the queue on Exporter, newest two + "+N" everywhere. */
 export function ProgressToasts({ route, queueClipId = null, onOpenActivity }) {
   const { jobs, cancelByKey, dismiss, retry } = useProgress()
-  const { shown, hidden } = toastsFor(jobs, { route, queueClipId })
+  // FIXES_R5 §1: toast:false jobs never toast; identical failures (same kind +
+  // same error) collapse into one card with a ×N count.
+  const grouped = groupJobs(jobs.filter(j => j.toast), toastGroupKey)
+  const { shown, hidden } = toastsFor(grouped, { route, queueClipId })
+  const dismissGroup = (g) => g.groupKeys.forEach(dismiss)
+  const retryGroup = (g) => { siblingsOf(g).forEach(dismiss); retry(g.key) }
   const stackRef = useRef(null)
   const visible = shown.length > 0
 
@@ -346,7 +356,7 @@ export function ProgressToasts({ route, queueClipId = null, onOpenActivity }) {
           }}>+{hidden}</button>
       )}
       {shown.map(j => (
-        <ProgressCard key={j.key} job={j} onCancel={cancelByKey} onDismiss={dismiss} onRetry={retry} />
+        <ProgressCard key={j.key} job={j} onCancel={() => cancelByKey(j.key)} onDismiss={() => dismissGroup(j)} onRetry={() => retryGroup(j)} />
       ))}
     </div>
   )
@@ -379,9 +389,17 @@ function ProgressCard({ job, onCancel, onDismiss, onRetry }) {
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
         <span style={{ fontWeight: 600, flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{job.title}</span>
+        {job.count > 1 && (
+          <span title={`${job.count} échecs identiques`} style={{
+            fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 600, color: 'var(--danger)',
+            border: '1px solid color-mix(in srgb, var(--danger) 27%, transparent)',
+            background: 'color-mix(in srgb, var(--danger) 11%, transparent)',
+            borderRadius: 99, padding: '1px 7px', flexShrink: 0,
+          }}>×{job.count}</span>
+        )}
         {isRun && (
           <button
-            onClick={() => onCancel(job.key)}
+            onClick={onCancel}
             style={{
               background: 'transparent', border: '1px solid var(--border2)',
               color: 'var(--text2)', borderRadius: 4,
@@ -390,7 +408,7 @@ function ProgressCard({ job, onCancel, onDismiss, onRetry }) {
         )}
         {isErr && job.retry && (
           <button
-            onClick={() => onRetry?.(job.key)}
+            onClick={onRetry}
             style={{
               background: 'transparent', border: '1px solid var(--accent)',
               color: 'var(--accent)', borderRadius: 4,
@@ -398,16 +416,17 @@ function ProgressCard({ job, onCancel, onDismiss, onRetry }) {
             }}>Réessayer</button>
         )}
         {(isErr || isDone || isCanc) && (
-          <button onClick={() => onDismiss(job.key)} title="Fermer"
+          <button onClick={onDismiss} title="Fermer"
             aria-label="Fermer"
             style={{ background: 'transparent', border: 'none', color: 'var(--text3)', cursor: 'pointer', width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
             <Icon d={ICONS.close} size={14} />
           </button>
         )}
       </div>
+      {isErr ? <JobError compact error={job.error} /> : (
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
         <span style={{ fontSize: 11, color: 'var(--text3)', flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {isErr ? (job.error || 'Erreur') : isCanc ? 'Annulé' : job.stage || '…'}
+          {isCanc ? 'Annulé' : job.stage || '…'}
         </span>
         {isRun && (
           <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text2)' }}>
@@ -418,6 +437,7 @@ function ProgressCard({ job, onCancel, onDismiss, onRetry }) {
           <span style={{ fontSize: 11, color: 'var(--success)', display: 'inline-flex', alignItems: 'center', gap: 4 }}><Icon d={ICONS.check} size={12} />Terminé</span>
         )}
       </div>
+      )}
       {(isRun || isDone) && (
         <div style={{
           height: 4, background: 'var(--surface3)', borderRadius: 2, overflow: 'hidden',

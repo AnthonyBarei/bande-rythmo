@@ -5,6 +5,8 @@ import { useToast } from '../ToastContext'
 import { downloadUrl } from '../download'
 import { primaryRowKey } from '../utils/primaryRow'
 import { useNow } from '../utils/useNow'
+import { failureGroupKey, groupJobs, siblingsOf } from '../utils/jobGroups'
+import JobError from './JobError'
 
 // Activity center — reference screen-misc.jsx Activity · RunRow · DoneRow.
 // Running jobs (progress + cancel), failures (retry), finished jobs of the
@@ -82,7 +84,8 @@ export default function ActivityCenter({ onOpenClip }) {
   }, [])
 
   const running = useMemo(() => jobs.filter(j => j.status === 'running'), [jobs])
-  const failed = useMemo(() => jobs.filter(j => j.status === 'error'), [jobs])
+  // FIXES_R5 §2: same kind + clip + error → one row with a ×N chip.
+  const failed = useMemo(() => groupJobs(jobs.filter(j => j.status === 'error'), failureGroupKey), [jobs])
   const finished = history
 
   // Newest first: this session's finished jobs, then the persisted export history.
@@ -106,9 +109,9 @@ export default function ActivityCenter({ onOpenClip }) {
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <ScreenHeader kicker="SYSTÈME" title="Activité"
         right={<div style={{ display: 'flex', gap: 8 }}>
-          <Chip soft color={T.accent}><Dot color={T.accent} size={7} pulse={running.length > 0} /> {running.length} en cours</Chip>
+          {running.length > 0 && <Chip soft color={T.accent}><Dot color={T.accent} size={7} pulse /> {running.length} en cours</Chip>}
           {failed.length > 0 && <Chip soft color={T.danger}>{failed.length} échec{failed.length > 1 ? 's' : ''}</Chip>}
-          <Chip soft color={T.text3}>{doneCount} terminé{doneCount > 1 ? 's' : ''}</Chip>
+          {doneCount > 0 && <Chip soft color={T.text3}>{doneCount} terminé{doneCount > 1 ? 's' : ''}</Chip>}
         </div>} />
       <div style={{ flex: 1, overflow: 'auto', padding: '4px 32px 28px' }}>
         {empty && (
@@ -129,7 +132,9 @@ export default function ActivityCenter({ onOpenClip }) {
         {failed.length > 0 && <>
           <GroupLabel color={T.danger}>ÉCHECS · {failed.length}</GroupLabel>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 24 }}>
-            {failed.map(j => <FailRow key={j.key} j={j} clip={j.clip || clips[j.clipId]?.name} onRetry={() => retry(j.key)} onDismiss={() => dismiss(j.key)} />)}
+            {failed.map(g => <FailRow key={g.key} j={g} clip={g.clip || clips[g.clipId]?.name}
+              onRetry={() => { siblingsOf(g).forEach(dismiss); retry(g.key) }}
+              onDismiss={() => g.groupKeys.forEach(dismiss)} />)}
           </div>
         </>}
 
@@ -178,11 +183,15 @@ function FailRow({ j, clip, onRetry, onDismiss }) {
     <div style={{ background: 'rgba(232,89,93,.05)', border: `1px solid ${alpha(T.danger, '44')}`, borderRadius: T.r.ctl, padding: '13px 16px', display: 'flex', alignItems: 'center', gap: 14 }}>
       <div style={{ width: 36, height: 36, flexShrink: 0, borderRadius: 9, background: alpha(T.danger, '14'), border: `1px solid ${alpha(T.danger, '44')}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon d={iconFor(j.kind)} size={17} stroke={T.danger} /></div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}><span style={{ fontSize: T.fs.sm, fontWeight: 600, whiteSpace: 'nowrap' }}>{j.title}</span>{clip && <span style={{ fontSize: T.fs.xs, color: T.text3 }}>{clip}</span>}</div>
-        <div style={{ fontSize: T.fs.xs, color: T.danger, fontFamily: T.fontMono, marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{j.error || 'Erreur'}</div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <span style={{ fontSize: T.fs.sm, fontWeight: 600, whiteSpace: 'nowrap' }}>{j.title}</span>
+          {j.count > 1 && <Chip soft color={T.danger} style={{ padding: '1px 7px', fontFamily: T.fontMono, fontSize: T.fs.micro }}>×{j.count}</Chip>}
+          {clip && <span style={{ fontSize: T.fs.xs, color: T.text3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{clip}</span>}
+        </div>
+        <div style={{ marginTop: 3 }}><JobError compact error={j.error} /></div>
       </div>
-      {j.retry && <Btn size="sm" variant="primary" icon={ICONS.loop} onClick={onRetry}>Réessayer</Btn>}
-      <Btn size="sm" variant="outline" icon={ICONS.close} onClick={onDismiss} title="Retirer" />
+      {j.retry && <Btn size="sm" variant="primary" icon={ICONS.loop} onClick={onRetry} title={j.count > 1 ? 'Relancer une seule fois' : undefined}>Réessayer</Btn>}
+      <Btn size="sm" variant="outline" icon={ICONS.close} onClick={onDismiss} title={j.count > 1 ? `Retirer les ${j.count}` : 'Retirer'} />
     </div>
   )
 }

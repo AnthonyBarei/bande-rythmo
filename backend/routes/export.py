@@ -9,7 +9,10 @@ from services.clip_service import get_clip, SafeId, SAFE_ID_PATTERN
 from services.subtitle_service import (
     export_srt, export_ass, export_ass_karaoke, export_detx, export_croisille,
 )
-from services.ffmpeg_service import burn_subtitles, export_gif, run_ffmpeg_with_progress, h264_encoder_args, available_hw_encoders
+from services.ffmpeg_service import (
+    burn_subtitles, export_gif, run_ffmpeg_with_progress, h264_encoder_args,
+    available_hw_encoders, probe_streams,
+)
 from services.br_renderer import render_br_video
 from services.jobs import create_job, raise_if_cancelled, CancelledJobError, JobStartResponse
 from services.export_service import record_export, list_exports, get_export, delete_export
@@ -24,6 +27,8 @@ import subprocess
 log = logging.getLogger("br.export")
 
 router = APIRouter()
+
+NO_AUDIO_DETAIL = "Ce clip n'a pas de piste audio"
 
 
 class Sign(BaseModel):
@@ -401,6 +406,8 @@ async def export(req: ExportRequest, db: Session = Depends(get_db)):
     elif req.format in ("mp3", "wav"):
         if not os.path.exists(segment):
             raise HTTPException(404, "Segment not found")
+        if not (await asyncio.to_thread(probe_streams, segment))["audio_streams"]:
+            raise HTTPException(422, NO_AUDIO_DETAIL)
         ext = req.format
         output = f"exports/{export_id}.{ext}"
         cmd = ["ffmpeg", "-y"]
@@ -463,6 +470,7 @@ async def export_gif_job(req: ExportRequest, db: Session = Depends(get_db)):
             cmd1 = [
                 "ffmpeg", "-y", "-progress", "pipe:1", "-nostats",
                 *seek, "-i", segment, *trim,
+                "-map", "0:v:0", "-an",
                 "-vf", "fps=12,scale=480:-1:flags=lanczos,palettegen=stats_mode=diff",
                 palette,
             ]
@@ -473,14 +481,15 @@ async def export_gif_job(req: ExportRequest, db: Session = Depends(get_db)):
                 register_process=lambda p: setattr(job, "process", p),
             )
             if rc == -1 or job.cancelled: return
-            if rc != 0: job.fail(f"palette pass returned {rc}"); return
+            if rc != 0: job.fail(f"Génération de la palette GIF échouée (ffmpeg code {rc})"); return
 
             # Pass 2: encode with palette.
             job.update(stage="Encodage GIF", pct=0.45)
             cmd2 = [
                 "ffmpeg", "-y", "-progress", "pipe:1", "-nostats",
                 *seek, "-i", segment, "-i", palette, *trim,
-                "-lavfi", "fps=12,scale=480:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer",
+                "-lavfi", "[0:v:0]fps=12,scale=480:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer[gif]",
+                "-map", "[gif]", "-an",
                 output,
             ]
             rc = run_ffmpeg_with_progress(
@@ -490,7 +499,7 @@ async def export_gif_job(req: ExportRequest, db: Session = Depends(get_db)):
                 register_process=lambda p: setattr(job, "process", p),
             )
             if rc == -1 or job.cancelled: return
-            if rc != 0: job.fail(f"encode pass returned {rc}"); return
+            if rc != 0: job.fail(f"Encodage GIF échoué (ffmpeg code {rc})"); return
 
             db = SessionLocal()
             try:

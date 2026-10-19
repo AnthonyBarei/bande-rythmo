@@ -318,13 +318,15 @@ def export_gif(video_path: str, output_path: str, fps: int = 12, scale: int = 48
     trim = ["-t", str(duration)] if duration is not None else []
     cmd1 = [
         "ffmpeg", "-y", *seek, "-i", video_path, *trim,
+        "-map", "0:v:0", "-an",
         "-vf", f"fps={fps},scale={scale}:-1:flags=lanczos,palettegen=stats_mode=diff",
         palette,
     ]
     subprocess.run(cmd1, check=True, capture_output=True)
     cmd2 = [
         "ffmpeg", "-y", *seek, "-i", video_path, "-i", palette, *trim,
-        "-lavfi", f"fps={fps},scale={scale}:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer",
+        "-lavfi", f"[0:v:0]fps={fps},scale={scale}:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer[gif]",
+        "-map", "[gif]", "-an",
         output_path,
     ]
     subprocess.run(cmd2, check=True, capture_output=True)
