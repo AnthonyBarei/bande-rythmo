@@ -92,12 +92,12 @@ async function postJson(url, body) {
 export default function ExportPanel(props) {
   const host = useExportScreen()
   if (host && !host.slot) return null // slot mounts on the next commit
-  const screen = <ExportScreen {...props} onBack={host?.onClose} onActivity={host?.onActivity} clipName={host?.clip?.name} fill={!!host?.slot} />
+  const screen = <ExportScreen {...props} onBack={host?.onClose} onActivity={host?.onActivity} clipName={host?.clip?.name} fill={!!host?.slot} initialFormat={host?.initialFormat} />
   return host?.slot ? createPortal(screen, host.slot) : screen
 }
 
-function ExportScreen({ segmentId, subtitles, boucles = [], pxPerSec = 180, brOffset = 0, canvasH = 64, getCanvasWidth, brFont = 'atkinson', brStyle = 'classique', duration = 0, getCurrentTime, loopRegion = null, onBack, onActivity, clipName, fill }) {
-  const [sel, setSel] = useState('mp4')
+function ExportScreen({ segmentId, subtitles, boucles = [], pxPerSec = 180, brOffset = 0, canvasH = 64, getCanvasWidth, brFont = 'atkinson', brStyle = 'classique', duration = 0, getCurrentTime, loopRegion = null, onBack, onActivity, clipName, fill, initialFormat }) {
+  const [sel, setSel] = useState(initialFormat || 'mp4')
   // Sync (non-job) exports in flight, one queue row each. The launch button
   // never blocks (FIXES_R5 #12); `launching` is its 600 ms click feedback.
   const [syncRuns, setSyncRuns] = useState([])

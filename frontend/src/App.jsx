@@ -101,6 +101,7 @@ function AppInner() {
   // Long video handed over by the Atelier: once cut, return there with the first clip.
   const returnToAtelierRef = useRef(false)
   const [dubExportOpen, setDubExportOpen] = useState(false)
+  const [exportInitialFormat, setExportInitialFormat] = useState(null)
   const [exportSlot, setExportSlot] = useState(null)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [cmdOpen, setCmdOpen] = useState(false)
@@ -307,7 +308,7 @@ function AppInner() {
   // mounted (hidden) so closing returns to it intact; its ExportPanel portals
   // into the slot below.
   const exportScreen = section === 'dub' && !!activeClip && dubExportOpen
-  const closeExport = () => setDubExportOpen(false)
+  const closeExport = () => { setDubExportOpen(false); setExportInitialFormat(null) }
 
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: 'var(--bg)' }}>
@@ -345,7 +346,7 @@ function AppInner() {
         )}
         {section === 'activity' && <ActivityCenter onOpenClip={handleDub} />}
         {section === 'dub' && activeClip && (
-          <ExportScreenContext.Provider value={exportScreen ? { slot: exportSlot, onClose: closeExport, clip: activeClip, onActivity: () => navigate('activity') } : null}>
+          <ExportScreenContext.Provider value={exportScreen ? { slot: exportSlot, onClose: closeExport, clip: activeClip, onActivity: () => navigate('activity'), initialFormat: exportInitialFormat } : null}>
             <div style={exportScreen
               ? { position: 'absolute', inset: 0, visibility: 'hidden', display: 'flex', flexDirection: 'column' }
               : { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
@@ -363,7 +364,8 @@ function AppInner() {
         )}
         {exportScreen && <div ref={setExportSlot} style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }} />}
         {section === 'record' && activeClip && (
-          <StudioScreen key={activeClip.clip_id} clip={activeClip} onBack={() => navigate('dub')} />
+          <StudioScreen key={activeClip.clip_id} clip={activeClip} onBack={() => navigate('dub')}
+            onExportDubbed={() => { setExportInitialFormat('mp4-dubbed'); setSection('dub'); setDubExportOpen(true) }} />
         )}
         {section === 'memes' && (
           <MemeGenerator clip={memeClip} initialTab={memeInitialTab}
