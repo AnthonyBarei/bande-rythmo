@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react'
-import { T, alpha, Icon, ICONS, Btn, Chip, Dot, Avatar } from '../ui'
+import { T, alpha, Icon, ICONS, Btn, Chip, Dot, Avatar, Kbd } from '../ui'
 import { TRACK_HEXES } from '../config/tracks'
 import { fmtClock, fmtSMPTE } from '../utils/timecode'
 import { METER_FLOOR, levelOf, trimToWav, takePeaks } from '../utils/takeAudio'
+import { adjacentLine, characterProgress, listenVoVolume } from '../utils/studio'
 
 // Recorder — port of redesign screen-record-export.jsx → Record.
 // variant 'studio'   : the dubbing stage (one black card: line strip · image ·
@@ -29,10 +30,23 @@ const DENIED_MSG = 'Accès au micro refusé — autorisez-le dans le navigateur 
 const STAGE_KEYFRAMES = '@keyframes stCount{0%{transform:scale(1.5);opacity:0}25%{opacity:1}100%{transform:scale(.9);opacity:.15}}'
   + '@keyframes stBlink{50%{opacity:0}}'
   + '@keyframes stIn{from{transform:translateY(-6px);opacity:0}to{transform:none;opacity:1}}'
+  + '@keyframes stOutL{to{transform:translateX(-48px);opacity:0}}@keyframes stOutR{to{transform:translateX(48px);opacity:0}}'
+  + '@keyframes stFromL{from{transform:translateX(-48px);opacity:0}}@keyframes stFromR{from{transform:translateX(48px);opacity:0}}'
 
 const micError = e => (e?.name === 'NotAllowedError' ? DENIED_MSG : 'Micro inaccessible : ' + (e?.message || e))
 const deviceName = label => (label || '').replace(/^(Par défaut|Default) - /, '')
 const stopTracks = stream => stream?.getTracks().forEach(t => t.stop())
+const absUrl = url => new URL(url, window.location.href).href
+
+function whenPlayable(media) {
+  return new Promise((resolve, reject) => {
+    if (media.readyState >= 1) { resolve(); return }
+    const done = () => { media.removeEventListener('loadedmetadata', done); media.removeEventListener('error', fail); resolve() }
+    const fail = () => { media.removeEventListener('loadedmetadata', done); media.removeEventListener('error', fail); reject(new Error('fichier audio illisible')) }
+    media.addEventListener('loadedmetadata', done)
+    media.addEventListener('error', fail)
+  })
+}
 
 function readPreroll() {
   try { return localStorage.getItem(PREROLL_KEY) !== '0' } catch { return true } // storage unavailable — default on
@@ -57,6 +71,7 @@ function seekMedia(media, t) {
 const RecorderPanel = forwardRef(function RecorderPanel({
   clipId, subtitles = [], activeCharacter = '', activeIndex = null, videoRef = null, cueRef = null,
   variant = 'embedded', fps = 25, onSelectIndex, stageImage = null, stageBand = null,
+  listenVoLevel, onCharacterComplete,
 }, ref) {
   const studio = variant === 'studio'
   const [takes, setTakes] = useState([])
@@ -72,6 +87,8 @@ const RecorderPanel = forwardRef(function RecorderPanel({
   const [playing, setPlaying] = useState(null)
   const [playProgress, setPlayProgress] = useState({ p: 0, now: 0 })   // playing take: 0..1 + frame clock
   const [syncPlaying, setSyncPlaying] = useState(null)
+  const [ctxId, setCtxId] = useState(null)            // Studio: take playing over the image
+  const [abSlot, setAbSlot] = useState(null)          // Studio A/B: audible slot
   const [micLabel, setMicLabel] = useState('')
   const [micDenied, setMicDenied] = useState(false)
   const [analyser, setAnalyser] = useState(null)
@@ -86,6 +103,11 @@ const RecorderPanel = forwardRef(function RecorderPanel({
   const bipCtxRef = useRef(null)
   const goAtRef = useRef(0)
   const audioRef = useRef(null)
+  const audio2Ref = useRef(null)       // second take player — A/B swaps between the two
+  const playElRef = useRef(null)       // the <audio> currently audible
+  const playTokenRef = useRef(0)
+  const lastSlotRef = useRef(null)
+  const ctxRef = useRef(null)          // Studio "écouter sur l'image": { take, sub, v, a, volume, muted }
   const syncCleanupRef = useRef(null)
 
   useEffect(() => {
@@ -144,9 +166,12 @@ const RecorderPanel = forwardRef(function RecorderPanel({
     try {
       const res = await fetch(`/api/takes/${clipId}`)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      setTakes(await res.json())
+      const list = await res.json()
+      setTakes(list)
+      return list
     } catch (e) {
       setError('Chargement des prises impossible : ' + e.message)
+      return null
     }
   }, [clipId])
 
@@ -198,7 +223,7 @@ const RecorderPanel = forwardRef(function RecorderPanel({
     const take = takes.find(t => t.id === playing)
     let raf = 0
     const tick = () => {
-      const a = audioRef.current
+      const a = playElRef.current
       const dur = take?.duration || (Number.isFinite(a?.duration) ? a.duration : 0)
       if (a && dur > 0) setPlayProgress({ p: Math.min(1, a.currentTime / dur), now: performance.now() })
       raf = requestAnimationFrame(tick)
@@ -332,7 +357,8 @@ const RecorderPanel = forwardRef(function RecorderPanel({
     setError(null)
     setNotice(null)
     stopSync()
-    if (playing != null) { audioRef.current?.pause(); setPlaying(null) }
+    stopContext()
+    stopAudio()
     const sub = activeIndex != null ? subtitles[activeIndex] : null
     const media = [videoRef?.current, cueRef?.current].find(m => m && !m.error && m.readyState >= 1) || null
     let stream = liveStreamRef.current
@@ -416,6 +442,9 @@ const RecorderPanel = forwardRef(function RecorderPanel({
       if (rec.media) { rec.media.pause(); rec.media.playbackRate = rec.rate; rec.media.muted = rec.wasMuted }
     }
     syncCleanupRef.current?.()
+    const ctx = ctxRef.current
+    ctxRef.current = null
+    if (ctx) { ctx.a.pause(); ctx.v.pause(); ctx.v.volume = ctx.volume; ctx.v.muted = ctx.muted }
     for (const ref of [acRef, bipCtxRef]) {
       const ac = ref.current
       ref.current = null
@@ -425,7 +454,8 @@ const RecorderPanel = forwardRef(function RecorderPanel({
 
   const isRecording = () => startingRef.current || !!recRef.current
 
-  // Keyboard R (editor / Studio screen) drives the same start/stop as the button.
+  // Keyboard (editor / Studio screen): R drives the same start/stop as the
+  // button; Esc stops a playback; Tab swaps A ⇄ B (Studio).
   useImperativeHandle(ref, () => ({
     isRecording,
     toggle: () => {
@@ -433,20 +463,147 @@ const RecorderPanel = forwardRef(function RecorderPanel({
       if (recRef.current) stopRec()
       else startRec()
     },
+    stopPlayback,
+    swapAB,
   }))
 
-  function playTake(take) {
+  // Pause every take player (card ▶, A/B bar).
+  function stopAudio() {
+    playTokenRef.current++
+    for (const el of [audioRef.current, audio2Ref.current]) el?.pause()
+    playElRef.current = null
+    setPlaying(null)
+    setAbSlot(null)
+  }
+
+  // Studio "écouter sur l'image": stop, give the VO its volume back and park
+  // the image (and band) at réplique start − 3 s, ready for R.
+  function stopContext() {
+    const ctx = ctxRef.current
+    if (!ctx) return false
+    ctxRef.current = null
+    ctx.a.pause()
+    ctx.v.pause()
+    ctx.v.volume = ctx.volume
+    ctx.v.muted = ctx.muted
+    if (ctx.sub) ctx.v.currentTime = Math.max(0, ctx.sub.start - PREROLL_SEC)
+    if (playElRef.current === ctx.a) playElRef.current = null
+    setPlaying(null)
+    setCtxId(null)
+    return true
+  }
+
+  function stopPlayback() {
+    const ctx = stopContext()
+    const audible = !!playElRef.current
+    if (audible) stopAudio()
+    return ctx || audible
+  }
+
+  // Play `take` from `at` s on the <audio> that is not audible, then pause the
+  // other one: an A ⇄ B switch lands on the same position, without a restart.
+  async function playFrom(take, at = 0, slot = null) {
     stopSync()
-    const a = audioRef.current
-    if (!a) return
-    a.src = take.audio_url
-    a.play().catch(e => { setPlaying(null); setError('Lecture impossible : ' + e.message) })
+    stopContext()
+    const token = ++playTokenRef.current
+    const cur = playElRef.current
+    const el = cur === audioRef.current ? audio2Ref.current : audioRef.current
+    if (!el) return
+    try {
+      if (el.src !== absUrl(take.audio_url)) el.src = take.audio_url
+      else if (el.error) el.load()
+      await whenPlayable(el)
+      if (token !== playTokenRef.current) return
+      el.currentTime = Math.min(at, Number.isFinite(el.duration) ? el.duration : at)
+      await el.play()
+    } catch (e) {
+      if (token !== playTokenRef.current) { console.warn('Lecture de prise interrompue', e); return }
+      setPlaying(null)
+      setAbSlot(null)
+      setError('Lecture impossible : ' + e.message)
+      return
+    }
+    if (token !== playTokenRef.current) { el.pause(); return }
+    if (cur && cur !== el) cur.pause()
+    playElRef.current = el
     setPlaying(take.id)
+    setAbSlot(slot)
+    if (slot) lastSlotRef.current = slot
+    // Preload the other A/B take on the idle player so Tab is instant.
+    const other = slot === 'A' ? takeB : slot === 'B' ? takeA : null
+    const idle = el === audioRef.current ? audio2Ref.current : audioRef.current
+    if (other && idle && idle.src !== absUrl(other.audio_url)) { idle.src = other.audio_url; idle.load() }
+  }
+
+  function playTake(take) {
+    playFrom(take, 0, take.id === abA ? 'A' : take.id === abB ? 'B' : null)
   }
 
   function togglePlay(take) {
-    if (playing === take.id) { audioRef.current?.pause(); setPlaying(null) }
+    if (playing === take.id && !ctxRef.current) stopAudio()
     else playTake(take)
+  }
+
+  // Studio: the take over the image + read-only band from réplique start, the
+  // VO at the "VO pendant l'écoute" level (default 15 %).
+  async function playOnImage(take) {
+    const v = videoRef?.current
+    const a = audioRef.current
+    if (!v || !a || isRecording()) return
+    stopSync()
+    stopContext()
+    stopAudio()
+    const sub = take.subtitle_index != null ? subtitles[take.subtitle_index] || null : null
+    const ctx = { take, sub, v, a, volume: v.volume, muted: v.muted }
+    ctxRef.current = ctx
+    playElRef.current = a
+    setCtxId(take.id)
+    setPlaying(take.id)
+    try {
+      v.pause()
+      if (a.src !== absUrl(take.audio_url)) a.src = take.audio_url
+      else if (a.error) a.load()
+      await Promise.all([seekMedia(v, sub ? sub.start : 0), whenPlayable(a)])
+      if (ctxRef.current !== ctx) return
+      a.currentTime = 0
+      const level = listenVoVolume(listenVoLevel)
+      v.volume = level
+      v.muted = level === 0
+      await v.play()
+      if (ctxRef.current !== ctx) return
+      await a.play()
+    } catch (e) {
+      if (ctxRef.current !== ctx) { console.warn('Écoute sur l’image interrompue', e); return }
+      stopContext()
+      setError('Écoute sur l’image impossible : ' + e.message)
+    }
+  }
+
+  function toggleOnImage(take) {
+    if (ctxId === take.id) stopContext()
+    else playOnImage(take)
+  }
+
+  // Tab: switch A ⇄ B at the same position; idle, start the other slot.
+  function swapAB() {
+    if (!studio || !showAB || !takeA || !takeB) return false
+    const el = playElRef.current
+    const live = el && !el.paused && !ctxRef.current && (playing === takeA.id || playing === takeB.id)
+    if (live) {
+      const toB = playing === takeA.id
+      playFrom(toB ? takeB : takeA, el.currentTime, toB ? 'B' : 'A')
+    } else {
+      const slot = lastSlotRef.current === 'A' ? 'B' : 'A'
+      playFrom(slot === 'A' ? takeA : takeB, 0, slot)
+    }
+    return true
+  }
+
+  function toggleSlot(slot) {
+    const take = slot === 'A' ? takeA : takeB
+    if (!take) return
+    if (abSlot === slot && playing === take.id) stopAudio()
+    else playFrom(take, 0, slot)
   }
 
   function stopSync() {
@@ -460,7 +617,8 @@ const RecorderPanel = forwardRef(function RecorderPanel({
     if (!v || !a) { playTake(take); return }
 
     stopSync()
-    setPlaying(null)
+    stopContext()
+    stopAudio()
 
     const wasMuted = v.muted
     v.muted = true
@@ -505,14 +663,20 @@ const RecorderPanel = forwardRef(function RecorderPanel({
     v.play().catch(e => console.warn('video playback failed', e))
   }
 
-  function handleAudioEnded() {
-    setPlaying(null)
+  function handleAudioEnded(el) {
     if (syncCleanupRef.current) {
+      setPlaying(null)
       const v = videoRef?.current
       if (v && !v.paused) v.pause()
       syncCleanupRef.current?.()
+      setSyncPlaying(null)
+      return
     }
-    setSyncPlaying(null)
+    if (el !== playElRef.current) return
+    if (ctxRef.current) { stopContext(); return }
+    playElRef.current = null
+    setPlaying(null)
+    setAbSlot(null)
   }
 
   async function removeTake(id) {
@@ -521,7 +685,8 @@ const RecorderPanel = forwardRef(function RecorderPanel({
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       if (abA === id) setAbA(null)
       if (abB === id) setAbB(null)
-      if (playing === id) { audioRef.current?.pause(); setPlaying(null) }
+      if (ctxId === id) stopContext()
+      if (playing === id) stopAudio()
       fetchTakes()
     } catch (e) {
       setError('Suppression de la prise impossible : ' + e.message)
@@ -529,13 +694,21 @@ const RecorderPanel = forwardRef(function RecorderPanel({
   }
 
   // Re-validating the current best is a harmless no-op on the server.
+  // Studio: validating the last open réplique of a character reports it.
   async function markBest(take) {
     if (!take) return
+    const sub = take.subtitle_index != null ? subtitles[take.subtitle_index] : null
+    const character = sub ? sub.character || '' : null
+    const before = character != null ? characterProgress(subtitles, takes, character) : null
     try {
       const res = await fetch(`/api/takes/${take.id}/best`, { method: 'PUT' })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       setSelectedId(take.id)
-      fetchTakes()
+      const list = await fetchTakes()
+      if (studio && list && before) {
+        const after = characterProgress(subtitles, list, character)
+        if (after.total > 0 && after.done === after.total && before.done < before.total) onCharacterComplete?.(character)
+      }
     } catch (e) {
       setError('Validation de la prise impossible : ' + e.message)
     }
@@ -550,9 +723,27 @@ const RecorderPanel = forwardRef(function RecorderPanel({
   }
 
   function toggleAB() {
-    if (showAB) { setAbOpen(false); setAbA(null); setAbB(null) }
-    else setAbOpen(true)
+    if (showAB) {
+      if (abSlot) stopAudio()
+      setAbOpen(false)
+      setAbA(null)
+      setAbB(null)
+      lastSlotRef.current = null
+    } else setAbOpen(true)
   }
+
+  // Studio: moving to another réplique drops the playback and the A/B pair.
+  useEffect(() => {
+    if (!studio) return
+    return () => {
+      stopContext()
+      stopAudio()
+      setAbOpen(false)
+      setAbA(null)
+      setAbB(null)
+      lastSlotRef.current = null
+    }
+  }, [studio, activeIndex])
 
   // Studio lists the takes of the réplique being recorded ("Prise n", newest
   // first); the editor dock lists every take of the clip.
@@ -621,7 +812,10 @@ const RecorderPanel = forwardRef(function RecorderPanel({
           </button>
         )}
       </div>
-      {showAB && (
+      {showAB && studio && (
+        <AbBar takeA={takeA} takeB={takeB} slot={playing != null && !ctxId ? abSlot : null} onSlot={toggleSlot} canSwap={!!takeA && !!takeB} />
+      )}
+      {showAB && !studio && (
         <div style={{ background: T.surface, border: `1px solid ${alpha(T.info, '44')}`, borderRadius: T.r.ctl, padding: 12, display: 'flex', flexDirection: 'column', gap: 9, flexShrink: 0 }}>
           <div style={{ fontSize: T.fs.micro, color: T.info, letterSpacing: 1, fontWeight: 700 }}>COMPARAISON A / B</div>
           {[{ s: 'A', t: takeA, c: T.accent }, { s: 'B', t: takeB, c: T.info }].map(x => (
@@ -659,12 +853,15 @@ const RecorderPanel = forwardRef(function RecorderPanel({
           selected={selected?.id === t.id}
           fresh={freshId === t.id}
           isPlaying={playing === t.id} progress={playing === t.id ? playProgress.p : null} clock={playProgress.now}
+          onImage={studio ? ctxId === t.id : null}
+          onImageDisabled={recording}
           isSyncing={syncPlaying === t.id}
           ab={t.id === abA ? 'A' : t.id === abB ? 'B' : null}
           hasVideo={hasVideo && !studio}
           showAB={!studio || showAB}
           onSelect={() => setSelectedId(t.id)}
           onPlay={() => togglePlay(t)}
+          onPlayOnImage={() => toggleOnImage(t)}
           onSync={() => syncPlaying === t.id ? (stopSync(), videoRef.current?.pause()) : previewWithVideo(t)}
           onAB={() => assignAB(t.id)}
           onDelete={() => removeTake(t.id)} />
@@ -686,7 +883,8 @@ const RecorderPanel = forwardRef(function RecorderPanel({
   const audio = (
     <>
       <style>{STAGE_KEYFRAMES}</style>
-      <audio ref={audioRef} onEnded={handleAudioEnded} style={{ display: 'none' }} />
+      <audio ref={audioRef} onEnded={e => handleAudioEnded(e.currentTarget)} style={{ display: 'none' }} />
+      <audio ref={audio2Ref} preload="auto" onEnded={e => handleAudioEnded(e.currentTarget)} style={{ display: 'none' }} />
     </>
   )
 
@@ -707,6 +905,7 @@ const RecorderPanel = forwardRef(function RecorderPanel({
   const target = hasSub ? subtitles[activeIndex] : null
   const recDur = target ? target.end - target.start : 0
   const recLive = phase === 'recording'
+  const ctxTake = ctxId != null ? takes.find(t => t.id === ctxId) : null
 
   return (
     <div style={{ flex: 1, minHeight: 0, padding: '4px 32px 24px', display: 'flex', gap: 20, overflow: 'hidden' }}>
@@ -716,7 +915,7 @@ const RecorderPanel = forwardRef(function RecorderPanel({
         flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: '#000',
         border: `1px solid ${recLive ? alpha(T.danger, '88') : T.border}`, borderRadius: T.r.card, overflow: 'hidden', transition: 'border-color .2s',
       }}>
-        <LineStrip subtitles={subtitles} index={activeIndex} fps={fps} onSelectIndex={recording ? null : onSelectIndex} />
+        <LineStrip subtitles={subtitles} takes={takes} index={activeIndex} fps={fps} onSelectIndex={recording ? null : onSelectIndex} />
         <div style={{ flex: 1, minHeight: 80, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
           <div style={{ height: '94%', aspectRatio: '16/9', maxWidth: '96%', background: '#000', borderRadius: 6, position: 'relative', overflow: 'hidden' }}>
             {stageImage}
@@ -729,7 +928,9 @@ const RecorderPanel = forwardRef(function RecorderPanel({
           <div style={{ position: 'absolute', top: 12, left: 14, padding: '4px 10px', background: 'rgba(0,0,0,.65)', borderRadius: 6, fontFamily: T.fontMono, fontSize: 12, color: T.text, display: 'flex', alignItems: 'center', gap: 7 }}>
             {recLive
               ? <><span style={{ width: 8, height: 8, borderRadius: '50%', background: T.danger, animation: 'stBlink 1s steps(2) infinite' }} /><span style={{ color: T.danger, fontWeight: 700 }}>REC</span></>
-              : <Dot color={phase === 'preroll' ? T.accent : T.text4} size={6} />}
+              : ctxTake
+                ? <><span style={{ color: T.accent, fontWeight: 700 }}>▶ {takeLabel(ctxTake).toUpperCase()}</span><span style={{ color: T.text3 }}>·</span></>
+                : <Dot color={phase === 'preroll' ? T.accent : T.text4} size={6} />}
             <StageClock videoRef={videoRef} fps={fps} />
           </div>
           <div style={{ position: 'absolute', top: 12, right: 14, display: 'flex', gap: 6 }}>
@@ -867,8 +1068,10 @@ function MicStage({ analyser, phase, countdown, elapsed, notice, onToggle, chips
 }
 
 // Studio line strip (46px) — avatar, character in its track colour, the line
-// in Caveat, TC in → out, previous / next réplique.
-function LineStrip({ subtitles, index, fps, onSelectIndex }) {
+// in Caveat, TC in → out, per-character progress, previous / next réplique of
+// the same character (any character when it has none that way). Changing
+// réplique slides the old text out (left = forward) over .2 s.
+function LineStrip({ subtitles, takes, index, fps, onSelectIndex }) {
   const charIndex = useMemo(() => {
     const seen = []
     for (const s of subtitles) {
@@ -877,34 +1080,103 @@ function LineStrip({ subtitles, index, fps, onSelectIndex }) {
     }
     return Object.fromEntries(seen.map((c, i) => [c, i]))
   }, [subtitles])
+  const colorOf = sub => (sub ? TRACK_HEXES[(charIndex[sub.character || ''] || 0) % TRACK_HEXES.length] : T.border3)
+  const [shownIndex, setShownIndex] = useState(index)
+  const [leaving, setLeaving] = useState(null)        // { sub, dir: 'L' | 'R', key }
+  if (index !== shownIndex) {
+    setShownIndex(index)
+    const prev = shownIndex != null ? subtitles[shownIndex] : null
+    setLeaving(prev && index != null ? { sub: prev, dir: index > shownIndex ? 'L' : 'R', key: `${shownIndex}>${index}` } : null)
+  }
   const target = index != null ? subtitles[index] : null
-  const tc = target ? TRACK_HEXES[(charIndex[target.character || ''] || 0) % TRACK_HEXES.length] : T.border3
+  const tc = colorOf(target)
   const n = subtitles.length
+  const character = target ? target.character || '' : null
+  const who = character || 'Sans personnage'
+  const progress = useMemo(() => (character != null ? characterProgress(subtitles, takes, character) : null), [subtitles, takes, character])
+  const step = dir => {
+    const same = adjacentLine(subtitles, index, dir, true)
+    return same != null ? { i: same, same: true } : { i: adjacentLine(subtitles, index, dir, false), same: false }
+  }
+  const prev = step(-1)
+  const next = step(1)
+  const navTitle = (s, label, key) => (!onSelectIndex ? 'Indisponible pendant l’enregistrement'
+    : s.i == null ? `Aucune réplique ${label === 'précédente' ? 'avant' : 'après'}`
+      : s.same && target ? `Réplique ${label} de ${who} (${key}) · Alt+${key} : tous les personnages`
+        : `Réplique ${label} (Alt+${key})`)
   return (
     <div style={{ height: 46, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 12, padding: '0 14px', background: T.surface, borderBottom: `1px solid ${T.border}` }}>
       <Avatar name={target?.character || '?'} color={tc} size={30} ring />
-      {target ? (
-        <>
-          <span style={{ fontSize: T.fs.sm, fontWeight: 700, color: tc, whiteSpace: 'nowrap' }}>{target.character || 'Sans personnage'}</span>
-          <span title={target.note ? `${target.text} — ${target.note}` : target.text} style={{ fontSize: T.fs.md, color: T.text, fontFamily: "'Caveat', cursive", whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{target.text}</span>
-        </>
-      ) : (
-        <span style={{ fontSize: T.fs.sm, color: T.text3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
-          {n ? 'Choisissez une réplique — la prise y sera rattachée.' : 'Aucune réplique — la prise sera enregistrée comme prise libre.'}
+      <div style={{ flex: 1, minWidth: 0, alignSelf: 'stretch', position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center' }}>
+        {target ? (
+          <LineText key={index} sub={target} color={tc} animation={leaving ? `stFrom${leaving.dir === 'L' ? 'R' : 'L'} .18s ease-out .12s both` : 'none'} />
+        ) : (
+          <span style={{ fontSize: T.fs.sm, color: T.text3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
+            {n ? 'Choisissez une réplique — la prise y sera rattachée.' : 'Aucune réplique — la prise sera enregistrée comme prise libre.'}
+          </span>
+        )}
+        {leaving && (
+          <LineText key={leaving.key} sub={leaving.sub} color={colorOf(leaving.sub)} leaving
+            animation={`stOut${leaving.dir} .2s ease-in forwards`} onDone={() => setLeaving(null)} />
+        )}
+      </div>
+      {target && <span style={{ fontSize: 11, color: T.text3, fontFamily: T.fontMono, whiteSpace: 'nowrap' }}>{fmtSMPTE(target.start, fps)} → {fmtSMPTE(target.end, fps)}</span>}
+      {progress && progress.total > 0 && (
+        <span title={`Répliques de ${who} avec une prise validée / répliques de ${who}`}
+          style={{ fontSize: 11, color: T.text3, whiteSpace: 'nowrap' }}>
+          Prises <span style={{ fontFamily: T.fontMono }}>{progress.done} / {progress.total}</span> · {who}
         </span>
       )}
-      <div style={{ flex: 1 }} />
-      {target && <span style={{ fontSize: 11, color: T.text3, fontFamily: T.fontMono, whiteSpace: 'nowrap' }}>{fmtSMPTE(target.start, fps)} → {fmtSMPTE(target.end, fps)}</span>}
       {n > 0 && (
         <div style={{ display: 'flex', gap: 2 }}>
-          <Btn size="sm" icon={ICONS.skipBack} title={!onSelectIndex ? 'Indisponible pendant l’enregistrement' : index != null && index <= 0 ? 'Déjà sur la première réplique' : 'Réplique précédente'}
-            disabled={!onSelectIndex || index == null || index <= 0}
-            onClick={() => onSelectIndex?.(Math.max(0, (index ?? 0) - 1))} />
-          <Btn size="sm" icon={ICONS.skipFwd} title={!onSelectIndex ? 'Indisponible pendant l’enregistrement' : index != null && index >= n - 1 ? 'Déjà sur la dernière réplique' : 'Réplique suivante'}
-            disabled={!onSelectIndex || (index != null && index >= n - 1)}
-            onClick={() => onSelectIndex?.(index == null ? 0 : Math.min(n - 1, index + 1))} />
+          <Btn size="sm" icon={ICONS.skipBack} title={navTitle(prev, 'précédente', '←')}
+            disabled={!onSelectIndex || prev.i == null}
+            onClick={() => prev.i != null && onSelectIndex?.(prev.i)} />
+          <Btn size="sm" icon={ICONS.skipFwd} title={navTitle(next, 'suivante', '→')}
+            disabled={!onSelectIndex || next.i == null}
+            onClick={() => next.i != null && onSelectIndex?.(next.i)} />
         </div>
       )}
+    </div>
+  )
+}
+
+function LineText({ sub, color, animation, leaving = false, onDone }) {
+  return (
+    <div onAnimationEnd={leaving ? onDone : undefined} style={{
+      display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, maxWidth: '100%', animation,
+      ...(leaving ? { position: 'absolute', inset: 0, pointerEvents: 'none' } : null),
+    }}>
+      <span style={{ fontSize: T.fs.sm, fontWeight: 700, color, whiteSpace: 'nowrap' }}>{sub.character || 'Sans personnage'}</span>
+      <span title={sub.note ? `${sub.text} — ${sub.note}` : sub.text} style={{ fontSize: T.fs.md, color: T.text, fontFamily: "'Caveat', cursive", whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{sub.text}</span>
+    </div>
+  )
+}
+
+// Studio A/B bar — [A ▶] [B ▶]  ⇄ basculer (Tab). The audible slot lights up.
+function AbBar({ takeA, takeB, slot, onSlot, canSwap }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, padding: 6, background: T.surface, border: `1px solid ${alpha(T.info, '44')}`, borderRadius: T.r.ctl }}>
+      {[{ s: 'A', t: takeA, c: T.accent }, { s: 'B', t: takeB, c: T.info }].map(x => {
+        const on = slot === x.s
+        return (
+          <button key={x.s} data-rd disabled={!x.t} onClick={() => onSlot(x.s)}
+            title={x.t ? (on ? `Arrêter ${x.s}` : `Écouter ${x.s}`) : `Aucune prise ${x.s} — cliquez la pastille A/B d’une carte`}
+            style={{
+              height: 30, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0 9px 0 4px', borderRadius: T.r.chip,
+              background: on ? alpha(x.c, '22') : T.surface2, border: `1px solid ${on ? x.c : T.border2}`,
+              cursor: x.t ? 'pointer' : 'not-allowed', opacity: x.t ? 1 : 0.5,
+            }}>
+            <span style={{ width: 22, height: 22, borderRadius: 6, background: alpha(x.c, '22'), color: x.c, fontWeight: 800, fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{x.s}</span>
+            <Icon d={on ? ICONS.pause : ICONS.play} size={12} stroke={on ? x.c : T.text} fill={on ? x.c : T.text} />
+          </button>
+        )
+      })}
+      <div style={{ flex: 1 }} />
+      <span title={canSwap ? 'Basculer A ⇄ B à la même position' : 'Choisissez une prise A et une prise B'}
+        style={{ fontSize: T.fs.xs, color: canSwap ? T.text2 : T.text3, display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap', paddingRight: 4 }}>
+        ⇄ basculer <Kbd>Tab</Kbd>
+      </span>
     </div>
   )
 }
@@ -944,9 +1216,13 @@ function TakeWave({ url, bars = 56, height = 30, gap = 1.5, barWidth, color, pro
   )
 }
 
-function TakeCard({ take, label, selected, fresh, isPlaying, progress, clock, isSyncing, ab, hasVideo, showAB, onSelect, onPlay, onSync, onAB, onDelete }) {
+// `onImage` (Studio only): null = no "écouter sur l'image" button, else whether
+// this take is playing over the image.
+function TakeCard({ take, label, selected, fresh, isPlaying, progress, clock, onImage = null, onImageDisabled, isSyncing, ab, hasVideo, showAB, onSelect, onPlay, onPlayOnImage, onSync, onAB, onDelete }) {
   const best = !!take.best
   const dur = take.duration || 0
+  const audioOnly = isPlaying && !onImage
+  const abColor = ab === 'A' ? T.accent : ab === 'B' ? T.info : null
   return (
     <div onClick={onSelect} style={{
       background: isSyncing ? T.accentDim : T.surface,
@@ -954,24 +1230,34 @@ function TakeCard({ take, label, selected, fresh, isPlaying, progress, clock, is
       borderRadius: T.r.ctl, padding: 12, flexShrink: 0, cursor: 'pointer',
       animation: fresh ? 'stIn .35s ease-out' : 'none',
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 9 }}>
-        <button data-rd onClick={e => { e.stopPropagation(); onPlay() }} title={isPlaying ? 'Pause' : 'Écouter'} style={{
+      <div style={{ display: 'flex', alignItems: 'center', gap: onImage != null ? 6 : 9, marginBottom: 9 }}>
+        <button data-rd onClick={e => { e.stopPropagation(); onPlay() }} title={audioOnly ? 'Pause' : 'Écouter'} style={{
           width: 30, height: 30, borderRadius: T.r.chip, border: 'none', cursor: 'pointer', padding: 0, flexShrink: 0,
-          background: isPlaying ? T.accent : T.surface2, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: audioOnly ? T.accent : T.surface2, display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
-          <Icon d={isPlaying ? ICONS.pause : ICONS.play} size={13} stroke={isPlaying ? '#0b0b0d' : T.text} fill={isPlaying ? '#0b0b0d' : T.text} />
+          <Icon d={audioOnly ? ICONS.pause : ICONS.play} size={13} stroke={audioOnly ? '#0b0b0d' : T.text} fill={audioOnly ? '#0b0b0d' : T.text} />
         </button>
+        {onImage != null && (
+          <Btn size="sm" active={onImage} disabled={onImageDisabled && !onImage} icon={onImage ? ICONS.stop : ICONS.film}
+            title={onImageDisabled && !onImage ? 'Indisponible pendant l’enregistrement' : onImage ? 'Arrêter l’écoute sur l’image (Échap)' : 'Écouter sur l’image'}
+            onClick={e => { e?.stopPropagation?.(); onPlayOnImage() }} />
+        )}
         <span style={{ fontSize: T.fs.sm, fontWeight: 600, color: T.text, minWidth: 0, flexShrink: label.length <= 12 ? 0 : 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>
-        {best && <Chip color={T.accent} soft style={{ flexShrink: 0 }}><Icon d={ICONS.check} size={10} stroke={T.accent} /> validée</Chip>}
+        {best && (onImage != null && showAB
+          // Studio A/B: the card row also holds the A/B pill — the chip keeps its check only.
+          ? <span title="Prise validée" style={{ display: 'inline-flex', flexShrink: 0 }}><Chip color={T.accent} soft style={{ padding: '3px 6px' }}><Icon d={ICONS.check} size={10} stroke={T.accent} /></Chip></span>
+          : <Chip color={T.accent} soft style={{ flexShrink: 0 }}><Icon d={ICONS.check} size={10} stroke={T.accent} /> validée</Chip>)}
         <div style={{ flex: 1 }} />
-        <span style={{ fontSize: 11, color: isPlaying ? T.accent : T.text3, fontFamily: T.fontMono, whiteSpace: 'nowrap' }}>
+        <span style={{ fontSize: 11, color: isPlaying ? T.accent : T.text3, fontFamily: T.fontMono, whiteSpace: 'nowrap', flexShrink: 0 }}>
           {isPlaying ? `${((progress || 0) * dur).toFixed(1)} / ` : ''}{dur.toFixed(1)}s
         </span>
         {hasVideo && (
           <Btn size="sm" active={isSyncing} icon={isSyncing ? ICONS.stop : ICONS.film} title="Écouter avec la vidéo" onClick={e => { e?.stopPropagation?.(); onSync() }} />
         )}
         {showAB && (
-          <Btn size="sm" active={!!ab} onClick={e => { e?.stopPropagation?.(); onAB() }} title="Comparer A/B" style={{ padding: '0 8px', fontWeight: 700 }}>
+          <Btn size="sm" active={!!ab} onClick={e => { e?.stopPropagation?.(); onAB() }}
+            title={ab ? `Prise ${ab} — cliquer pour retirer` : 'Comparer A/B — 1er clic A, 2e clic B'}
+            style={{ padding: '0 7px', fontWeight: 700, ...(abColor ? { color: abColor, background: alpha(abColor, '22') } : null) }}>
             {ab || 'A/B'}
           </Btn>
         )}

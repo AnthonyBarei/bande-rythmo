@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ICONS, Btn, ScreenHeader } from '../ui'
 import { useSettings } from '../SettingsContext'
+import { useToast } from '../ToastContext'
+import { adjacentLine } from '../utils/studio'
 import RecorderPanel from './RecorderPanel'
 import BandCanvas from './band/BandCanvas'
 import {
@@ -9,6 +11,9 @@ import {
 
 const PREROLL_SEC = 3
 const DEFAULT_PX_PER_SEC = 150
+const COMPLETE_TOAST_MS = 8000
+
+const isTyping = el => ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName) || el.isContentEditable
 
 // Band height by viewport height — reference Record: 110 / 140 / 170.
 const bandHeightFor = h => (h < 760 ? 110 : h < 900 ? 140 : 170)
@@ -42,7 +47,9 @@ function useVideoClock(videoRef) {
 // Studio screen — port of redesign screen-record-export.jsx → Record: the
 // dubbing stage (clip image + the Éditeur's bande rythmo, read-only, scrolling
 // together) and the take queue, for the active clip.
-export default function StudioScreen({ clip, onBack }) {
+// `onExportDubbed` (optional): opens the export screen on "MP4 doublé" — the
+// action of the "toutes les répliques validées" toast.
+export default function StudioScreen({ clip, onBack, onExportDubbed }) {
   const recorderRef = useRef(null)
   const videoRef = useRef(null)
   const subtitles = useMemo(() => clip.subtitles || [], [clip.subtitles])
@@ -81,19 +88,46 @@ export default function StudioScreen({ clip, onBack }) {
   useEffect(() => { park() }, [park])
 
   // R — start/stop a take (same path as the record button).
+  // ← / → — previous / next réplique of the active character; Alt+← / Alt+→
+  // any character. Ignored while a take is recording or in its pré-roll.
+  // Tab — A ⇄ B (A/B mode). Échap — stop the playback.
   useEffect(() => {
     function onKey(e) {
-      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName) || e.target.isContentEditable) return
-      if (e.ctrlKey || e.metaKey || e.altKey) return
+      if (isTyping(e.target)) return
+      if (e.ctrlKey || e.metaKey) return
       if (document.querySelector('[aria-modal="true"]')) return
+      const rec = recorderRef.current
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        if (e.shiftKey) return
+        e.preventDefault()   // Alt+← is the browser's "back"
+        if (rec?.isRecording()) return
+        const next = adjacentLine(subtitles, activeIndex, e.key === 'ArrowRight' ? 1 : -1, !e.altKey)
+        if (next != null) setIndex(next)
+        return
+      }
+      if (e.altKey) return
       if (e.key === 'r' || e.key === 'R') {
         e.preventDefault()
-        recorderRef.current?.toggle()
+        rec?.toggle()
+      } else if (e.key === 'Tab' && !e.shiftKey) {
+        if (rec?.swapAB()) e.preventDefault()
+      } else if (e.key === 'Escape') {
+        if (rec?.stopPlayback()) e.preventDefault()
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  }, [subtitles, activeIndex])
+
+  const toast = useToast()
+  const onCharacterComplete = useCallback(character => {
+    const msg = `${character || 'Sans personnage'} : toutes les répliques validées`
+    let id = null
+    const action = onExportDubbed
+      ? { label: 'Exporter le MP4 doublé', run: () => { toast.dismiss(id); onExportDubbed() } }
+      : null
+    id = toast.show({ msg, kind: 'success', action, duration: COMPLETE_TOAST_MS })
+  }, [toast, onExportDubbed])
 
   const n = subtitles.length
   const sub = [clip.name, n ? `réplique ${(activeIndex ?? 0) + 1} / ${n}` : '0 réplique'].filter(Boolean).join(' · ')
@@ -147,6 +181,8 @@ export default function StudioScreen({ clip, onBack }) {
         activeCharacter={target?.character || ''}
         fps={clipFps}
         onSelectIndex={setIndex}
+        listenVoLevel={settings.listenVoLevel}
+        onCharacterComplete={onCharacterComplete}
         stageImage={stageImage}
         stageBand={stageBand}
       />
