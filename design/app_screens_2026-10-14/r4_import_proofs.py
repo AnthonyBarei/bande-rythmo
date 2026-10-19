@@ -5,6 +5,7 @@ Usage: shoot.py <out_dir> [--app URL] [--port N] [--extras] [--mock-states]
   --port N       Chrome remote-debugging port (default 9333)
   --extras       also capture view-only states (Atelier GIF / Audio modes,
                  Activité with the TERMINÉ list expanded). Creates no data.
+  --size WxH     viewport size (default 1440x900), via Emulation.setDeviceMetricsOverride
   --mock-states  inside the headless tab only, fake job states with CDP Fetch
                  interception and capture them: a running MP4 export, a running
                  transcription + a failed export (Activité), 3 takes (Studio),
@@ -38,6 +39,7 @@ _args.add_argument("--app", default="http://localhost:5173/")
 _args.add_argument("--port", type=int, default=9333)
 _args.add_argument("--extras", action="store_true")
 _args.add_argument("--mock-states", action="store_true")
+_args.add_argument("--size", default=f"{W}x{H}", help="viewport WxH (default 1440x900)")
 _args.add_argument("--repo", default=REPO, help="repo root (default: three levels above this script)")
 _args.add_argument("--import-proof", action="store_true",
                    help="only the Importer proofs, loaded through the local-file flow (see install_local_source)")
@@ -46,6 +48,7 @@ REPO = ARGS.repo
 OUT = ARGS.out_dir
 APP = ARGS.app if ARGS.app.endswith("/") else ARGS.app + "/"
 PORT = ARGS.port
+W, H = (int(v) for v in ARGS.size.lower().split("x"))
 
 
 class CDP:

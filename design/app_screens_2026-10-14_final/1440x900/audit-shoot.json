@@ -1,0 +1,186 @@
+{
+ "library/01-library.png": {
+  "pageOverflowX": false,
+  "pageOverflowY": false,
+  "spill": [],
+  "cut": [],
+  "ellipsis": []
+ },
+ "library/03-library-card-hover.png": {
+  "pageOverflowX": false,
+  "pageOverflowY": false,
+  "spill": [],
+  "cut": [],
+  "ellipsis": []
+ },
+ "import/01-import-empty.png": {
+  "pageOverflowX": false,
+  "pageOverflowY": false,
+  "spill": [],
+  "cut": [],
+  "ellipsis": []
+ },
+ "import/01-import.png": {
+  "pageOverflowX": false,
+  "pageOverflowY": false,
+  "spill": [],
+  "cut": [],
+  "ellipsis": [
+   "div \"299d22a2-cb49-4d29-9d4b-eb1355c88d88.mp4\" (title)"
+  ]
+ },
+ "editor/01-editor.png": {
+  "pageOverflowX": false,
+  "pageOverflowY": false,
+  "spill": [],
+  "cut": [],
+  "ellipsis": []
+ },
+ "editor/05-tab-voix.png": {
+  "pageOverflowX": false,
+  "pageOverflowY": false,
+  "spill": [],
+  "cut": [],
+  "ellipsis": []
+ },
+ "editor/06-tab-detection.png": {
+  "pageOverflowX": false,
+  "pageOverflowY": false,
+  "spill": [],
+  "cut": [],
+  "ellipsis": []
+ },
+ "editor/07-tab-boucles.png": {
+  "pageOverflowX": false,
+  "pageOverflowY": false,
+  "spill": [],
+  "cut": [],
+  "ellipsis": []
+ },
+ "editor/08-tab-lexique.png": {
+  "pageOverflowX": false,
+  "pageOverflowY": false,
+  "spill": [],
+  "cut": [],
+  "ellipsis": []
+ },
+ "editor/09-menu-sous-titres.png": {
+  "pageOverflowX": false,
+  "pageOverflowY": false,
+  "spill": [],
+  "cut": [],
+  "ellipsis": []
+ },
+ "editor/10-menu-respirations.png": {
+  "pageOverflowX": false,
+  "pageOverflowY": false,
+  "spill": [],
+  "cut": [],
+  "ellipsis": []
+ },
+ "export/01-export.png": {
+  "pageOverflowX": false,
+  "pageOverflowY": false,
+  "spill": [],
+  "cut": [],
+  "ellipsis": []
+ },
+ "studio/01-studio.png": {
+  "pageOverflowX": false,
+  "pageOverflowY": false,
+  "spill": [],
+  "cut": [],
+  "ellipsis": []
+ },
+ "atelier/01-atelier.png": {
+  "pageOverflowX": false,
+  "pageOverflowY": false,
+  "spill": [],
+  "cut": [],
+  "ellipsis": []
+ },
+ "atelier/02-atelier-gif.png": {
+  "pageOverflowX": false,
+  "pageOverflowY": false,
+  "spill": [],
+  "cut": [],
+  "ellipsis": []
+ },
+ "atelier/03-atelier-audio.png": {
+  "pageOverflowX": false,
+  "pageOverflowY": false,
+  "spill": [],
+  "cut": [],
+  "ellipsis": []
+ },
+ "activity/01-activity.png": {
+  "pageOverflowX": false,
+  "pageOverflowY": false,
+  "spill": [],
+  "cut": [],
+  "ellipsis": []
+ },
+ "activity/02-activity-expanded.png": {
+  "pageOverflowX": false,
+  "pageOverflowY": false,
+  "spill": [],
+  "cut": [],
+  "ellipsis": []
+ },
+ "settings/01-settings.png": {
+  "pageOverflowX": false,
+  "pageOverflowY": false,
+  "spill": [],
+  "cut": [],
+  "ellipsis": []
+ },
+ "shell/02-command-palette.png": {
+  "pageOverflowX": false,
+  "pageOverflowY": false,
+  "spill": [],
+  "cut": [],
+  "ellipsis": []
+ },
+ "shell/03-shortcuts-overlay.png": {
+  "pageOverflowX": false,
+  "pageOverflowY": false,
+  "spill": [],
+  "cut": [],
+  "ellipsis": []
+ },
+ "export/03-export-range.png": {
+  "pageOverflowX": false,
+  "pageOverflowY": false,
+  "spill": [],
+  "cut": [],
+  "ellipsis": []
+ },
+ "studio/02-studio-takes.png": {
+  "pageOverflowX": false,
+  "pageOverflowY": false,
+  "spill": [],
+  "cut": [],
+  "ellipsis": []
+ },
+ "export/02-export-rendering.png": {
+  "pageOverflowX": false,
+  "pageOverflowY": false,
+  "spill": [],
+  "cut": [],
+  "ellipsis": []
+ },
+ "atelier/04-atelier-clip.png": {
+  "pageOverflowX": false,
+  "pageOverflowY": false,
+  "spill": [],
+  "cut": [],
+  "ellipsis": []
+ },
+ "activity/03-activity-running-failed.png": {
+  "pageOverflowX": false,
+  "pageOverflowY": false,
+  "spill": [],
+  "cut": [],
+  "ellipsis": []
+ }
+}

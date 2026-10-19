@@ -1,0 +1,93 @@
+# Final acceptance greps — frontend/src (tests excluded), 2026-10-19
+# Comments (// … and {/* … */}) are filtered out: only code / JSX lines are judged.
+
+## 1. Inter (allowed only as the legacy band-font fallback entries)
+$ grep -rnE "\bInter\b" src
+src/components/band/bandRender.js:28:  { id: 'inter',     label: 'Inter',                 stack: "'Inter', sans-serif" }, // legacy — not offered
+src/config/fonts.js:16:  { id: 'inter', label: 'Inter', family: 'Ancienne police' },
+$ grep -n Inter index.html
+9:    <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible
+→ 0 offending hits. Allowed exceptions:
+  - config/fonts.js LEGACY_FONTS 'inter' and band/bandRender.js BR_FONTS 'inter': legacy « Neutre » band font, never offered,
+    only listed while a project still has it selected (FIXES_R8 #6). Not used in any chrome.
+  - index.html Google Fonts URL still loads Inter for that legacy band font (canvas rendering of old projects).
+
+## 2. Unicode glyphs used as icons in JSX chrome
+$ grep -rnE "▶|◀|✕|✓|✔|⏸|⏺|◉|✂|↩|↪|▸|▾|▴|◂|●|○|⟲|⟳|⇄|☰|★|✎|⚠|⏹|⬇|⬆|↻|↺|✖|⎘|🎚|🌐|📁" src
+src/components/band/bandRender.js:427:            ctx.fillText('○', curX, 0)
+src/components/band/bandRender.js:604:      if (leftX > 0 && leftX < W) ctx.fillText('▸', leftX + 2, yMid)
+src/components/band/bandRender.js:605:      if (rightX > 0 && rightX < W) ctx.fillText('◂', rightX - 12, yMid)
+src/components/RecorderPanel.jsx:1180:      <span title={canSwap ? 'Basculer A ⇄ B à la même position' : 'Choisissez une prise A et une prise B'}
+→ 0 offending hits. Allowed exceptions:
+  - band/bandRender.js ctx.fillText('○' / '▸' / '◂'): glyphs DRAWN on the band canvas (arrondie sign, ambiance arrows), not chrome icons.
+  - RecorderPanel.jsx title="Basculer A ⇄ B …": tooltip text, not an icon (the visible control uses <Icon d={ICONS.loop}>).
+  (× in ×N counts and 0.5× speed labels, → in IN → OUT ranges, ← → ⇧ ↵ ⌫ inside <Kbd> are typography/keys, not icons.)
+
+## 3. Local style objects for controls (tBtn, btnBase, iconBtn, SL, BTN_GHOST, SEEK_BTN, ROW_BTN, rowBtn…)
+$ grep -rnE "(const|let) (tBtn|btnBase|iconBtn|SL|BTN_GHOST|SEEK_BTN|ROW_BTN|rowBtn|sectionLabel)\b" src
+$ grep -rnE "(const|let) [A-Za-z_]+ = \{ *(height|fontSize|padding|width|minWidth|background|color|border|display|…)" src   (every local style object)
+src/components/editor/StylePanel.jsx:8:const row = { display: 'flex', alignItems: 'center', gap: 8, padding: '0 10px', marginBottom: 10 }
+src/components/editor/StylePanel.jsx:9:const valueText = { fontSize: 11, color: T.text2, fontFamily: T.fontMono, flex: 1, textAlign: 'center' }
+src/components/LexiconPanel.jsx:145:  const phStyle = { fontSize: 10.5, color: T.text3, fontFamily: T.fontMono, marginTop: 1 }
+src/components/LexiconPanel.jsx:172:const inp = { flex: 1, minWidth: 0, fontSize: 12, padding: '7px 9px', background: T.bg2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 7, outline: 'none', fontFamily: T.fontUI }
+src/components/SubtitleEditor.jsx:264:  const rateStyle = { color: RATE_COLOR[rate.level], fontWeight: rateFlag ? 700 : 400 }
+→ 0 offending hits (no control styled by a local object). Remaining objects are layout/text, justified:
+  - editor/StylePanel.jsx row / valueText: flex row layout + mono value readout inside the Affichage popover (no control).
+  - LexiconPanel.jsx phStyle: phonetic text style. inp: the lexique <input> fields — ui.jsx/foundation.jsx has no Input
+    primitive (README: line-for-line port), so plain inputs keep a shared inline style, as everywhere else in the app.
+  - SubtitleEditor.jsx rateStyle: computed speech-rate colour of a duration label.
+
+## 4. Non-SMPTE timecodes (fmtClock / fmtClockPrecise / fmtClockHours = MM:SS.s; toFixed(1)}s used as a timecode)
+$ grep -rnE "fmtClock|fmtClockPrecise|fmtClockHours" src
+src/utils/timecode.js:8:export const fmtClock = t => {
+src/utils/timecode.js:17:export const fmtClockPrecise = t => {
+src/utils/timecode.js:26:export const fmtClockHours = t => {
+$ grep -rnE "toFixed\([12]\)\}?s" src   (each hit judged: duration or timecode?)
+src/components/editor/EditorHeader.jsx:49:          {(clip.end - clip.start).toFixed(1)}s · {subtitleCount} réplique{subtitleCount !== 1 ? 's' : ''} · {Math.round(clipFps * 100) / 100} fps
+src/components/editor/Inspector.jsx:39:                ? `${fmtTC(target.start, clipFps)} → ${fmtTC(target.end, clipFps)} · ${(target.end - target.start).toFixed(1)}s`
+src/components/editor/InspectorBoucles.jsx:20:            <div style={{ fontSize: 10.5, color: T.text3 }}>{(l.end - l.start).toFixed(1)}s · {subtitles.filter(x => x.start >= l.start && x.end <= l.end).length} répliques</div>
+src/components/editor/InspectorVoix.jsx:90:              <span style={{ fontSize: T.fs.xs, color: T.text3, fontFamily: T.fontMono }}>{subs.length} répl · {dur.toFixed(1)}s</span>
+src/components/editor/StylePanel.jsx:58:          {brOffset >= 0 ? '+' : ''}{brOffset.toFixed(2)}s
+src/components/ExportPanel.jsx:607:        {on && <span style={{ marginLeft: 'auto', fontFamily: T.fontMono, fontWeight: 400, color: T.text3 }}>{Math.max(0, rangeOut - rangeIn).toFixed(1)}s</span>}
+src/components/ExportPanel.jsx:866:                  <span style={{ fontSize: 10.5, color: T.text3, fontFamily: T.fontMono }}>{(t.duration || 0).toFixed(1)}s</span>
+src/components/MemeGenerator.jsx:35:const fmtDur = s => `${s.toFixed(1)}s`
+src/components/MemeGenerator.jsx:582:      setImageName(`${clip?.name || 'frame'}_${videoTime.toFixed(1)}s.jpg`)
+src/components/MemeGenerator.jsx:629:            setImageName(`${clip.name}_${inPoint.toFixed(1)}s-${outPoint.toFixed(1)}s.gif`)
+src/components/MemeGenerator.jsx:681:      a.download = `${clip.name}_${inPoint.toFixed(1)}s-${outPoint.toFixed(1)}s.${format}`
+src/components/RecorderPanel.jsx:959:            {recLive && <span style={{ color: T.danger, display: 'inline-flex', alignItems: 'center', gap: 6 }}><Dot color={T.danger} size={7} />Prise en cours · {elapsed.toFixed(1)}s{target ? ` / ${recDur.toFixed(1)}s` : ''}</span>}
+src/components/RecorderPanel.jsx:1056:          ? <span style={{ color: T.danger, display: 'inline-flex', alignItems: 'center', gap: 8 }}><Dot color={T.danger} pulse />ENREGISTREMENT · {elapsed.toFixed(1)}s</span>
+src/components/RecorderPanel.jsx:1175:            {x.t && <span style={{ fontSize: 11, fontFamily: T.fontMono, color: on ? x.c : T.text3 }}>{(x.t.duration || 0).toFixed(1)}s</span>}
+src/components/RecorderPanel.jsx:1287:          {isPlaying ? `${((progress || 0) * dur).toFixed(1)} / ` : ''}{dur.toFixed(1)}s
+src/components/SubtitleEditor.jsx:312:            <span data-line-rate={rate.level} title={rate.reason || undefined} style={{ fontSize: 9.5, fontFamily: T.fontMono, cursor: rateFlag ? 'help' : 'default', ...rateStyle }}>{dur.toFixed(1)}s</span>
+src/components/SubtitleEditor.jsx:417:        }} title={rate.reason || undefined}>{dur.toFixed(2)}s</span>
+src/components/TimelineBar.jsx:308:              <div style={{ position: 'absolute', top: -15, left: 0, fontSize: 9, color: T.accent, fontWeight: 700, fontFamily: T.fontMono, whiteSpace: 'nowrap' }}>{(draft.end - draft.start).toFixed(1)}s</div>
+src/components/VideoEditor.jsx:272:              <span style={{ fontFamily: T.fontMono, fontSize: T.fs.xs, color: T.accent }}>{(c.end - c.start).toFixed(1)}s</span>
+src/components/VideoEditor.jsx:285:              <span style={{ fontFamily: T.fontMono, fontSize: T.fs.xs, color: T.success }}>{(clip.end - clip.start).toFixed(1)}s</span>
+$ grep -rnE "padStart\(2, '0'\)" src   (hand-rolled clocks)
+src/components/ActivityCenter.jsx:33:  return `${Math.floor(s / 60)}min ${String(Math.round(s % 60)).padStart(2, '0')}s`
+src/components/band/bandRender.js:18:export const withAlpha = (hex, a) => hex + Math.round(Math.max(0, Math.min(1, a)) * 255).toString(16).padStart(2, '0')
+src/components/ClipsLibrary.jsx:25:  return `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}`
+src/components/editor/InspectorVoix.jsx:62:          <span style={{ fontSize: 10, fontFamily: T.fontMono, color: T.text3, flexShrink: 0 }}>{String(i + 1).padStart(2, '0')}</span>
+src/components/PlexBrowser.jsx:12:  return min >= 60 ? `${Math.floor(min / 60)}h${String(min % 60).padStart(2, '0')}` : `${min} min`
+src/components/SubtitleEditor.jsx:296:        <div style={{ width: 22, height: 22, borderRadius: 5, background: alpha(hex, '22'), color: hex, fontSize: 9.5, fontWeight: 700, fontFamily: T.fontMono, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>{String(idx + 1).padStart(2, '0')}</div>
+src/components/VideoPlayer.jsx:8:  return `${String(m).padStart(2, '0')}:${s}`
+src/SettingsContext.jsx:36:  const hx = c => mix(c).toString(16).padStart(2, '0')
+src/ui.jsx:355:  const p = n => String(n).padStart(2, '0')
+src/ui.jsx:361:  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+src/utils/duration.js:7:    const s = String(total % 60).padStart(2, '0')
+src/utils/duration.js:8:    return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${s}` : `${m}:${s}`
+src/utils/duration.js:16:    const pad = n => String(n).padStart(2, '0')
+src/utils/timecode.js:13:  return `${String(m).padStart(2, '0')}:${s}`
+src/utils/timecode.js:22:  return `${String(m).padStart(2, '0')}:${s}`
+src/utils/timecode.js:32:  return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${s}` : `${String(m).padStart(2, '0')}:${s}`
+src/utils/timecode.js:48:  const p2 = n => String(n).padStart(2, '0')
+→ 0 offending hits. Every on-screen timecode uses fmtSMPTE (HH:MM:SS:FF at the clip fps). Remaining hits, justified:
+  - utils/timecode.js fmtClock*/ — canonical helpers kept (unit-tested in timecode.test.js), no longer imported by any component.
+  - toFixed(1)}s / toFixed(2)}s: all durations (réplique / take / range / loop length, recording elapsed, BR offset) or
+    MemeGenerator download file names — allowed ("durations may stay x.xs"). RecorderPanel.jsx:1287 is a take's
+    playback counter "0.7 / 1.5s" (position inside a 1–3 s take, i.e. elapsed duration, not a clip timecode).
+  - ActivityCenter / ClipsLibrary / PlexBrowser / utils/duration.js padStart: durations (1min 05s, 1 h 23, 5:01) and the
+    importer ruler's HH:MM:SS labels (FIXES_R6 #13: ≥ 5 s steps, frames dropped).
+  - InspectorVoix / SubtitleEditor padStart: réplique numbers (01, 02…). bandRender / SettingsContext: hex colour bytes.
+  - ui.jsx fmtTC / fmt: foundation.jsx port helpers (README: line-for-line), exported but imported nowhere.
+  - VideoPlayer.jsx fmt (MM:SS.ss): dead component — imported by no file (ImportPlayer replaced it), never rendered.

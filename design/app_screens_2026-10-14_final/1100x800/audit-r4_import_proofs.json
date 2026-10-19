@@ -1,0 +1,23 @@
+{
+ "import/01-import.png": {
+  "pageOverflowX": false,
+  "pageOverflowY": false,
+  "spill": [],
+  "cut": [],
+  "ellipsis": []
+ },
+ "import/04-import-inout.png": {
+  "pageOverflowX": false,
+  "pageOverflowY": false,
+  "spill": [],
+  "cut": [],
+  "ellipsis": []
+ },
+ "import/03-import-player.png": {
+  "pageOverflowX": false,
+  "pageOverflowY": false,
+  "spill": [],
+  "cut": [],
+  "ellipsis": []
+ }
+}

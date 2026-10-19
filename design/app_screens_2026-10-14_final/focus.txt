@@ -1,0 +1,51 @@
+# Keyboard-only focus pass — 2026-10-19, 1440x900, headless Chrome
+# Script: design/app_screens_2026-10-14/final/focus_pass.py (--mock-states: every non-GET /api/ answered locally)
+# Method: Tab via CDP Input.dispatchKeyEvent (keyboard focus → :focus-visible), up to 90 presses per screen
+# (160 for the library), stop when focus cycles. For document.activeElement after each Tab:
+#   ring  = computed outline, or a box-shadow carrying the accent colour (index.css: 0 0 0 2px bg, 0 0 0 4px accent)
+#   visible = on screen with ancestor opacity > 0.2; 'partly clipped' = outer ring cut by an overflow ancestor on ≥1 side.
+# Raw per-element data: focus.json
+
+## Result (after fixes)
+Bibliothèque                 focused=127 ring=127 missing=0 not-visible=0
+Importer (vide)              focused= 14 ring= 14 missing=0 not-visible=0
+Importer (source chargée)    focused= 32 ring= 32 missing=0 not-visible=0
+Éditeur                      focused= 90 ring= 90 missing=0 not-visible=0 (cap 90 reached)
+Studio (prises mockées)      focused= 28 ring= 28 missing=0 not-visible=0
+Atelier (vide)               focused= 15 ring= 15 missing=0 not-visible=0
+Activité                     focused= 21 ring= 21 missing=0 not-visible=0
+Réglages                     focused= 32 ring= 32 missing=0 not-visible=0
+Éditeur · onglet Voix        focused= 53 ring= 53 missing=0 not-visible=0
+Éditeur · onglet Détection   focused= 54 ring= 54 missing=0 not-visible=0
+Éditeur · onglet Boucles     focused= 46 ring= 46 missing=0 not-visible=0
+Éditeur · onglet Lexique     focused= 48 ring= 48 missing=0 not-visible=0
+Exporter                     focused= 51 ring= 51 missing=0 not-visible=0
+    (1 outer rings partly clipped by an overflow ancestor; still visible on the other side(s))
+    ~ partly: button 'MP3 Compressé' sides cut: 1
+Atelier (clip)               focused= 23 ring= 23 missing=0 not-visible=0
+    (1 outer rings partly clipped by an overflow ancestor; still visible on the other side(s))
+    ~ partly: button 'Capturer l’image affichée pour en faire un meme' sides cut: 1
+
+Totals: every focused element shows the accent ring (0 missing, 0 invisible). The two 'partly clipped' rings keep 3 of 4 sides.
+Éditeur (Répliques tab) stops at the 90-press cap inside the 51-row réplique list (5 row actions each); the other
+inspector tabs are covered by the four 'Éditeur · onglet …' passes.
+
+## First run (before fixes)
+Bibliothèque 87/90 · Importer 11/13 · Éditeur 38/90 · Studio 13/25 · Atelier 12/15 · Activité 8/21 · Réglages 21/31 ·
+Exporter 25/49 · Atelier (clip) 13/23 had a visible ring. Missing on every ui.jsx Btn (inline boxShadow 'none' or the
+primary glow beats the stylesheet :focus-visible box-shadow), the accent swatches, the hidden custom-colour input.
+Not focusable at all: every Toggle (div role=switch), the Importer local-file drop zone, take cards (Studio), boucle /
+queue rows (inspector), meme layer rows, clip-name rename, lexique phonetic edit, clickable Chip/Card.
+
+## Fixes
+- index.css: :focus-visible ring is !important (beats inline box-shadows of the primitives).
+- index.css: label:has(> input:focus-visible) draws the ring for the opacity-0 colour input (Réglages, custom accent).
+- index.css + .focus-inset: inset 2px accent ring for flush controls inside overflow-clipped strips (library filter tabs,
+  card action cells, Studio take cards), whose outer ring was cut on 2–3 sides.
+- ui.jsx pressable(): role=button + tabIndex 0 + Enter/Space → click, used by Chip/Card (when clickable), Toggle
+  (role=switch, aria-label), ImportSection drop zone, ClipCard rename, InspectorBoucles / InspectorVoix rows,
+  RecorderPanel take card, meme layer rows, LexiconPanel phonetic edit. Verified: Space flips Réglages and Exporter toggles.
+
+## Known limitation
+- Library card action row (Doubler / mic / MP3 / GIF / trash) is visibility:hidden until the card gets focus-within;
+  React reveals it on the focus event, so Tab presses closer than ~100 ms apart skip it (normal typing speed reaches it).
