@@ -3,12 +3,7 @@ import { createPortal } from 'react-dom'
 import { T, Icon, ICONS, Avatar, Btn, Chip, Dot, alpha } from '../ui'
 import { TRACK_HEXES } from '../config/tracks'
 import { useToast } from '../ToastContext'
-import { fmtClock } from '../utils/timecode'
-
-const fmt = t => {
-  const r = Math.round(t)
-  return `${Math.floor(r / 60)}:${String(r % 60).padStart(2, '0')}`
-}
+import { fmtDuration } from '../utils/duration'
 
 // Reference data.jsx → STATUS (alpha '24' = .14, keeps the accent swappable).
 const STATUS = {
@@ -166,7 +161,7 @@ export default function ClipCard({ clip, onDub, onRecord, onMeme, onDelete, onRe
         <div style={{
           position: 'absolute', bottom: 10, right: 10, padding: '2px 8px', borderRadius: 5,
           fontFamily: T.fontMono, fontSize: 11, fontWeight: 600, background: 'rgba(0,0,0,.7)', color: '#fff',
-        }}>{duration < 60 ? `${duration.toFixed(1)}s` : fmtClock(duration)}</div>
+        }}>{fmtDuration(duration)}</div>
       </div>
 
       {/* Body */}
@@ -261,7 +256,7 @@ export default function ClipCard({ clip, onDub, onRecord, onMeme, onDelete, onRe
           <div style={{ background: T.bg2, border: `1px solid ${T.border}`, borderRadius: T.r.card, overflow: 'hidden', maxWidth: '90vw', width: 800 }}>
             <div style={{ padding: '10px 14px', borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', gap: 10 }}>
               <span style={{ fontSize: T.fs.sm, fontWeight: 600 }}>{clip.name}</span>
-              <span style={{ fontSize: T.fs.micro, color: T.text3, fontFamily: T.fontMono }}>{fmt(duration)}</span>
+              <span style={{ fontSize: T.fs.micro, color: T.text3, fontFamily: T.fontMono }}>{fmtDuration(duration)}</span>
               <div style={{ flex: 1 }} />
               <Btn size="sm" icon={ICONS.close} onClick={() => setWatching(false)} title="Fermer" />
             </div>

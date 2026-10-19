@@ -328,7 +328,7 @@ function ExportScreen({ segmentId, subtitles, boucles = [], pxPerSec = 180, brOf
       <div style={{ flex: 1, minHeight: 0, padding: '8px 32px 28px', display: 'flex', gap: 0, overflow: 'hidden' }}>
         <div style={{ flex: 1, display: 'flex', background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.r.card, overflow: 'hidden', minHeight: 0 }}>
           {/* format picker */}
-          <div style={{ width: 320, flexShrink: 0, borderRight: `1px solid ${T.border}`, overflow: 'auto', padding: 16 }}>
+          <ScrollFade style={{ width: 320, flexShrink: 0, borderRight: `1px solid ${T.border}` }} innerStyle={{ padding: 16 }}>
             {GROUPS.map(g => (
               <div key={g.label} style={{ marginBottom: 16 }}>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, marginBottom: 8 }}>
@@ -360,7 +360,7 @@ function ExportScreen({ segmentId, subtitles, boucles = [], pxPerSec = 180, brOf
                 </div>
               </div>
             ))}
-          </div>
+          </ScrollFade>
 
           {/* options */}
           <div style={{ width: 300, flexShrink: 0, borderRight: `1px solid ${T.border}`, padding: 18, display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
@@ -446,6 +446,41 @@ function ExportScreen({ segmentId, subtitles, boucles = [], pxPerSec = 180, brOf
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+// FIXES_R6 #14: a 24px surface → transparent fade at the bottom while more
+// content is below; hidden once scrolled to the end.
+function ScrollFade({ children, style, innerStyle }) {
+  const ref = useRef(null)
+  const [more, setMore] = useState(false)
+
+  const update = useCallback(() => {
+    const el = ref.current
+    if (el) setMore(el.scrollHeight - el.scrollTop - el.clientHeight > 1)
+  }, [])
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return undefined
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    for (const child of el.children) ro.observe(child)
+    return () => ro.disconnect()
+  }, [update])
+
+  return (
+    <div style={{ position: 'relative', minHeight: 0, display: 'flex', flexDirection: 'column', ...style }}>
+      <div ref={ref} onScroll={update} style={{ flex: 1, minHeight: 0, overflow: 'auto', ...innerStyle }}>
+        {children}
+      </div>
+      <div aria-hidden="true" style={{
+        position: 'absolute', left: 0, right: 0, bottom: 0, height: 24, pointerEvents: 'none',
+        background: `linear-gradient(to top, ${T.surface}, transparent)`,
+        opacity: more ? 1 : 0, transition: 'opacity .15s',
+      }} />
     </div>
   )
 }

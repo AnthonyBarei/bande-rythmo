@@ -254,12 +254,37 @@ CLICK_INSPECTOR_TAB = """(async () => {
   return true;
 })()"""
 
-RECT = """(() => {
-  const t = %s;
-  const el = [...document.querySelectorAll('*')].find(e => e.children.length < 8 && e.innerText && e.innerText.trim().startsWith(t) && e.getBoundingClientRect().width > 200);
-  if (!el) return null;
-  const r = el.getBoundingClientRect();
-  return [r.x + r.width / 2, r.y + r.height / 3];
+# FIXES_R6 #11: the hover target must be on screen — a mouseMoved outside the
+# 1440x900 viewport hits nothing (r5 aimed at a third-row card, y > 900).
+# Prefer a card without a project so the "+ Projet" chip is part of the proof.
+HOVER_CARD = """(async () => {
+  const cards = [...document.querySelectorAll('button')]
+    .filter(b => b.innerText.trim() === 'Doubler')
+    .map(b => b.parentElement && b.parentElement.parentElement)
+    .filter(Boolean);
+  const card = cards.find(c => c.querySelector('[title="Assigner à un projet"]')) || cards[0];
+  if (!card) return null;
+  card.scrollIntoView({ block: 'center', inline: 'nearest' });
+  await new Promise(r => setTimeout(r, 400));
+  const r = card.getBoundingClientRect();
+  return [Math.round(r.x + r.width / 2), Math.round(r.y + r.height / 2)];
+})()"""
+
+HOVER_MEDIA = """JSON.stringify({
+  hoverNone: matchMedia('(hover: none)').matches,
+  hoverHover: matchMedia('(hover: hover)').matches,
+  pointerFine: matchMedia('(pointer: fine)').matches,
+})"""
+
+HOVER_STATE = """(() => {
+  const b = [...document.querySelectorAll('button')].find(x => x.innerText.trim() === 'Doubler');
+  const row = b && b.parentElement;
+  const card = row && row.parentElement;
+  const chip = card && card.querySelector('[title="Assigner à un projet"]');
+  return JSON.stringify({
+    actionRowHeight: row ? Math.round(row.getBoundingClientRect().height) : null,
+    projetChipOpacity: chip ? getComputedStyle(chip.parentElement).opacity : null,
+  });
 })()"""
 
 WAIT_VIDEO = """(async () => {
@@ -304,11 +329,15 @@ async def park_mouse(cdp):
 async def shoot_base(cdp):
     await go(cdp, "clips")
     await cdp.shot("library/01-library.png")
-    pos = await cdp.js(RECT % json.dumps("je vois"))
+    print("  media:", await cdp.js(HOVER_MEDIA))
+    pos = await cdp.js(HOVER_CARD)
     if pos:
         await cdp.hover(*pos)
-        await asyncio.sleep(0.6)
+        await asyncio.sleep(0.6)  # card transitions are .15s
+        print("  hover:", await cdp.js(HOVER_STATE))
         await cdp.shot("library/03-library-card-hover.png")
+    else:
+        print("  ! no library card to hover")
 
     await go(cdp, "import")
     await cdp.shot("import/01-import-empty.png")

@@ -1,6 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react'
 import { Btn, Icon, ICONS, T, alpha } from '../ui'
 import { MARK_ID } from '../utils/inOut'
+import { fmtHMS } from '../utils/duration'
 
 const EDGE = 8
 const MIN_DUR = 0.2
@@ -8,12 +9,6 @@ const MIN_ZOOM = 1
 const MAX_ZOOM = 20
 const LABEL_STEPS = [5, 10, 30, 60, 120, 300, 600, 1800, 3600]
 const MAX_LABELS = 10
-
-function fmtClock(t) {
-  const m = Math.floor(t / 60)
-  const s = Math.floor(t % 60)
-  return `${m}:${String(s).padStart(2, '0')}`
-}
 
 export default function TimelineBar({
   duration, currentTime,
@@ -207,6 +202,7 @@ export default function TimelineBar({
   if (!duration) return null
 
   // Ruler: labelled ticks every 10 s on short views (coarser when zoomed out), minor tick halfway.
+  // Labels are ≥ 5 s apart, so frames are dropped: HH:MM:SS (FIXES_R6 #13).
   const labelStep = LABEL_STEPS.find(s => viewDur / s <= MAX_LABELS) || LABEL_STEPS[LABEL_STEPS.length - 1]
   const step = labelStep / 2
   const ticks = []
@@ -217,7 +213,7 @@ export default function TimelineBar({
     <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.r.card, overflow: 'hidden', flexShrink: 0 }}>
       <div style={{ height: 38, padding: '0 12px', display: 'flex', alignItems: 'center', gap: 8, background: T.bg2, borderBottom: `1px solid ${T.border}` }}>
         <span style={{ fontSize: T.fs.micro, letterSpacing: 1.2, color: T.text3, fontWeight: 700 }}>TIMELINE</span>
-        <span style={{ fontSize: T.fs.xs, color: T.text3, fontFamily: T.fontMono, whiteSpace: 'nowrap' }}>{fmtClock(vs)} – {fmtClock(vs + viewDur)} sur {fmtClock(duration)}</span>
+        <span style={{ fontSize: T.fs.xs, color: T.text3, fontFamily: T.fontMono, whiteSpace: 'nowrap' }}>{fmtHMS(vs)} – {fmtHMS(vs + viewDur)} sur {fmtHMS(duration)}</span>
         <span style={{ fontSize: 10.5, color: T.text4, marginLeft: 6, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>glisser pour créer · Alt + molette pour zoomer · Suppr retire le bloc</span>
         <div style={{ flex: 1 }} />
         <Btn size="sm" icon={ICONS.zoomOut} title="Dézoomer" onClick={() => zoomTo(zoom - 0.5)} />
@@ -243,7 +239,7 @@ export default function TimelineBar({
             return (
               <div key={t} style={{ position: 'absolute', left: `${((t - vs) / viewDur) * 100}%`, top: 0, height: '100%', pointerEvents: 'none' }}>
                 <div style={{ position: 'absolute', bottom: 0, width: 1, height: major ? 6 : 4, background: T.border3 }} />
-                {major && <div style={{ position: 'absolute', top: 2, left: 3, fontSize: 9, color: T.text4, fontFamily: T.fontMono, whiteSpace: 'nowrap' }}>{fmtClock(t)}</div>}
+                {major && <div style={{ position: 'absolute', top: 2, left: 3, fontSize: 9, color: T.text4, fontFamily: T.fontMono, whiteSpace: 'nowrap' }}>{fmtHMS(t)}</div>}
               </div>
             )
           })}

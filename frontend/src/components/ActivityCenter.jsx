@@ -6,7 +6,8 @@ import { downloadUrl } from '../download'
 import { primaryRowKey } from '../utils/primaryRow'
 import { useNow } from '../utils/useNow'
 import { failureGroupKey, groupJobs, siblingsOf } from '../utils/jobGroups'
-import JobError from './JobError'
+import JobError, { DetailsLink, ErrorDetail } from './JobError'
+import { friendlyError } from '../utils/jobErrors'
 
 // Activity center — reference screen-misc.jsx Activity · RunRow · DoneRow.
 // Running jobs (progress + cancel), failures (retry), finished jobs of the
@@ -178,7 +179,10 @@ function RunRow({ j, clip, onCancel }) {
   )
 }
 
+// FIXES_R6 #10: Détails ▾, Réessayer and ✕ share one centred action group (12px gap).
 function FailRow({ j, clip, onRetry, onDismiss }) {
+  const [open, setOpen] = useState(false)
+  const { detail } = friendlyError(j.error)
   return (
     <div style={{ background: 'rgba(232,89,93,.05)', border: `1px solid ${alpha(T.danger, '44')}`, borderRadius: T.r.ctl, padding: '13px 16px', display: 'flex', alignItems: 'center', gap: 14 }}>
       <div style={{ width: 36, height: 36, flexShrink: 0, borderRadius: 9, background: alpha(T.danger, '14'), border: `1px solid ${alpha(T.danger, '44')}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon d={iconFor(j.kind)} size={17} stroke={T.danger} /></div>
@@ -188,10 +192,14 @@ function FailRow({ j, clip, onRetry, onDismiss }) {
           {j.count > 1 && <Chip soft color={T.danger} style={{ padding: '1px 7px', fontFamily: T.fontMono, fontSize: T.fs.micro }}>×{j.count}</Chip>}
           {clip && <span style={{ fontSize: T.fs.xs, color: T.text3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{clip}</span>}
         </div>
-        <div style={{ marginTop: 3 }}><JobError compact error={j.error} /></div>
+        <div style={{ marginTop: 3 }}><JobError compact hideLinks error={j.error} /></div>
+        {open && <ErrorDetail detail={detail} />}
       </div>
-      {j.retry && <Btn size="sm" variant="primary" icon={ICONS.loop} onClick={onRetry} title={j.count > 1 ? 'Relancer une seule fois' : undefined}>Réessayer</Btn>}
-      <Btn size="sm" variant="outline" icon={ICONS.close} onClick={onDismiss} title={j.count > 1 ? `Retirer les ${j.count}` : 'Retirer'} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
+        {detail && <DetailsLink open={open} onToggle={() => setOpen(v => !v)} />}
+        {j.retry && <Btn size="sm" variant="primary" icon={ICONS.loop} onClick={onRetry} title={j.count > 1 ? 'Relancer une seule fois' : undefined}>Réessayer</Btn>}
+        <Btn size="sm" variant="outline" icon={ICONS.close} onClick={onDismiss} title={j.count > 1 ? `Retirer les ${j.count}` : 'Retirer'} />
+      </div>
     </div>
   )
 }
