@@ -130,7 +130,7 @@ def _job(job_id, kind, title, status, pct, stage, eta=None, error=None):
 MOCK_JOBS = {
     MOCK_MP4: _job(MOCK_MP4, "export-mp4", "Export MP4 + BR", "running", 0.46, "Supersample 4", eta=38),
     MOCK_TRANSCRIBE: _job(MOCK_TRANSCRIBE, "transcribe", "Transcription Whisper", "running", 0.31, "Whisper · segment 12/40", eta=25),
-    MOCK_FAIL: _job(MOCK_FAIL, "export-gif", "Export GIF", "error", 0.12, "Encodage", error="ffmpeg : flux audio introuvable (-map 0:a)"),
+    MOCK_FAIL: _job(MOCK_FAIL, "export-gif", "Export GIF", "error", 0.12, "Encodage", error="[MOCK capture] échec simulé — aucun job réel (ffmpeg exited with code 1)"),
 }
 
 # Non-GET endpoints that answer with a fake job id (everything else non-GET → 503).
