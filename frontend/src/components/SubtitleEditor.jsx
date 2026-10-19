@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react'
 import { TRACK_COLORS } from '../config/tracks'
 import { fmtSMPTE } from '../utils/timecode'
 import { parseTimecodeInput } from '../utils/tcInput'
-import { lineRate } from '../utils/lineRate'
+import { flagLines } from '../utils/lineRate'
 import { isActiveAt, activeIndexAt } from '../utils/band'
 import { T, alpha, Icon, ICONS, Btn, Dot, Chip, Popover, MenuItem, MenuLabel, MenuSep } from '../ui'
 
@@ -18,6 +18,7 @@ const NOTATION_TAGS = [
 ]
 
 const RATE_COLOR = { ok: T.text4, warn: T.accent, danger: T.danger }
+const ROW_BTN = { height: 20, minWidth: 22 }
 
 function TCInput({ value, onCommit, fps = 25, color = 'var(--text2)', compact = false }) {
   const [editing, setEditing] = useState(false)
@@ -216,7 +217,7 @@ function NoteLine({ note, onEdit }) {
   )
 }
 
-function SubtitleRow({ sub, idx, active, selected, compact, fps, charMap, charList, onChange, onDelete, onSelect, onSeek, onNewCharacter }) {
+function SubtitleRow({ sub, idx, rate, active, selected, compact, fps, charMap, charList, onChange, onDelete, onSelect, onSeek, onNewCharacter }) {
   const textInputRef = useRef(null)
   const [showNotations, setShowNotations] = useState(false)
   const [editingNote, setEditingNote] = useState(false)
@@ -260,7 +261,6 @@ function SubtitleRow({ sub, idx, active, selected, compact, fps, charMap, charLi
   }
 
   const dur = sub.end - sub.start
-  const rate = lineRate(sub)
   const rateFlag = rate.level !== 'ok'
   const rateStyle = { color: RATE_COLOR[rate.level], fontWeight: rateFlag ? 700 : 400 }
   const c =TRACK_COLORS[(charMap[sub.character || ''] ?? 0) % TRACK_COLORS.length]
@@ -297,7 +297,7 @@ function SubtitleRow({ sub, idx, active, selected, compact, fps, charMap, charLi
         <div style={{ width: 22, height: 22, borderRadius: 5, background: alpha(hex, '22'), color: hex, fontSize: 9.5, fontWeight: 700, fontFamily: T.fontMono, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>{String(idx + 1).padStart(2, '0')}</div>
 
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 3 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 3, position: 'relative' }}>
             <CharSelect value={sub.character || ''} charMap={charMap} charList={charList}
               onSelect={v => onChange({ ...sub, character: v })}
               onCreate={onNewCharacter}
@@ -308,10 +308,22 @@ function SubtitleRow({ sub, idx, active, selected, compact, fps, charMap, charLi
                 onCommit={t => onChange({ ...sub, start: Math.min(t, sub.end - 0.1) })} /> → <TCInput compact fps={fps} value={sub.end} color={T.text3}
                 onCommit={t => onChange({ ...sub, end: Math.max(t, sub.start + 0.1) })} />
             </span>
-            {sub.note && <Icon d={ICONS.note} size={11} stroke={T.accent} />}
             {sub.take && <Dot color={T.danger} size={6} />}
             <div style={{ flex: 1 }} />
-            <span data-line-rate={rate.level} title={rate.reason} style={{ fontSize: 9.5, fontFamily: T.fontMono, cursor: 'help', ...rateStyle }}>{dur.toFixed(1)}s</span>
+            <span data-line-rate={rate.level} title={rate.reason || undefined} style={{ fontSize: 9.5, fontFamily: T.fontMono, cursor: rateFlag ? 'help' : 'default', ...rateStyle }}>{dur.toFixed(1)}s</span>
+
+            {/* Actions — reveal on row hover, over the duration on the TC
+                line only, bottom-anchored 1px above the text line, which is never
+                covered (FIXES_R6 #2). */}
+            <div className="row-actions" onClick={e => e.stopPropagation()} style={{ position: 'absolute', right: -4, bottom: -2, display: 'flex', alignItems: 'center', gap: 0, background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.r.ctl, padding: 1, boxShadow: T.shadow }}>
+              <Btn size="sm" icon={ICONS.play} title="Aller au timecode" onClick={() => onSeek?.(sub.start)} style={ROW_BTN} />
+              <span data-notation-trigger style={{ display: 'inline-flex' }}>
+                <Btn size="sm" icon={ICONS.breath} active={showNotations} title="Notations de doublage" onClick={() => setShowNotations(n => !n)} style={ROW_BTN} />
+              </span>
+              <Btn size="sm" icon={ICONS.note} active={!!sub.note} title={sub.note ? `Note : ${sub.note}` : 'Ajouter une note'} onClick={() => setEditingNote(true)} style={ROW_BTN} />
+              <Btn size="sm" icon={ICONS.eye} active={!!sub.hidden} title={sub.hidden ? 'Masquée sur la bande — cliquer pour afficher' : 'Masquer sur la bande'} onClick={() => onChange({ ...sub, hidden: !sub.hidden })} style={ROW_BTN} />
+              <Btn size="sm" icon={ICONS.trash} danger title="Supprimer" onClick={onDelete} style={ROW_BTN} />
+            </div>
           </div>
 
           <div ref={notationRef} style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 2 }}>
@@ -334,17 +346,6 @@ function SubtitleRow({ sub, idx, active, selected, compact, fps, charMap, charLi
             : sub.note && <NoteLine note={sub.note} onEdit={() => setEditingNote(true)} />}
         </div>
 
-        {/* Actions — reveal on row hover (prototype: clean rows). Kept left of
-            the duration so its débit tooltip stays reachable. */}
-        <div className="row-actions" onClick={e => e.stopPropagation()} style={{ position: 'absolute', top: 5, right: 44, display: 'flex', alignItems: 'center', gap: 1, background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.r.ctl, padding: 2, boxShadow: T.shadow }}>
-          <Btn size="sm" icon={ICONS.play} title="Aller au timecode" onClick={() => onSeek?.(sub.start)} />
-          <span data-notation-trigger>
-            <Btn size="sm" icon={ICONS.breath} active={showNotations} title="Notations de doublage" onClick={() => setShowNotations(n => !n)} />
-          </span>
-          <Btn size="sm" icon={ICONS.note} active={!!sub.note} title={sub.note ? `Note : ${sub.note}` : 'Ajouter une note'} onClick={() => setEditingNote(true)} />
-          <Btn size="sm" icon={ICONS.eye} active={!!sub.hidden} title={sub.hidden ? 'Masquée sur la bande — cliquer pour afficher' : 'Masquer sur la bande'} onClick={() => onChange({ ...sub, hidden: !sub.hidden })} />
-          <Btn size="sm" icon={ICONS.trash} danger title="Supprimer" onClick={onDelete} />
-        </div>
       </div>
     )
   }
@@ -414,7 +415,7 @@ function SubtitleRow({ sub, idx, active, selected, compact, fps, charMap, charLi
       <div style={{ display: 'flex', alignItems: 'center', gap: 2, padding: '0 8px', flexShrink: 0 }}>
         <span style={{
           fontSize: 11, fontFamily: 'var(--font-mono)', marginRight: 4, minWidth: 32, ...rateStyle,
-        }} title={rate.reason}>{dur.toFixed(2)}s</span>
+        }} title={rate.reason || undefined}>{dur.toFixed(2)}s</span>
         {icBtn('Aller au timecode', 'var(--info)', () => onSeek?.(sub.start), <Ic d={ROW_ICONS.goto} />)}
         {icBtn(sub.hidden ? 'Masqué' : 'Visible', sub.hidden ? 'var(--text4)' : 'var(--success)', () => onChange({ ...sub, hidden: !sub.hidden }), <Ic d={sub.hidden ? ROW_ICONS.eyeOff : ROW_ICONS.eye} />)}
         {icBtn(sub.note ? `Note : ${sub.note}` : 'Ajouter une note', sub.note ? 'var(--accent)' : 'var(--text4)', () => setEditingNote(true), <Ic d={ROW_ICONS.note} />)}
@@ -458,6 +459,7 @@ export default function SubtitleEditor({ subtitles, onChange, currentTime = 0, o
   const charList = Array.from(new Set(subtitles.map(s => s.character || '')))
   const charMap = charMapProp || Object.fromEntries(charList.map((c, i) => [c, i]))
   const curActive = activeIndexAt(subtitles, currentTime)
+  const rates = flagLines(subtitles)
 
   useEffect(() => {
     if (curActive !== -1 && curActive !== prevActiveIdx.current) {
@@ -588,7 +590,7 @@ export default function SubtitleEditor({ subtitles, onChange, currentTime = 0, o
           return (
             <div key={i} ref={active ? activeRef : null} style={{ opacity: sub.hidden ? 0.45 : 1 }}>
               <SubtitleRow
-                sub={sub} idx={i} active={active} selected={selectedIdx === i}
+                sub={sub} idx={i} rate={rates[i]} active={active} selected={selectedIdx === i}
                 compact={compact} fps={fps}
                 charMap={charMap} charList={charList}
                 onChange={(next, field) => update(i, next, field)}

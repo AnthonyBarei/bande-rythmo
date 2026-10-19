@@ -12,14 +12,17 @@ const NO_HANDLERS = {}
 // ref is the <canvas> element (hit-testing, wheel zoom, overlays).
 // `readOnly` (Studio): no handlers, no hint, default cursor, no context menu.
 // `onFrame(t)` runs after each drawn frame (Éditeur loop-region enforcement).
+// `focusChar` (character name, or null): the other characters' tracks draw at
+// 45 % opacity, the focused one at 100 % (Studio: current line's character;
+// Éditeur: the soloed character pill).
 const BandCanvas = forwardRef(function BandCanvas({
-  getTime, onFrame, readOnly = false, hoverRef = null, dragRef = null, title,
+  getTime, onFrame, readOnly = false, hoverRef = null, dragRef = null, title, focusChar = null,
   onMouseDown, onMouseMove, onMouseUp, onMouseLeave, onDoubleClick, onContextMenu,
   ...drawProps
 }, ref) {
   const canvasRef = useRef(null)
   const propsRef = useRef(null)
-  propsRef.current = { ...drawProps, getTime, onFrame, hoverRef, dragRef }
+  propsRef.current = { ...drawProps, focusChar, getTime, onFrame, hoverRef, dragRef }
 
   const setCanvas = useCallback(el => {
     canvasRef.current = el

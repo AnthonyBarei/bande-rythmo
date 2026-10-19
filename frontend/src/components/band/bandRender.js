@@ -1,6 +1,7 @@
 import { classifyChar, DEFAULT_SIGN_TOGGLES } from '../../detection'
 import { TRACK_COLORS } from '../../config/tracks'
 import { fmtClock, fmtSMPTE as fmtTC } from '../../utils/timecode'
+import { flagLines } from '../../utils/lineRate'
 
 // Bande rythmo renderer — shared by the Éditeur (interactive) and the Studio
 // (read-only). Constant-speed scrolling: the cursor sits at CURSOR_X_RATIO × W,
@@ -59,6 +60,28 @@ export const bandAccent = accent => (/^#[0-9a-f]{6}$/i.test(accent || '') ? acce
 // the dialogue text). Same on canvas and in MP4 burn (see br_renderer).
 const SIGN_COLOR = '#c7ccd4'
 const SIGN_COLOR_INACTIVE = 'rgba(199,204,212,0.45)'
+
+// Focus (FIXES_R6 #8): with a focused character, the other tracks draw at
+// FOCUS_DIM so the actor reads their own line. focusChar null → no focus.
+export const FOCUS_DIM = 0.45
+export const focusTrackOf = (charMap, focusChar) =>
+  focusChar == null ? null : (charMap[focusChar] ?? null)
+export const trackAlpha = (track, focusTrack) =>
+  focusTrack == null || track === focusTrack ? 1 : FOCUS_DIM
+
+// Block underline (FIXES_R6 #1): same rule as the réplique list — danger red
+// for a too-short / overlapping line, accent for an edited text that no
+// longer fits its timing, none otherwise.
+export const underlineColor = (level, accent) =>
+  level === 'danger' ? DANGER : level === 'warn' ? accent : null
+
+// flagLines once per subtitles array (the RAF loop redraws every frame).
+const flagCache = new WeakMap()
+function cachedFlags(subtitles) {
+  let flags = flagCache.get(subtitles)
+  if (!flags) { flags = flagLines(subtitles); flagCache.set(subtitles, flags) }
+  return flags
+}
 
 // Persisted band toggles (Éditeur writes them): détection layer + per-sign
 // toggles, auto-classify hint, word-by-word rendering. No storage → defaults.
@@ -136,13 +159,14 @@ export function validWords(sub) {
 // One frame of the band at band time `t`. `o` carries the data and the look:
 // { subtitles, charMap, numTracks, pxPerSec, brStyle, accent, brFont, fontScale,
 //   wordByWord, detection, detectionAuto, waveform, boucles, sceneCuts, clipFps,
-//   loopRegion, charFilter }. `hover` ({x, time}) draws the scrub line unless
+//   loopRegion, charFilter, focusChar }. `hover` ({x, time}) draws the scrub line unless
 // `dragging`.
 export function drawBand(canvas, t, o, hover = null, dragging = false) {
   const {
     subtitles, charMap, numTracks, pxPerSec: pxSec, brStyle: style, accent, brFont, fontScale,
-    wordByWord, detection, detectionAuto, waveform, boucles, sceneCuts, clipFps, loopRegion, charFilter,
+    wordByWord, detection, detectionAuto, waveform, boucles, sceneCuts, clipFps, loopRegion, charFilter, focusChar,
   } = o
+  const focusTrack = focusTrackOf(charMap, focusChar)
   const onsets = waveform?.onsets || null
 
   // Backing store at device pixels (crisp text on HiDPI); all drawing and
@@ -219,6 +243,7 @@ export function drawBand(canvas, t, o, hover = null, dragging = false) {
       const yMid = track * trackH + trackH / 2
       const maxAmp = Math.min(trackH * 0.38, WAVE_MAX_AMP)
       const color = TRACK_COLORS[track % TRACK_COLORS.length]
+      ctx.globalAlpha = trackAlpha(track, focusTrack)
 
       if (waveData && waveData.samples.length > 0) {
         const { samples, duration: wavDur } = waveData
@@ -288,6 +313,8 @@ export function drawBand(canvas, t, o, hover = null, dragging = false) {
     }
   }
 
+  ctx.globalAlpha = 1
+
   // Onset markers (snap targets from waveform analysis)
   if (onsets && onsets.length) {
     const tStartView = t - cursor_x / pxSec
@@ -305,7 +332,9 @@ export function drawBand(canvas, t, o, hover = null, dragging = false) {
   // DOUBLAGE_IA_REVIEW §6.2: when header pills filter, dim non-matching subs.
   const _cFilter = charFilter
   const _filterActive = _cFilter && _cFilter.size > 0
-  for (const sub of subtitles) {
+  const flags = cachedFlags(subtitles)
+  for (let si = 0; si < subtitles.length; si++) {
+    const sub = subtitles[si]
     if (sub.hidden) continue
     const trackIdx = charMap[sub.character || ''] ?? 0
     const trackH = H / numTracks
@@ -317,8 +346,12 @@ export function drawBand(canvas, t, o, hover = null, dragging = false) {
     const isActive = t >= sub.start && t <= sub.end
     const bx = Math.max(0, leftX)
     const bw = Math.min(W, rightX) - bx
-    const _dimmed = _filterActive && !_cFilter.has(sub.character || '')
-    if (_dimmed) ctx.globalAlpha = 0.15
+    // Focus wins over the pill filter's dim (a soloed pill passes focusChar).
+    const subAlpha = focusTrack != null
+      ? trackAlpha(trackIdx, focusTrack)
+      : (_filterActive && !_cFilter.has(sub.character || '') ? 0.15 : 1)
+    const _dimmed = subAlpha < 1
+    if (_dimmed) ctx.globalAlpha = subAlpha
 
     // Block fill — reference BandCanvas: tinted fill + 2.5px left bar, no outline.
     if (isMinimal) {
@@ -400,19 +433,6 @@ export function drawBand(canvas, t, o, hover = null, dragging = false) {
         ctx.restore()
         ctx.shadowBlur = 0
 
-        // ── Stretch marker — reference BandCanvas: 2px danger bar INSIDE
-        // the block (y0 + trackH − 4), only when the text is squeezed
-        // (< 0.82). Held words (capped stretch) get no bar: a sparse
-        // réplique is normal, and per-word bars read as a block outline.
-        if (!isMinimal && scaleX < 0.82) {
-          const mx0 = Math.max(wbx, leftX + 2)
-          const mx1 = Math.min(wbx + wbw, rightX - 2)
-          if (mx1 > mx0) {
-            ctx.fillStyle = DANGER
-            ctx.fillRect(mx0, yTop + trackH - 4, mx1 - mx0, 2)
-          }
-        }
-
         // ── Détection signs — graphite, pinned to letter x-positions ──
         // Drawn AFTER the glyphs (so they sit visually on top), inside the
         // same per-word block so x scales with the letter compression.
@@ -487,6 +507,18 @@ export function drawBand(canvas, t, o, hover = null, dragging = false) {
             ctx.restore()
           }
         }
+      }
+    }
+
+    // ── Flag underline — reference BandCanvas: 2px bar INSIDE the block
+    // (y0 + trackH − 4), one per flagged line (same rule as the list).
+    const ulColor = isMinimal ? null : underlineColor(flags[si]?.level, accent)
+    if (ulColor) {
+      const mx0 = Math.max(0, leftX + 2)
+      const mx1 = Math.min(W, rightX - 2)
+      if (mx1 > mx0) {
+        ctx.fillStyle = ulColor
+        ctx.fillRect(mx0, yTop + trackH - 4, mx1 - mx0, 2)
       }
     }
 
@@ -655,6 +687,7 @@ export function drawBand(canvas, t, o, hover = null, dragging = false) {
     const color = TRACK_COLORS[tr % TRACK_COLORS.length]
     const trackH = H / numTracks
     const label = char.toUpperCase() || '(DEF)'
+    ctx.globalAlpha = trackAlpha(tr, focusTrack)
     ctx.font = 'bold 10px "IBM Plex Sans", sans-serif'
     const lw = ctx.measureText(label).width
     const ly = tr * trackH + 4
@@ -665,6 +698,7 @@ export function drawBand(canvas, t, o, hover = null, dragging = false) {
     ctx.textBaseline = 'middle'
     ctx.fillText(label, 8, ly + 8)
   }
+  ctx.globalAlpha = 1
 
   // Loop region overlay + enforcement
   const lr = loopRegion

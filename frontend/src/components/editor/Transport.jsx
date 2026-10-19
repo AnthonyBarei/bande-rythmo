@@ -1,10 +1,12 @@
 import React, { useRef } from 'react'
-import { T, Icon, ICONS, Btn, Segmented } from '../../ui'
+import { T, Icon, ICONS, Btn, Select } from '../../ui'
 import { fmtSMPTE } from '../../utils/timecode'
 
 const SPEEDS = [{ v: 0.5, l: '0.5×' }, { v: 1, l: '1×' }, { v: 1.5, l: '1.5×' }, { v: 2, l: '2×' }]
 
 // The only transport on screen — reference screen-editor.jsx › Transport.
+// FIXES_R6 #4: current TC only (the total is in the video overlay) and a
+// compact speed Select, so the scrub keeps ≥ 240px with the inspector open.
 export default function Transport({
   currentTime, duration, playing, speed, muted,
   onTogglePlay, onSeek, onSeekEnd, onStepFrame, onPrevSub, onNextSub,
@@ -42,13 +44,15 @@ export default function Transport({
       <Btn size="sm" icon={ICONS.loop} active={loopActive} onClick={onToggleLoopActive} title="Boucler sur la réplique active/sélectionnée" />
       <Btn size="sm" icon={ICONS.in} onClick={onSetIn} disabled={!hasTarget} title="IN de la réplique au temps courant (I)" />
       <Btn size="sm" icon={ICONS.out} onClick={onSetOut} disabled={!hasTarget} title="OUT de la réplique au temps courant (O)" />
-      <span style={{ fontFamily: T.fontMono, fontSize: 11, color: T.text2, marginLeft: 6, whiteSpace: 'nowrap' }}>{fmtSMPTE(currentTime, clipFps)} / {fmtSMPTE(duration, clipFps)}</span>
+      <span style={{ fontFamily: T.fontMono, fontSize: 11, color: T.text2, marginLeft: 6, whiteSpace: 'nowrap' }}>{fmtSMPTE(currentTime, clipFps)}</span>
       <div ref={trackRef} onPointerDown={onPointerDown}
-        style={{ flex: 1, height: 6, background: T.surface3, borderRadius: 3, margin: '0 8px', position: 'relative', cursor: 'pointer', touchAction: 'none' }}>
+        data-transport-scrub style={{ flex: 1, height: 6, background: T.surface3, borderRadius: 3, margin: '0 8px', position: 'relative', cursor: 'pointer', touchAction: 'none' }}>
         <div style={{ width: `${pct}%`, height: '100%', background: T.accent, borderRadius: 3 }} />
         <div style={{ position: 'absolute', left: `${pct}%`, top: -3, width: 12, height: 12, borderRadius: '50%', background: T.accent, transform: 'translateX(-50%)', boxShadow: '0 1px 4px rgba(0,0,0,.4)' }} />
       </div>
-      <Segmented size="sm" value={speed} onChange={onChangeSpeed} options={SPEEDS} />
+      <span title="Vitesse de lecture" style={{ display: 'inline-flex', flexShrink: 0 }}>
+        <Select size="sm" width={64} placement="top" value={speed} onChange={onChangeSpeed} options={SPEEDS} />
+      </span>
       <Btn size="sm" icon={muted ? ICONS.mute : ICONS.volume} onClick={onToggleMute} title={muted ? 'Activer le son (M)' : 'Couper le son (M)'} />
     </div>
   )

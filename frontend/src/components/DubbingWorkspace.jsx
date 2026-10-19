@@ -1405,6 +1405,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
               clipFps={clipFps}
               loopRegion={loopRegion}
               charFilter={charFilter}
+              focusChar={charFilter.size === 1 ? [...charFilter][0] : null}
               onMouseDown={onCanvasMouseDown}
               onMouseMove={onCanvasMouseMove}
               onMouseUp={onCanvasMouseUp}
