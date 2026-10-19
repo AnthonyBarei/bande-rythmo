@@ -2,6 +2,10 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { T, Icon, ICONS, Btn, Chip, Segmented, Select, ScreenHeader, alpha } from '../ui'
 import { useProgress } from '../ProgressContext'
 import { TRACK_HEXES } from '../config/tracks'
+import { fmtSMPTE } from '../utils/timecode'
+import { defaultRange } from '../utils/gifRange'
+import SeekBar from './import/SeekBar'
+import JobError from './JobError'
 
 // F12 — short videos are imported inline as clips of this project.
 const MEME_PROJECT = 'Memes & extraits'
@@ -60,11 +64,8 @@ function wrapText(ctx, text, maxW) {
   return lines.length ? lines : [text]
 }
 
-const fmtTime = t => {
-  const m = Math.floor(t / 60)
-  const s = (t % 60).toFixed(1).padStart(4, '0')
-  return `${String(m).padStart(2, '0')}:${s}`
-}
+const DEFAULT_FPS = 25
+const MODE_ICON = { image: ICONS.film, video: ICONS.layers, audio: ICONS.volume }
 
 export default function MemeGenerator({
   clip: clipProp = null, initialTab = null,
@@ -127,6 +128,9 @@ export default function MemeGenerator({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [resultUrl, setResultUrl] = useState(null)
+  // FIXES_R5 #1 — a failed Atelier job / export is shown inline only: { err, retry }.
+  const [jobError, setJobError] = useState(null)
+  const gifJobKeyRef = useRef(null)
 
   useEffect(() => {
     if (clipsProp) return
@@ -151,6 +155,9 @@ export default function MemeGenerator({
   const [audioLoading, setAudioLoading] = useState(false)
   const [playing, setPlaying] = useState(false)
   const [dragOver, setDragOver] = useState(false)
+  // Until the user sets IN / OUT, the range follows the playhead (±3 s).
+  const rangeTouchedRef = useRef(false)
+  const fps = clip?.fps > 0 ? clip.fps : DEFAULT_FPS
 
   const canvasRef = useRef(null)
   const imgRef = useRef(null)
@@ -193,6 +200,8 @@ export default function MemeGenerator({
     setInPoint(0)
     setOutPoint(0)
     setPlaying(false)
+    setJobError(null)
+    rangeTouchedRef.current = false
   }, [clip?.clip_id])
 
   // Release replaced blob URLs (frames, GIFs, results can weigh several MB).
@@ -497,9 +506,23 @@ export default function MemeGenerator({
     const { videoWidth: vw, videoHeight: vh } = e.target
     if (vw > 0 && vh > 0) setVideoAr(vw / vh)
     setVideoDuration(dur)
-    setOutPoint(prev => prev === 0 ? dur : prev)
+    if (!rangeTouchedRef.current) {
+      const r = defaultRange(e.target.currentTime, dur)
+      setInPoint(r.in)
+      setOutPoint(r.out)
+    }
     setVideoReady(true)
   }
+
+  // Entering GIF / Audio with an untouched range recentres it on the playhead.
+  useEffect(() => {
+    if (sourceTab === 'image' || rangeTouchedRef.current) return
+    const v = videoRef.current
+    if (!v || !Number.isFinite(v.duration) || v.duration <= 0) return
+    const r = defaultRange(v.currentTime, v.duration)
+    setInPoint(r.in)
+    setOutPoint(r.out)
+  }, [sourceTab])
 
   function seekVideo(t) {
     setVideoTime(t)
@@ -523,13 +546,14 @@ export default function MemeGenerator({
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [segmentUrl, imageUrl, videoDuration, inPoint, outPoint])
+  }, [segmentUrl, imageUrl, videoDuration, inPoint, outPoint, sourceTab])
 
   function togglePlay() {
     const v = videoRef.current
     if (!v) return
     if (v.paused) {
-      if (v.currentTime >= outPoint) v.currentTime = inPoint
+      // GIF / Audio preview plays the selection; Image mode plays freely.
+      if (sourceTab !== 'image' && (v.currentTime >= outPoint || v.currentTime < inPoint)) v.currentTime = inPoint
       v.play()
     } else {
       v.pause()
@@ -539,7 +563,8 @@ export default function MemeGenerator({
   function onGifTimeUpdate(e) {
     const t = e.target.currentTime
     setVideoTime(t)
-    if (t >= outPoint) {
+    // Only playback wraps at OUT — seeking past it must stay free to pick a new range.
+    if (!e.target.paused && t >= outPoint) {
       e.target.pause()
       e.target.currentTime = inPoint
       setPlaying(false)
@@ -566,6 +591,7 @@ export default function MemeGenerator({
     if (duration <= 0) { setError('OUT doit être après IN'); return }
     setGifLoading(true)
     setError(null)
+    setJobError(null)
     const body = {
       segment_id: clip.clip_id, subtitles: [],
       format: 'gif', in_point: inPoint, out_point: outPoint,
@@ -579,14 +605,25 @@ export default function MemeGenerator({
       const { job_id } = await res.json()
       return job_id
     }
+    const failed = err => { setJobError({ err, retry: retryGif }); setGifLoading(false) }
+    // Activité's Réessayer also goes through here: a refused restart shows inline.
+    const retryJob = async () => {
+      try {
+        return await fireJob()
+      } catch (e) {
+        failed(e)
+        throw e
+      }
+    }
     try {
       const jobId = await fireJob()
-      progress.start({
+      const handle = progress.start({
         kind: 'export-gif',
         clipId: clip.clip_id,
         title: 'GIF — génération',
         jobId,
-        retry: fireJob,
+        retry: retryJob,
+        toast: false,
         onDone: (blob) => {
           if (blob && blob instanceof Blob) {
             setImageName(`${clip.name}_${inPoint.toFixed(1)}s-${outPoint.toFixed(1)}s.gif`)
@@ -595,19 +632,34 @@ export default function MemeGenerator({
           }
           setGifLoading(false)
         },
-        onError: (err) => { setError('Erreur GIF : ' + err.message); setGifLoading(false) },
+        onError: failed,
         onCancel: () => { setError('GIF annulé.'); setGifLoading(false) },
       })
+      gifJobKeyRef.current = handle.key
     } catch (e) {
-      setError('Erreur GIF : ' + e.message)
-      setGifLoading(false)
+      gifJobKeyRef.current = null
+      failed(e)
     }
+  }
+
+  // Inline Réessayer: restart the failed job in place (one Activité row), or
+  // start a new one when it is gone (dismissed, or never started).
+  function retryGif() {
+    const key = gifJobKeyRef.current
+    if (key && progress.jobs.some(j => j.key === key && j.status === 'error')) {
+      setJobError(null)
+      setGifLoading(true)
+      progress.retry(key)
+      return
+    }
+    createGif()
   }
 
   async function createAudio(format) {
     if (!clip) return
     setAudioLoading(true)
     setError(null)
+    setJobError(null)
     try {
       if (outPoint <= inPoint) throw new Error('OUT doit être après IN')
       const res = await fetch('/api/export/export', {
@@ -632,7 +684,7 @@ export default function MemeGenerator({
       a.remove()
       setTimeout(() => URL.revokeObjectURL(url), 1000)
     } catch (e) {
-      setError('Erreur audio : ' + e.message)
+      setJobError({ err: e, retry: () => createAudio(format) })
     } finally {
       setAudioLoading(false)
     }
@@ -696,8 +748,11 @@ export default function MemeGenerator({
     document.addEventListener('mouseup', onUp)
   }
 
-  const dragIn = t => { const v = Math.max(0, Math.min(t, outPoint - 0.1)); setInPoint(v); seekVideo(v) }
-  const dragOut = t => { const v = Math.min(videoDuration, Math.max(t, inPoint + 0.1)); setOutPoint(v); seekVideo(v) }
+  const dragIn = t => { rangeTouchedRef.current = true; const v = Math.max(0, Math.min(t, outPoint - 0.1)); setInPoint(v); seekVideo(v) }
+  const dragOut = t => { rangeTouchedRef.current = true; const v = Math.min(videoDuration, Math.max(t, inPoint + 0.1)); setOutPoint(v); seekVideo(v) }
+  const markDrag = (which, t) => (which === 'in' ? dragIn : dragOut)(t)
+  const pauseVideo = () => videoRef.current?.pause()
+  const scrubTo = t => { setVideoTime(t); if (videoRef.current) videoRef.current.currentTime = t }
 
   const sel = texts.find(t => t.id === selectedId)
   const selIndex = texts.findIndex(t => t.id === selectedId)
@@ -707,11 +762,14 @@ export default function MemeGenerator({
   const pct = t => `${(t / (videoDuration || 1)) * 100}%`
   const blue = T.info
 
-  const errorBox = error && (
-    <div style={{ padding: '8px 10px', background: alpha(T.danger, '14'), color: T.danger, borderRadius: T.r.ctl, fontSize: T.fs.xs, border: `1px solid ${alpha(T.danger, '44')}` }}>
-      {error}
-    </div>
-  )
+  const errorBox = (error || jobError) && (<>
+    {error && (
+      <div style={{ padding: '8px 10px', background: alpha(T.danger, '14'), color: T.danger, borderRadius: T.r.ctl, fontSize: T.fs.xs, border: `1px solid ${alpha(T.danger, '44')}` }}>
+        {error}
+      </div>
+    )}
+    {jobError && <JobError error={jobError.err} onRetry={jobError.retry} />}
+  </>)
 
   const noClip = !segmentUrl
 
@@ -750,7 +808,7 @@ export default function MemeGenerator({
         display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, padding: 24, textAlign: 'center',
       }}>
         <div style={{ width: 52, height: 52, borderRadius: 14, background: T.surface2, border: `1px solid ${T.border2}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <Icon d={ICONS.film} size={22} stroke={T.text2} />
+          <Icon d={MODE_ICON[sourceTab] || ICONS.film} size={22} stroke={T.text2} />
         </div>
         <div>
           <div style={{ fontSize: T.fs.md, fontWeight: 600, color: T.text }}>Choisissez une source</div>
@@ -800,38 +858,27 @@ export default function MemeGenerator({
         </div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontFamily: T.fontMono, fontSize: 11, color: T.text3 }}>
-        <span>{fmtTime(videoTime)}</span>
+        <span>{fmtSMPTE(videoTime, fps)}</span>
         <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>{transport}</div>
-        <span>{fmtTime(videoDuration)}</span>
+        <span>{fmtSMPTE(videoDuration, fps)}</span>
       </div>
     </div>
   )
 
-  const rangeFooter = (
-    <div style={{ padding: '14px 16px', borderTop: `1px solid ${T.border}`, display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div ref={timelineRef} onMouseDown={e => trackDrag(e, seekVideo)}
-        style={{ position: 'relative', height: 10, background: T.surface3, borderRadius: 3, cursor: 'pointer' }}>
-        <div style={{ position: 'absolute', left: pct(inPoint), width: pct(outPoint - inPoint), top: 0, bottom: 0, background: alpha(T.accent, '44'), borderRadius: 3 }} />
-        <div onMouseDown={e => trackDrag(e, dragIn)} title="Glisser pour régler IN"
-          style={{ position: 'absolute', left: pct(inPoint), top: -4, bottom: -4, width: 11, marginLeft: -4, cursor: 'ew-resize', display: 'flex', justifyContent: 'center' }}>
-          <div style={{ marginTop: 4, height: 10, width: 3, background: blue, borderRadius: 1 }} />
-        </div>
-        <div onMouseDown={e => trackDrag(e, dragOut)} title="Glisser pour régler OUT"
-          style={{ position: 'absolute', left: `calc(${pct(outPoint)} - 3px)`, top: -4, bottom: -4, width: 11, marginLeft: -4, cursor: 'ew-resize', display: 'flex', justifyContent: 'center' }}>
-          <div style={{ marginTop: 4, height: 10, width: 3, background: T.accent, borderRadius: 1 }} />
-        </div>
-        <div style={{ position: 'absolute', left: pct(videoTime), top: -3, bottom: -3, width: 2, background: '#fff', pointerEvents: 'none' }} />
+  // FIXES_R5 #4 — the Importer's seek bar: IN→OUT in info 33 with an accent
+  // OUT edge; dragging an edge moves IN / OUT, anywhere else seeks.
+  const rangeFooter = (<>
+    <SeekBar t={videoTime} duration={videoDuration} fps={fps} markIn={inPoint} markOut={outPoint}
+      onScrubStart={pauseVideo} onScrub={scrubTo} onScrubEnd={() => {}} onMarkDrag={markDrag} />
+    <div style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8, fontFamily: T.fontMono, fontSize: 11, background: T.surface }}>
+      <Chip soft color={blue} onClick={() => dragIn(videoTime)}>[ IN {fmtSMPTE(inPoint, fps)}</Chip>
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, color: T.text3 }}>
+        {transport}
+        <span>{fmtSMPTE(videoTime, fps)} · {gifDuration}s</span>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontFamily: T.fontMono, fontSize: 11 }}>
-        <Chip soft color={blue} onClick={() => setInPoint(Math.min(videoTime, outPoint - 0.1))}>[ IN {fmtTime(inPoint)}</Chip>
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, color: T.text3 }}>
-          {transport}
-          <span>{fmtTime(videoTime)} · {gifDuration}s</span>
-        </div>
-        <Chip soft color={T.accent} onClick={() => setOutPoint(Math.max(videoTime, inPoint + 0.1))}>OUT {fmtTime(outPoint)} ]</Chip>
-      </div>
+      <Chip soft color={T.accent} onClick={() => dragOut(videoTime)}>OUT {fmtSMPTE(outPoint, fps)} ]</Chip>
     </div>
-  )
+  </>)
 
   const hint = text => <p style={{ fontSize: T.fs.xs, color: T.text3, lineHeight: 1.6, margin: 0 }}>{text}</p>
 

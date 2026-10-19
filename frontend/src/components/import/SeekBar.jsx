@@ -3,10 +3,13 @@ import { T, alpha } from '../../ui'
 import { fmtSMPTE } from '../../utils/timecode'
 
 const TIP_HALF = 42
+const GRAB_PX = 6
 
 // Reference screen-import.jsx Preview — seek bar: click / drag anywhere,
 // played part accent 88, IN→OUT range info 33, hover timecode.
-export default function SeekBar({ t, duration, fps, markIn, markOut, onScrubStart, onScrub, onScrubEnd }) {
+// `onMarkDrag(which, t)` (optional, Atelier): pressing within GRAB_PX of the
+// IN / OUT edge drags that edge instead of seeking.
+export default function SeekBar({ t, duration, fps, markIn, markOut, onScrubStart, onScrub, onScrubEnd, onMarkDrag }) {
   const trackRef = useRef(null)
   const cleanupRef = useRef(null)
   const [hover, setHover] = useState(null)
@@ -20,18 +23,30 @@ export default function SeekBar({ t, duration, fps, markIn, markOut, onScrubStar
   }
   const pct = v => (duration > 0 ? Math.max(0, Math.min(100, (v / duration) * 100)) : 0)
 
+  // Which IN / OUT edge sits under the pointer, if any (closest wins).
+  function edgeAt(e) {
+    if (!onMarkDrag || !duration) return null
+    const box = trackRef.current.getBoundingClientRect()
+    const x = e.clientX - box.left
+    const dist = v => (v == null ? Infinity : Math.abs((v / duration) * box.width - x))
+    const dIn = dist(markIn), dOut = dist(markOut)
+    if (Math.min(dIn, dOut) > GRAB_PX) return null
+    return dOut <= dIn ? 'out' : 'in'
+  }
+
   function onPointerDown(e) {
     if (e.button !== 0 || !duration) return
     e.preventDefault()
-    onScrubStart()
-    onScrub(timeAt(e))
-    const move = ev => onScrub(timeAt(ev))
+    const edge = edgeAt(e)
+    const begin = edge ? () => onMarkDrag(edge, timeAt(e)) : () => { onScrubStart(); onScrub(timeAt(e)) }
+    const move = edge ? ev => onMarkDrag(edge, timeAt(ev)) : ev => onScrub(timeAt(ev))
+    begin()
     const stop = () => {
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', stop)
       window.removeEventListener('pointercancel', stop)
       cleanupRef.current = null
-      onScrubEnd()
+      if (!edge) onScrubEnd()
     }
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', stop)
@@ -43,7 +58,7 @@ export default function SeekBar({ t, duration, fps, markIn, markOut, onScrubStar
     if (!duration) return
     const bar = e.currentTarget.getBoundingClientRect()
     const x = Math.max(TIP_HALF, Math.min(bar.width - TIP_HALF, e.clientX - bar.left))
-    setHover({ x, t: timeAt(e) })
+    setHover({ x, t: timeAt(e), edge: edgeAt(e) })
   }
 
   const rangeEnd = markOut ?? t
@@ -51,7 +66,7 @@ export default function SeekBar({ t, duration, fps, markIn, markOut, onScrubStar
     <div onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerLeave={() => setHover(null)}
       role="slider" aria-label="Position de lecture" aria-valuemin={0} aria-valuemax={Math.round(duration)} aria-valuenow={Math.round(t)}
       aria-valuetext={fmtSMPTE(t, fps)} title={duration ? undefined : 'Chargement de la vidéo…'}
-      style={{ height: 22, flexShrink: 0, position: 'relative', background: T.surface, borderTop: `1px solid ${T.border}`, cursor: 'pointer', touchAction: 'none' }}>
+      style={{ height: 22, flexShrink: 0, position: 'relative', background: T.surface, borderTop: `1px solid ${T.border}`, cursor: hover?.edge ? 'ew-resize' : 'pointer', touchAction: 'none' }}>
       <div ref={trackRef} style={{ position: 'absolute', left: 10, right: 10, top: 9, height: 4, borderRadius: 2, background: T.surface3 }}>
         <div style={{ position: 'absolute', left: 0, width: `${pct(t)}%`, top: 0, bottom: 0, background: alpha(T.accent, '88'), borderRadius: 2 }} />
         {markIn != null && (
@@ -69,7 +84,7 @@ export default function SeekBar({ t, duration, fps, markIn, markOut, onScrubStar
         <div style={{
           position: 'absolute', left: hover.x, bottom: 'calc(100% + 4px)', transform: 'translateX(-50%)', padding: '2px 6px', borderRadius: 4,
           background: T.surface2, border: `1px solid ${T.border2}`, fontFamily: T.fontMono, fontSize: 11, color: T.text, pointerEvents: 'none', whiteSpace: 'nowrap',
-        }}>{fmtSMPTE(hover.t, fps)}</div>
+        }}>{hover.edge ? `${hover.edge === 'in' ? 'IN' : 'OUT'} · ` : ''}{fmtSMPTE(hover.t, fps)}</div>
       )}
     </div>
   )

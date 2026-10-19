@@ -9,33 +9,34 @@ import { useExportScreen } from './exportScreen'
 import { primaryRowKey } from '../utils/primaryRow'
 import { EXPORT_QUEUE, inExportQueue } from '../utils/toastScope'
 import { useNow } from '../utils/useNow'
+import { formatColor, NEUTRAL_FORMAT_COLOR } from '../utils/formatColors'
 
 // Export screen — port of redesign screen-record-export.jsx → Export,
 // QueueRow, RangeField, ExportOptions.
 
 const GROUPS = [
   { label: 'Vidéo bande rythmo', hint: 'regarder / partager', fmts: [
-    { id: 'mp4',        ext: 'MP4 + BR',   ic: ICONS.film,   desc: 'Vidéo avec BR incrustée', c: '#5EC27C', heavy: true, needsSubs: true },
-    { id: 'gif',        ext: 'GIF',        ic: ICONS.layers, desc: 'Clip animé', c: '#FF6644', heavy: true },
-    { id: 'mp4-dubbed', ext: 'MP4 doublé', ic: ICONS.users,  desc: 'Prises mixées sur la VO', c: '#4FD1C5', heavy: true },
-    { id: 'dubpack',    ext: 'Dubpack',    ic: ICONS.folder, desc: 'Pack Choicer Voicer · OGV + répliques', c: '#E879F9', heavy: true, needsSubs: true },
+    { id: 'mp4',        ext: 'MP4 + BR',   ic: ICONS.film,   desc: 'Vidéo avec BR incrustée', c: formatColor('mp4'), heavy: true, needsSubs: true },
+    { id: 'gif',        ext: 'GIF',        ic: ICONS.layers, desc: 'Clip animé', c: formatColor('gif'), heavy: true },
+    { id: 'mp4-dubbed', ext: 'MP4 doublé', ic: ICONS.users,  desc: 'Prises mixées sur la VO', c: formatColor('mp4-dubbed'), heavy: true },
+    { id: 'dubpack',    ext: 'Dubpack',    ic: ICONS.folder, desc: 'Pack Choicer Voicer · OGV + répliques', c: formatColor('dubpack'), heavy: true, needsSubs: true },
   ]},
   { label: 'Sous-titres', hint: 'montage / compat', fmts: [
-    { id: 'srt',         ext: 'SRT',         ic: ICONS.sub,  desc: 'Standard', c: '#5AA9F0', needsSubs: true },
-    { id: 'ass',         ext: 'ASS',         ic: ICONS.film, desc: 'Défilement BR', c: '#A98BF0', needsSubs: true },
-    { id: 'ass-karaoke', ext: 'ASS Karaoké', ic: ICONS.mic,  desc: 'Tags \\kf par mot', c: '#C8A0FF', needsSubs: true },
+    { id: 'srt',         ext: 'SRT',         ic: ICONS.sub,  desc: 'Standard', c: formatColor('srt'), needsSubs: true },
+    { id: 'ass',         ext: 'ASS',         ic: ICONS.film, desc: 'Défilement BR', c: formatColor('ass'), needsSubs: true },
+    { id: 'ass-karaoke', ext: 'ASS Karaoké', ic: ICONS.mic,  desc: 'Tags \\kf par mot', c: formatColor('ass-karaoke'), needsSubs: true },
   ]},
   { label: 'Documents studio', hint: 'plateau', fmts: [
-    { id: 'detx',      ext: 'DetX',      ic: ICONS.target, desc: 'Standard FR · détection', c: '#FF9944', needsSubs: true },
-    { id: 'croisille', ext: 'Croisillé', ic: ICONS.grid,   desc: 'Grille perso × boucles', c: '#DDAA44', needsSubs: true },
+    { id: 'detx',      ext: 'DetX',      ic: ICONS.target, desc: 'Standard FR · détection', c: formatColor('detx'), needsSubs: true },
+    { id: 'croisille', ext: 'Croisillé', ic: ICONS.grid,   desc: 'Grille perso × boucles', c: formatColor('croisille'), needsSubs: true },
   ]},
   { label: 'Audio', hint: 'soundboard', fmts: [
-    { id: 'mp3', ext: 'MP3', ic: ICONS.volume, desc: 'Compressé', c: '#F06AA0' },
-    { id: 'wav', ext: 'WAV', ic: ICONS.volume, desc: 'Sans perte', c: '#A98BF0' },
+    { id: 'mp3', ext: 'MP3', ic: ICONS.volume, desc: 'Compressé', c: formatColor('mp3') },
+    { id: 'wav', ext: 'WAV', ic: ICONS.volume, desc: 'Sans perte', c: formatColor('wav') },
   ]},
 ]
 const FORMATS = GROUPS.flatMap(g => g.fmts)
-const fmtOf = id => FORMATS.find(f => f.id === id) || { id, ext: (id || '').toUpperCase(), c: '#A6A6AE' }
+const fmtOf = id => FORMATS.find(f => f.id === id) || { id, ext: (id || '').toUpperCase(), c: NEUTRAL_FORMAT_COLOR }
 
 // Async (job) formats → endpoint + download name.
 const JOB_FORMATS = {
@@ -98,13 +99,20 @@ export default function ExportPanel(props) {
 
 function ExportScreen({ segmentId, subtitles, boucles = [], pxPerSec = 180, brOffset = 0, canvasH = 64, getCanvasWidth, brFont = 'atkinson', brStyle = 'classique', duration = 0, getCurrentTime, loopRegion = null, onBack, onActivity, clipName, fill }) {
   const [sel, setSel] = useState('mp4')
-  const [loading, setLoading] = useState(null)
+  // Sync (non-job) exports in flight, one queue row each. The launch button
+  // never blocks (FIXES_R5 #12); `launching` is its 600 ms click feedback.
+  const [syncRuns, setSyncRuns] = useState([])
+  const [launching, setLaunching] = useState(false)
+  const launchTimerRef = useRef(null)
+  const runSeqRef = useRef(0)
   const [error, setError] = useState(null)
   const [lastExport, setLastExport] = useState(null)
   const { settings } = useSettings()
   const [detectionBurn, setDetectionBurn] = useState(() => !!settings.exportDetectionBurn)
   const [quality, setQuality] = useState('standard')
-  const [exportFont, setExportFont] = useState(brFont)
+  // Police BR follows the editor's band font unless overridden for this export.
+  const [fontOverride, setFontOverride] = useState(null)
+  const exportFont = fontOverride ?? brFont
   // Custom export range — off = whole clip. Applies to every format.
   const [rangeOn, setRangeOn] = useState(false)
   const [rangeIn, setRangeIn] = useState(0)
@@ -119,6 +127,8 @@ function ExportScreen({ segmentId, subtitles, boucles = [], pxPerSec = 180, brOf
   const progress = useProgress()
   const mix = useMix(segmentId)
   const now = useNow()
+
+  useEffect(() => () => clearTimeout(launchTimerRef.current), [])
 
   useEffect(() => {
     try { localStorage.setItem('export-auto-dl', autoDownload ? '1' : '0') } catch { /* storage unavailable — keep in-memory value */ }
@@ -234,9 +244,9 @@ function ExportScreen({ segmentId, subtitles, boucles = [], pxPerSec = 180, brOf
       retry: fireJob,
       downloadOnDone: autoDownload,
       downloadFilename: job.file,
-      onDone: () => { setLastExport(format); setLoading(null); refreshHistory() },
-      onError: (err) => { setError('Erreur export : ' + err.message); setLoading(null) },
-      onCancel: () => { setError('Export annulé.'); setLoading(null) },
+      onDone: () => { setLastExport(format); refreshHistory() },
+      onError: (err) => setError('Erreur export : ' + err.message),
+      onCancel: () => setError('Export annulé.'),
     })
     JOB_META.set(handle.key, { fmt: format, file: job.file })
   }
@@ -246,7 +256,7 @@ function ExportScreen({ segmentId, subtitles, boucles = [], pxPerSec = 180, brOf
     if (format === 'mp4-dubbed') { setError(null); mix.exportDub(refreshHistory); return }
     const f = fmtOf(format)
     if (f.needsSubs && !subtitles.length) { setError('Aucune réplique — ajoutez des sous-titres d\'abord.'); return }
-    setLoading(format)
+    flashLaunching()
     setError(null)
     mix.clearMsg()
     const body = buildBody(format, f)
@@ -254,12 +264,13 @@ function ExportScreen({ segmentId, subtitles, boucles = [], pxPerSec = 180, brOf
       try {
         await startJob(format, body)
       } catch (e) {
-        // A job that failed to start — otherwise the launch button stays disabled.
         setError('Erreur export : ' + e.message)
-        setLoading(null)
       }
       return
     }
+    runSeqRef.current += 1
+    const run = { id: `${format}-${runSeqRef.current}`, format }
+    setSyncRuns(prev => [...prev, run])
     try {
       const res = await postJson('/api/export/export', body)
       const blob = await res.blob()
@@ -274,8 +285,14 @@ function ExportScreen({ segmentId, subtitles, boucles = [], pxPerSec = 180, brOf
     } catch (e) {
       setError('Erreur export : ' + e.message)
     } finally {
-      setLoading(null)
+      setSyncRuns(prev => prev.filter(r => r.id !== run.id))
     }
+  }
+
+  function flashLaunching() {
+    clearTimeout(launchTimerRef.current)
+    setLaunching(true)
+    launchTimerRef.current = setTimeout(() => setLaunching(false), 600)
   }
 
   const selFmt = fmtOf(sel)
@@ -288,13 +305,13 @@ function ExportScreen({ segmentId, subtitles, boucles = [], pxPerSec = 180, brOf
 
   const jobs = (progress.jobs || []).filter(j => inExportQueue(j, segmentId))
   const runningCount = jobs.filter(j => j.status === 'running').length
-    + (loading && !JOB_FORMATS[loading] ? 1 : 0) + (mix.busy ? 1 : 0)
+    + syncRuns.length + (mix.busy ? 1 : 0)
 
   const status = error
     ? { c: T.danger, text: error }
     : mix.msg
       ? { c: mix.msg.kind === 'ok' ? T.success : T.danger, text: mix.msg.text }
-      : (lastExport && !loading)
+      : (lastExport && !syncRuns.length)
         ? { c: T.success, text: `Export ${fmtOf(lastExport).ext} ${autoDownload ? 'téléchargé' : 'terminé — disponible dans la liste'}` }
         : null
 
@@ -359,7 +376,7 @@ function ExportScreen({ segmentId, subtitles, boucles = [], pxPerSec = 180, brOf
                   sel={sel}
                   quality={quality} setQuality={setQuality}
                   detectionBurn={detectionBurn} setDetectionBurn={setDetectionBurn}
-                  exportFont={exportFont} setExportFont={setExportFont} brFont={brFont}
+                  exportFont={exportFont} setExportFont={v => setFontOverride(v === brFont ? null : v)} brFont={brFont}
                   gpu={gpu} setGpu={setGpu} hwEncoders={hwEncoders}
                 />
                 <Tg label="Télécharger automatiquement" on={autoDownload} onToggle={() => setAutoDownload(v => !v)}
@@ -368,10 +385,11 @@ function ExportScreen({ segmentId, subtitles, boucles = [], pxPerSec = 180, brOf
             )}
             <div style={{ flex: 1 }} />
             {status && <div style={{ fontSize: T.fs.micro, color: status.c, lineHeight: 1.5, marginTop: 10 }}>{status.text}</div>}
-            <Btn variant="primary" size="lg" full icon={ICONS.download} style={{ marginTop: 14 }}
-              disabled={!!loading || unavailable} onClick={() => handleExport(sel)}
-              title={loading ? 'Un export est déjà en cours' : unavailableReason}>
-              {sel === 'mp4-dubbed' && mix.busy ? 'Mixage en cours…' : loading ? 'Export…' : 'Lancer l\'export'}
+            <Btn variant="primary" size="lg" full icon={launching ? undefined : ICONS.download} style={{ marginTop: 14 }}
+              disabled={unavailable} onClick={() => handleExport(sel)}
+              title={unavailableReason || (runningCount > 0 ? 'Ajoute un export à la file — les exports en cours continuent' : undefined)}>
+              {launching && <Spinner />}
+              {sel === 'mp4-dubbed' && mix.busy ? 'Mixage en cours…' : 'Lancer l\'export'}
             </Btn>
             <div style={{ fontSize: 10, color: T.text4, textAlign: 'center', marginTop: 8 }}>apparaît dans la liste → téléchargez quand prêt</div>
           </div>
@@ -392,9 +410,10 @@ function ExportScreen({ segmentId, subtitles, boucles = [], pxPerSec = 180, brOf
                   onRetry={() => progress.retry(j.key)}
                   onDismiss={() => progress.dismiss(j.key)} />
               ))}
-              {loading && !JOB_FORMATS[loading] && (
-                <QueueRow q={{ ext: fmtOf(loading).ext, c: fmtOf(loading).c, file: `${fmtOf(loading).ext} · ${clipName || segmentId}`, status: 'render', stage: 'Génération…' }} />
-              )}
+              {syncRuns.map(r => {
+                const f = fmtOf(r.format)
+                return <QueueRow key={r.id} q={{ ext: f.ext, c: f.c, file: `${f.ext} · ${clipName || segmentId}`, status: 'render', stage: 'Génération…' }} />
+              })}
               {mix.busy && (
                 <QueueRow q={{ ext: 'MP4 doublé', c: fmtOf('mp4-dubbed').c, file: 'clip_double.mp4', status: 'render', stage: 'Mixage…' }} />
               )}
@@ -418,7 +437,7 @@ function ExportScreen({ segmentId, subtitles, boucles = [], pxPerSec = 180, brOf
                   <Btn size="sm" danger icon={ICONS.trash} onClick={clearHistory} title="Supprimer tous les exports de ce clip">Vider</Btn>
                 </div>
               )}
-              {!jobs.length && !history.length && !loading && !mix.busy && (
+              {!jobs.length && !history.length && !syncRuns.length && !mix.busy && (
                 <div style={{ fontSize: T.fs.xs, color: T.text3, textAlign: 'center', padding: '28px 0' }}>
                   Aucun export pour ce clip — choisissez un format puis lancez l'export.
                 </div>
@@ -429,6 +448,10 @@ function ExportScreen({ segmentId, subtitles, boucles = [], pxPerSec = 180, brOf
       </div>
     </div>
   )
+}
+
+function Spinner() {
+  return <span aria-hidden style={{ width: 13, height: 13, borderRadius: '50%', border: '2px solid currentColor', borderTopColor: 'transparent', animation: 'brspin 0.7s linear infinite', display: 'inline-block', flexShrink: 0 }} />
 }
 
 function QueueRow({ q, onCancel, onDownload, onDelete, actions, primary = false }) {
@@ -578,6 +601,13 @@ function ExportOptions({ sel, quality, setQuality, detectionBurn, setDetectionBu
         desc="Off par défaut — bande propre, détails dans le DetX." />
       <Row label="Police BR">
         <Segmented value={exportFont} onChange={setExportFont} options={fontOptions} />
+        <div style={{ fontSize: 10, color: T.text3, marginTop: 6 }}>
+          {exportFont === brFont ? 'Police de la bande du projet' : (<>
+            Remplace la police du projet ({FONT_LABELS[brFont] || brFont}) ·{' '}
+            <button data-rd onClick={() => setExportFont(brFont)}
+              style={{ background: 'none', border: 'none', padding: 0, color: T.accent, fontSize: 10, cursor: 'pointer', fontFamily: T.fontUI }}>rétablir</button>
+          </>)}
+        </div>
       </Row>
       {hwEncoders?.any && (
         <>

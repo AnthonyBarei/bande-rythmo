@@ -4,7 +4,6 @@ import { fmtSMPTE } from '../../utils/timecode'
 import { parseTimecodeInput } from '../../utils/tcInput'
 
 const SPEEDS = [{ v: 0.5, l: '0.5×' }, { v: 1, l: '1×' }, { v: 2, l: '2×' }]
-const hms = (sec, fps) => fmtSMPTE(sec, fps).slice(0, 8)
 
 // Reference screen-import.jsx Preview — control row under the seek bar.
 export default function PlayerControls({
@@ -32,14 +31,14 @@ export default function PlayerControls({
             height: 26, padding: '0 9px', borderRadius: T.r.chip, border: 'none', cursor: 'pointer',
             background: markIn != null ? alpha(T.info, '22') : 'transparent', color: markIn != null ? T.info : T.text2,
             fontFamily: T.fontMono, fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap',
-          }}>[ IN {markIn != null ? hms(markIn, fps) : '—'}</button>
+          }}>[ IN {markIn != null ? fmtSMPTE(markIn, fps) : '—'}</button>
         <button data-rd onClick={onOut} title="Marquer OUT (O) · clic droit : aller à OUT"
           onContextMenu={e => { e.preventDefault(); if (markOut != null) onSeek(markOut) }}
           style={{
             height: 26, padding: '0 9px', borderRadius: T.r.chip, border: 'none', cursor: 'pointer',
             background: markOut != null ? alpha(T.accent, '22') : 'transparent', color: markOut != null ? T.accent : T.text2,
             fontFamily: T.fontMono, fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap',
-          }}>OUT {markOut != null ? hms(markOut, fps) : '—'} ]</button>
+          }}>OUT {markOut != null ? fmtSMPTE(markOut, fps) : '—'} ]</button>
         <Btn size="sm" icon={ICONS.loop} active={looping} onClick={onLoop}
           title={markIn == null ? 'Marquez un IN d’abord (I)' : looping ? 'Arrêter la boucle' : 'Lire IN → OUT en boucle'}
           style={{ height: 26, minWidth: 26 }} />

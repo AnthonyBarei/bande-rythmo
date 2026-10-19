@@ -208,9 +208,13 @@ export default function ClipCard({ clip, onDub, onRecord, onMeme, onDelete, onRe
           {onAssignProject && (
             <>
               <div style={{ flex: 1 }} />
+              {/* FIXES_R5 #8 — "+ Projet" only on hover / focus; an assigned project always shows. */}
               <Chip soft={!!clip.project} color={clip.project ? T.accent : T.text3}
                 onClick={e => { e.stopPropagation(); onAssignProject(clip.clip_id) }}
-                style={{ maxWidth: 130, overflow: 'hidden', whiteSpace: 'nowrap', flexShrink: 1, minWidth: 0 }}>
+                style={{
+                  maxWidth: 130, overflow: 'hidden', whiteSpace: 'nowrap', flexShrink: 1, minWidth: 0,
+                  opacity: clip.project || showActions ? 1 : 0, transition: 'opacity .15s',
+                }}>
                 <Icon d={clip.project ? ICONS.folder : ICONS.plus} size={12} stroke="currentColor" />
                 <span title={clip.project ? `Projet : ${clip.project} — cliquez pour changer` : 'Assigner à un projet'}
                   style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{clip.project || 'Projet'}</span>

@@ -5,6 +5,7 @@ import { Btn, Dot, Kbd, Icon, ICONS, T, alpha } from '../ui'
 import { useProgress } from '../ProgressContext'
 import { fmtClockHours } from '../utils/timecode'
 import { sourceTitle, urlFilename } from '../utils/sourceTitle'
+import { streamLabel } from '../utils/streamLabel'
 
 const TAB = { LOCAL: 'local', PLEX: 'plex', URL: 'url' }
 
@@ -239,7 +240,7 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
 
   const meta = video ? [
     duration ? fmtClockHours(duration) : null,
-    videoOptions[0]?.label,
+    streamLabel(videoOptions[0]),
   ].filter(Boolean).join(' · ') : 'Fichier local, bibliothèque Plex ou URL directe'
 
   return (
@@ -374,7 +375,9 @@ function EmptySource({ icon, title, hint, onClick, children }) {
 
 // Reference screen-import.jsx StreamPicker. "Auto" rows keep the app's
 // default-track behaviour (no remux) — the reference has no such row.
+// FIXES_R5 #19: a single track is a read-only row; the picker starts at 2.
 function StreamPicker({ videoOptions, audioOptions, videoStream, audioStream, onVideo, onAudio, remuxing, hasStreams }) {
+  const canPick = videoOptions.length > 1 || audioOptions.length > 1
   return (
     <div style={{ width: 264, flexShrink: 0, background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.r.card, padding: 16, display: 'flex', flexDirection: 'column', gap: 16, overflow: 'auto' }}>
       <div>
@@ -387,29 +390,30 @@ function StreamPicker({ videoOptions, audioOptions, videoStream, audioStream, on
       {videoOptions.length > 0 && (
         <div>
           <div style={{ fontSize: T.fs.xs, fontWeight: 600, color: T.text2, marginBottom: 8 }}>Vidéo{videoOptions.length > 1 ? ` · ${videoOptions.length} pistes` : ''}</div>
-          {videoOptions.length > 1 && (
+          {videoOptions.length === 1 ? <StreamInfo icon={ICONS.film} label={streamLabel(videoOptions[0])} /> : (<>
             <StreamRow on={videoStream == null} onClick={() => onVideo(null)} disabled={remuxing} icon={ICONS.film} label="Auto" meta="piste par défaut" />
-          )}
-          {videoOptions.map(s => (
-            <StreamRow key={s.relative_index} icon={ICONS.film} label={s.label} meta={`V${s.relative_index}`}
-              on={videoOptions.length === 1 || videoStream === s.relative_index}
-              disabled={remuxing || videoOptions.length === 1}
-              onClick={() => onVideo(s.relative_index)} />
-          ))}
+            {videoOptions.map(s => (
+              <StreamRow key={s.relative_index} icon={ICONS.film} label={streamLabel(s)} meta={`V${s.relative_index}`}
+                on={videoStream === s.relative_index} disabled={remuxing}
+                onClick={() => onVideo(s.relative_index)} />
+            ))}
+          </>)}
         </div>
       )}
       {audioOptions.length > 0 && (
         <div>
-          <div style={{ fontSize: T.fs.xs, fontWeight: 600, color: T.text2, marginBottom: 8 }}>Audio · {audioOptions.length} piste{audioOptions.length > 1 ? 's' : ''}</div>
-          <StreamRow on={audioStream == null} onClick={() => onAudio(null)} disabled={remuxing} icon={ICONS.volume} label="Auto" meta="piste par défaut" />
-          {audioOptions.map(s => (
-            <StreamRow key={s.relative_index} icon={ICONS.volume} label={s.label} meta={`A${s.relative_index}`}
-              on={audioStream === s.relative_index} disabled={remuxing}
-              onClick={() => onAudio(s.relative_index)} />
-          ))}
+          <div style={{ fontSize: T.fs.xs, fontWeight: 600, color: T.text2, marginBottom: 8 }}>Audio{audioOptions.length > 1 ? ` · ${audioOptions.length} pistes` : ''}</div>
+          {audioOptions.length === 1 ? <StreamInfo icon={ICONS.volume} label={streamLabel(audioOptions[0])} /> : (<>
+            <StreamRow on={audioStream == null} onClick={() => onAudio(null)} disabled={remuxing} icon={ICONS.volume} label="Auto" meta="piste par défaut" />
+            {audioOptions.map(s => (
+              <StreamRow key={s.relative_index} icon={ICONS.volume} label={streamLabel(s)} meta={`A${s.relative_index}`}
+                on={audioStream === s.relative_index} disabled={remuxing}
+                onClick={() => onAudio(s.relative_index)} />
+            ))}
+          </>)}
         </div>
       )}
-      {hasStreams && (
+      {hasStreams && (canPick || remuxing) && (
         <div style={{ padding: 11, background: T.bg2, border: `1px solid ${T.border}`, borderRadius: T.r.ctl, fontSize: 11, color: T.text3, lineHeight: 1.5, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
           {remuxing
             ? <><Spinner size={10} /><span>Remux en cours — <span style={{ color: T.text2 }}>extraction de la piste</span> choisie.</span></>
@@ -417,6 +421,19 @@ function StreamPicker({ videoOptions, audioOptions, videoStream, audioStream, on
         </div>
       )}
       <div style={{ flex: 1 }} />
+    </div>
+  )
+}
+
+// The only track of its kind: shown, not chosen.
+function StreamInfo({ icon, label }) {
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 10, padding: '9px 11px', marginBottom: 5,
+      borderRadius: T.r.ctl, background: T.bg2, border: `1px solid ${T.border}`,
+    }}>
+      <Icon d={icon} size={15} stroke={T.text3} />
+      <div style={{ flex: 1, minWidth: 0, fontSize: T.fs.xs, color: T.text2, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={label}>{label}</div>
     </div>
   )
 }

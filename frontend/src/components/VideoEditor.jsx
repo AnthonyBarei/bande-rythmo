@@ -3,7 +3,7 @@ import TimelineBar from './TimelineBar'
 import ImportPlayer from './import/ImportPlayer'
 import { Icon, ICONS, T, alpha } from '../ui'
 import { useProgress } from '../ProgressContext'
-import { fmtClockHours as fmt } from '../utils/timecode'
+import { fmtSMPTE } from '../utils/timecode'
 import { MARK_ID, setIn, setOut, markStep, markPhase, isComplete } from '../utils/inOut'
 
 let _pendingId = 0
@@ -11,6 +11,17 @@ const newId = () => ++_pendingId
 const NO_MARK = { markIn: null, markOut: null }
 const DEFAULT_FPS = 25
 const isTyping = el => !!el && (['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName) || el.isContentEditable)
+const UNTITLED = 'Sans nom — cliquer pour nommer'
+
+// Pending-row name field: reads as plain text at rest, placeholder in text3.
+const NAME_CSS = `
+.br-pending-name { width: 100%; min-width: 0; margin-left: -8px; padding: 4px 7px; border-radius: 6px;
+  background: transparent; border: 1px solid transparent; outline: none;
+  font: 500 ${T.fs.sm}px var(--font-ui); color: var(--text); font-style: normal; cursor: text; }
+.br-pending-name::placeholder { color: var(--text3); opacity: 1; font-style: normal; }
+.br-pending-name:hover:not(:focus) { border-color: var(--border2); }
+.br-pending-name:focus { border-color: var(--accent); background: var(--bg2); }
+`
 
 // Importer left column — reference screen-import.jsx Preview · ZoomTimeline · PendingList.
 // The header actions (Marquer un clip / Créer N clips) live in ImportSection and
@@ -28,8 +39,8 @@ export default function VideoEditor({ video, onClipsCreated, videoStream, audioS
   const [savedClips, setSavedClips] = useState([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
-  const [editingId, setEditingId] = useState(null)
-  const [editValue, setEditValue] = useState('')
+  // Row whose name field takes focus once rendered (after « Ajouter le clip »).
+  const [focusId, setFocusId] = useState(null)
   const [mark, setMark] = useState(NO_MARK)
   const [markName, setMarkName] = useState('')
   const markRef = useRef(NO_MARK)
@@ -49,11 +60,13 @@ export default function VideoEditor({ video, onClipsCreated, videoStream, audioS
     if (!isComplete(next)) setMarkName('')
   }, [])
 
-  const applyMark = useCallback((transition, t) => {
+  const applyMark = useCallback((transition, t, focusBanked = false) => {
     const { banked, ...next } = transition(markRef.current, t)
     if (banked) {
       const name = markNameRef.current
-      setPendingClips(prev => [...prev, { _id: newId(), name, ...banked }])
+      const id = newId()
+      setPendingClips(prev => [...prev, { _id: id, name, ...banked }])
+      if (focusBanked) setFocusId(id)
     }
     updateMark(next)
   }, [updateMark])
@@ -63,12 +76,15 @@ export default function VideoEditor({ video, onClipsCreated, videoStream, audioS
     setDuration(0)
     setPendingClips([])
     setSavedClips([])
-    setEditingId(null)
+    setFocusId(null)
     updateMark(NO_MARK)
   }, [video?.url, updateMark])
 
-  const saveAll = useCallback(async () => {
-    const pending = pendingRef.current
+  // `names` ({ [rowId]: name }) carries a name still being typed (Ctrl+S from its field).
+  const saveAll = useCallback(async (names = null) => {
+    const pending = names
+      ? pendingRef.current.map(c => (String(c._id) in names ? { ...c, name: names[String(c._id)] } : c))
+      : pendingRef.current
     if (pending.length === 0 || savingRef.current) return
     savingRef.current = true
     setSaving(true)
@@ -156,7 +172,7 @@ export default function VideoEditor({ video, onClipsCreated, videoStream, audioS
   }, [video?.url, video?.file, video?.filename, video?.sourcePath, onClipsCreated, videoStream, audioStream, progress, updateMark])
 
   // Header "Marquer un clip": IN, then OUT, then add the range to the pending clips.
-  const markAtPlayhead = useCallback(() => applyMark(markStep, videoRef.current?.currentTime ?? 0), [applyMark])
+  const markAtPlayhead = useCallback(() => applyMark(markStep, videoRef.current?.currentTime ?? 0, true), [applyMark])
   const handleSetIn = useCallback(t => applyMark(setIn, t), [applyMark])
   const handleSetOut = useCallback(t => applyMark(setOut, t), [applyMark])
 
@@ -172,11 +188,19 @@ export default function VideoEditor({ video, onClipsCreated, videoStream, audioS
 
   // Ctrl/⌘+S creates the pending clips (incl. a complete IN→OUT range).
   // Player keys (Space, J/L, , . I O M) live in ImportPlayer.
+  // From a pending name field (auto-focused after « Ajouter le clip »), Ctrl+S
+  // saves with the name being typed, then the blur commits it to the row.
   useEffect(() => {
     function onKey(e) {
       if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 's') return
       e.preventDefault()
-      if (isTyping(e.target) || document.querySelector('[aria-modal="true"]')) return
+      if (document.querySelector('[aria-modal="true"]')) return
+      if (e.target instanceof HTMLInputElement && e.target.dataset.pendingName) {
+        saveAll({ [e.target.dataset.pendingName]: e.target.value.trim() })
+        e.target.blur()
+        return
+      }
+      if (isTyping(e.target)) return
       saveAll()
     }
     window.addEventListener('keydown', onKey)
@@ -197,21 +221,15 @@ export default function VideoEditor({ video, onClipsCreated, videoStream, audioS
     setPendingClips(prev => prev.filter(c => c._id !== id))
   }, [updateMark])
 
-  function startEdit(c) {
-    setEditingId(c._id)
-    setEditValue(c.name)
-  }
-
-  function commitEdit() {
-    if (editingId === MARK_ID) setMarkName(editValue.trim())
-    else if (editingId != null) {
-      setPendingClips(prev => prev.map(c => c._id === editingId ? { ...c, name: editValue.trim() } : c))
-    }
-    setEditingId(null)
+  function renamePending(id, name) {
+    setFocusId(f => (f === id ? null : f))
+    if (id === MARK_ID) setMarkName(name)
+    else setPendingClips(prev => prev.map(c => c._id === id && c.name !== name ? { ...c, name } : c))
   }
 
   return (
     <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto', overflowX: 'hidden', paddingRight: 2 }}>
+      <style>{NAME_CSS}</style>
       <ImportPlayer key={video.url} src={video.url} audioSrc={audioSrc} videoRef={videoRef} fps={rate}
         markIn={mark.markIn} markOut={mark.markOut} onSetIn={handleSetIn} onSetOut={handleSetOut}
         onTimeUpdate={setCurrentTime} onDuration={setDuration} />
@@ -243,19 +261,9 @@ export default function VideoEditor({ video, onClipsCreated, videoStream, audioS
               padding: '8px 12px', background: T.surface, border: `1px solid ${c.mark ? alpha(T.info, '55') : c.name ? alpha(T.accent, '33') : T.border2}`, borderRadius: T.r.ctl,
             }}>
               <div style={{ width: 18, height: 18, borderRadius: 4, background: alpha(c.mark ? T.info : T.accent, '22'), color: c.mark ? T.info : T.accent, fontSize: 9.5, fontWeight: 800, fontFamily: T.fontMono, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{i + 1}</div>
-              {editingId === c._id ? (
-                <input autoFocus value={editValue} placeholder={`Clip ${i + 1}`}
-                  onChange={e => setEditValue(e.target.value)}
-                  onBlur={commitEdit}
-                  onKeyDown={e => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') setEditingId(null) }}
-                  style={{ background: T.bg2, border: `1px solid ${T.accent}`, borderRadius: 6, padding: '5px 8px', fontSize: T.fs.sm, color: T.text, fontFamily: T.fontUI, outline: 'none' }} />
-              ) : (
-                <div onClick={() => startEdit(c)} style={{ fontSize: T.fs.sm, fontWeight: 500, color: c.name ? T.text : T.text3, fontStyle: c.name ? 'normal' : 'italic', cursor: 'text', display: 'flex', alignItems: 'center', gap: 8 }}>
-                  {c.name || 'Sans nom — cliquer pour nommer'}
-                  <Icon d={ICONS.edit} size={11} stroke={T.text4} style={{ opacity: 0.5 }} />
-                </div>
-              )}
-              <span style={{ fontFamily: T.fontMono, fontSize: T.fs.xs, color: T.text2 }}>{fmt(c.start)} → {fmt(c.end)}</span>
+              <PendingName rowId={String(c._id)} name={c.name} label={`Nom du clip ${i + 1}`} autoFocus={focusId === c._id}
+                onCommit={name => renamePending(c._id, name)} />
+              <span style={{ fontFamily: T.fontMono, fontSize: T.fs.xs, color: T.text2 }}>{fmtSMPTE(c.start, rate)} → {fmtSMPTE(c.end, rate)}</span>
               <span style={{ fontFamily: T.fontMono, fontSize: T.fs.xs, color: T.accent }}>{(c.end - c.start).toFixed(1)}s</span>
               <button onClick={() => handleRemove(c._id)} title={c.mark ? 'Effacer IN / OUT' : 'Retirer'} style={{ background: 'transparent', border: 'none', color: T.text3, cursor: 'pointer', display: 'flex', justifyContent: 'center' }}><Icon d={ICONS.trash} size={14} /></button>
             </div>
@@ -268,7 +276,7 @@ export default function VideoEditor({ video, onClipsCreated, videoStream, audioS
             }}>
               <div style={{ width: 18, height: 18, borderRadius: 4, background: alpha(T.success, '22'), display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon d={ICONS.check} size={11} stroke={T.success} sw={2.4} /></div>
               <div style={{ fontSize: T.fs.sm, fontWeight: 500, color: T.text2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{clip.name} <span style={{ fontSize: 10.5, color: T.success }}>· créé, dans la Bibliothèque</span></div>
-              <span style={{ fontFamily: T.fontMono, fontSize: T.fs.xs, color: T.text3 }}>{fmt(clip.start)} → {fmt(clip.end)}</span>
+              <span style={{ fontFamily: T.fontMono, fontSize: T.fs.xs, color: T.text3 }}>{fmtSMPTE(clip.start, rate)} → {fmtSMPTE(clip.end, rate)}</span>
               <span style={{ fontFamily: T.fontMono, fontSize: T.fs.xs, color: T.success }}>{(clip.end - clip.start).toFixed(1)}s</span>
               <span />
             </div>
@@ -282,5 +290,31 @@ export default function VideoEditor({ video, onClipsCreated, videoStream, audioS
         )}
       </div>
     </div>
+  )
+}
+
+// FIXES_R5 #7 — inline, placeholder-style name field. Enter / blur commit,
+// Escape restores the saved name.
+function PendingName({ rowId, name, label, autoFocus, onCommit }) {
+  const ref = useRef(null)
+
+  useEffect(() => {
+    if (autoFocus) ref.current?.focus()
+  }, [autoFocus])
+
+  // Follow outside renames (e.g. the IN→OUT name carried into its banked row).
+  useEffect(() => {
+    const el = ref.current
+    if (el && document.activeElement !== el) el.value = name
+  }, [name])
+
+  return (
+    <input ref={ref} className="br-pending-name" data-pending-name={rowId} defaultValue={name}
+      placeholder={UNTITLED} aria-label={label} spellCheck={false}
+      onBlur={e => onCommit(e.currentTarget.value.trim())}
+      onKeyDown={e => {
+        if (e.key === 'Enter') e.currentTarget.blur()
+        else if (e.key === 'Escape') { e.stopPropagation(); e.currentTarget.value = name; e.currentTarget.blur() }
+      }} />
   )
 }

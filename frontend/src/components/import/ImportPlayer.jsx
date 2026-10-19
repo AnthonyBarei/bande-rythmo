@@ -189,10 +189,10 @@ export default function ImportPlayer({ src, audioSrc, videoRef, fps, markIn, mar
       <div onClick={togglePlay} style={{ flex: 1, minHeight: 260, position: 'relative', overflow: 'hidden', cursor: 'pointer' }}>
         <video ref={videoRef} src={src} preload="auto" playsInline
           onLoadedMetadata={onMeta} onDurationChange={onMeta} onTimeUpdate={onClock} onSeeked={onClock}
-          onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)}
+          onPlay={() => { setPlaying(true); setUnlocked(true) }} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)}
           style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
         {!unlocked && (
-          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.45)' }}>
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.25)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: T.accent, color: '#0b0b0d', fontWeight: 700, fontSize: 15, padding: '12px 24px', borderRadius: 6, boxShadow: '0 4px 20px rgba(0,0,0,0.5)' }}>
               <Icon d={ICONS.volume} size={16} stroke="#0b0b0d" /> Cliquez pour activer le son
             </div>
