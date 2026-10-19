@@ -353,7 +353,7 @@
   }
 
   // ── Band canvas (elastic text) ─────────────────────────────
-  function BandCanvas({ t, setT, setPlaying, accent, brStyle, pxPerSec, font, showDet, filter, h: bandH = 190, layoutKey }) {
+  function BandCanvas({ t, setT, setPlaying, accent, brStyle, pxPerSec, font, showDet, filter, h: bandH = 190, layoutKey, readOnly }) {
     const ref = React.useRef(null);
     const drag = React.useRef(null);
     const [ctx, setCtx] = React.useState(null);
@@ -506,12 +506,12 @@
 
     return (
       <div style={{ height: bandH, flexShrink: 0, position: 'relative' }}>
-        <canvas ref={ref} onPointerDown={onPointerDown}
-          onContextMenu={(e) => { e.preventDefault(); const r = e.currentTarget.getBoundingClientRect(); setCtx({ x: e.clientX - r.left, y: e.clientY - r.top }); }}
-          style={{ width: '100%', height: bandH, display: 'block', cursor: 'grab', touchAction: 'none', userSelect: 'none' }} />
-        <div style={{ position: 'absolute', right: 10, bottom: 8, fontSize: 9, color: T.text4, fontFamily: T.fontMono, pointerEvents: 'none' }}>
+        <canvas ref={ref} onPointerDown={readOnly ? undefined : onPointerDown}
+          onContextMenu={(e) => { e.preventDefault(); if (readOnly) return; const r = e.currentTarget.getBoundingClientRect(); setCtx({ x: e.clientX - r.left, y: e.clientY - r.top }); }}
+          style={{ width: '100%', height: bandH, display: 'block', cursor: readOnly ? 'default' : 'grab', touchAction: 'none', userSelect: 'none' }} />
+        {!readOnly && <div style={{ position: 'absolute', right: 10, bottom: 8, fontSize: 9, color: T.text4, fontFamily: T.fontMono, pointerEvents: 'none' }}>
           maintenir pour déplacer le curseur · double-clic éditer · clic-droit menu
-        </div>
+        </div>}
         {ctx && (
           <div style={{ position: 'absolute', left: Math.min(ctx.x, 600), top: Math.max(6, ctx.y - 40), zIndex: 60, width: 210,
             background: T.surface, border: `1px solid ${T.border2}`, borderRadius: T.r.card, boxShadow: T.shadowL, padding: 6 }}>
@@ -779,4 +779,5 @@
 
   window.RScreens = window.RScreens || {};
   window.RScreens.Editor = Editor;
+  window.RScreens._Band = BandCanvas;
 })();

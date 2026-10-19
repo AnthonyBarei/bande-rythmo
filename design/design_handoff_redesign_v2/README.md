@@ -11,8 +11,9 @@ This time the design source is included. **`reference/` is the spec.** It is pla
 
 ## What's in this folder
 
-- `FIXES_R4.md`: **round 4. Start here.** It is the review of the r3 screenshots.
-- `FIXES_R3.md`: **round 3. Start here.** It is the review of the r2 screenshots: what's done, what's not done, what's partial, and what's new.
+- `FIXES_R5.md`: **round 5. Start here.** This is the polish pass plus the new Studio stage. Do #10 (GIF ffmpeg bug) first.
+- `FIXES_R4.md`: **round 4.** It is the review of the r3 screenshots.
+- `FIXES_R3.md`: **round 3.** It is the review of the r2 screenshots: what's done, what's not done, what's partial, and what's new.
 - `FIXES.md` plus `fixes/*-compare.png`: **round 2.** Design and app side by side, with numbered fix spots. Do these after TASKS.md.
 - `TASKS.md`: **the work, split into 15 small tasks (T0–T14).** Each task names a picture, a source function and a target file. Start here.
 - `reference/redesign.html` plus `reference/redesign/*.jsx`: the runnable prototype. Open it in a browser at **1440×900** or larger and keep it next to the app while you work.

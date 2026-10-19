@@ -4,59 +4,114 @@
   const { SUBS, TAKES } = window.RDATA;
   const trackOf = (n) => T.tracks.find(t => t.name === n) || T.tracks[0];
 
+  if (!document.getElementById('st-kf')) { const st = document.createElement('style'); st.id = 'st-kf'; st.textContent = '@keyframes stCount{0%{transform:scale(1.5);opacity:0}25%{opacity:1}100%{transform:scale(.9);opacity:.15}}@keyframes stBlink{50%{opacity:0}}@keyframes stIn{from{transform:translateY(-6px);opacity:0}to{transform:none;opacity:1}}'; document.head.appendChild(st); }
   // ════════════ RECORD ════════════
+  // Real dubbing stage: image + bande rythmo scroll together, pre-roll 3·2·1 with bips, REC over the line, take auto-added.
   function Record({ go, accent }) {
-    const [recording, setRecording] = React.useState(false);
+    const idx = 5, target = SUBS[idx], tc = trackOf(target.char);
+    const PRE = 3;
+    const [t, setT] = React.useState(target.start - PRE);
+    const [phase, setPhase] = React.useState('idle'); // idle · preroll · rec · review
     const [ab, setAb] = React.useState(false);
-    const [lvl, setLvl] = React.useState(Array(48).fill(0.1));
-    const target = SUBS[5]; const tc = trackOf(target.char);
+    const [takes, setTakes] = React.useState(TAKES.map(x => ({ ...x })));
+    const [selTake, setSelTake] = React.useState(null);
+    const [playTake, setPlayTake] = React.useState(null); // { n, p }
+    const [lvl, setLvl] = React.useState(Array(32).fill(0.08));
+    const tRef = React.useRef(t); tRef.current = t;
+    const Band = window.RScreens._Band;
+    const [bandH, setBandH] = React.useState(150);
+    React.useEffect(() => { const fit = () => setBandH(window.innerHeight < 760 ? 110 : window.innerHeight < 900 ? 140 : 170); fit(); window.addEventListener('resize', fit); return () => window.removeEventListener('resize', fit); }, []);
+    const live = phase === 'preroll' || phase === 'rec' || phase === 'review';
     React.useEffect(() => {
-      let raf; const loop = () => { setLvl(p => p.map(() => recording ? Math.random() * 0.9 + 0.08 : Math.max(0.06, Math.random() * 0.2))); raf = requestAnimationFrame(loop); };
-      const id = setInterval(loop, 90); return () => clearInterval(id);
-    }, [recording]);
+      if (!live) return;
+      let raf, last = performance.now();
+      const loop = (now) => {
+        const dt = (now - last) / 1000; last = now;
+        const n = tRef.current + dt;
+        if (phase === 'preroll' && n >= target.start) setPhase('rec');
+        if ((phase === 'rec' || phase === 'review') && n >= target.end + 0.6) {
+          if (phase === 'rec') { const num = Math.max(0, ...takes.map(k => k.n)) + 1; setTakes(k => [{ n: num, label: 'Prise ' + num, dur: +(target.end - target.start).toFixed(1), level: 0.9, fresh: true }, ...k]); setSelTake(num); }
+          setPhase('idle'); setT(target.start - PRE); return;
+        }
+        setT(n); raf = requestAnimationFrame(loop);
+      };
+      raf = requestAnimationFrame(loop); return () => cancelAnimationFrame(raf);
+    }, [phase]);
+    React.useEffect(() => {
+      const id = setInterval(() => setLvl(p => p.map(() => phase === 'rec' ? Math.random() * 0.85 + 0.12 : Math.max(0.05, Math.random() * 0.16))), 80);
+      return () => clearInterval(id);
+    }, [phase]);
+    React.useEffect(() => {
+      if (!playTake) return;
+      const tk = takes.find(k => k.n === playTake.n); if (!tk) return;
+      let raf, t0 = performance.now() - playTake.p * tk.dur * 1000;
+      const loop = (now) => { const p = (now - t0) / (tk.dur * 1000); if (p >= 1) { setPlayTake(null); return; } setPlayTake({ n: tk.n, p }); raf = requestAnimationFrame(loop); };
+      raf = requestAnimationFrame(loop); return () => cancelAnimationFrame(raf);
+    }, [playTake && playTake.n]);
+    React.useEffect(() => {
+      const k = (e) => { if (e.target.tagName === 'INPUT') return; if (e.key === 'r' || e.key === 'R') { e.preventDefault(); toggleRec(); } };
+      window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k);
+    });
+    const toggleRec = () => { if (phase === 'idle') { setPlayTake(null); setT(target.start - PRE); setPhase('preroll'); } else { setPhase('idle'); setT(target.start - PRE); } };
+    const count = phase === 'preroll' ? Math.ceil(target.start - t) : 0;
+    const recEl = phase === 'rec' ? Math.max(0, t - target.start) : 0;
+    const validated = takes.find(k => k.best);
 
     return (
       <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <ScreenHeader kicker="STUDIO" title="Enregistrement" sub="S02E04 — confrontation cuisine"
-          right={<Btn variant="outline" icon={ICONS.chevron} onClick={() => go('editor')} style={{ transform: 'none' }}>Retour à l'éditeur</Btn>} />
-
-        <div style={{ flex: 1, minHeight: 0, padding: '8px 32px 28px', display: 'flex', gap: 20, overflow: 'hidden' }}>
-          {/* Left: recording stage */}
-          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {/* line being recorded */}
-            <div style={{ background: T.surface, border: `1px solid ${tc.hex}33`, borderRadius: T.r.card, padding: 22, display: 'flex', alignItems: 'center', gap: 16 }}>
-              <Avatar name={target.char} color={tc.hex} size={46} ring />
-              <div style={{ flex: 1 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 5 }}>
-                  <span style={{ fontSize: T.fs.md, fontWeight: 700, color: tc.hex }}>{target.char}</span>
-                  <span style={{ fontSize: 10.5, color: T.text3, fontFamily: T.fontMono }}>réplique 6 · {fmtTC(target.start, 24)} → {fmtTC(target.end, 24)}</span>
-                </div>
-                <div style={{ fontSize: 22, fontWeight: 600, color: T.text, fontFamily: "'Caveat', cursive", letterSpacing: 0.3 }}>{target.text}</div>
-                {target.note && <div style={{ fontSize: T.fs.xs, color: accent, fontStyle: 'italic', marginTop: 4 }}>↳ {target.note}</div>}
+        <ScreenHeader kicker="STUDIO" title="Enregistrement" sub={`S02E04 — confrontation cuisine · réplique ${idx + 1} / ${SUBS.length}`}
+          right={<Btn variant="outline" icon={ICONS.chevronL} onClick={() => go('editor')}>Retour à l'éditeur</Btn>} />
+        <div style={{ flex: 1, minHeight: 0, padding: '4px 32px 24px', display: 'flex', gap: 20, overflow: 'hidden' }}>
+          {/* Left: dubbing stage */}
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: '#000', border: `1px solid ${phase === 'rec' ? T.danger + '88' : T.border}`, borderRadius: T.r.card, overflow: 'hidden', transition: 'border-color .2s' }}>
+            {/* line strip */}
+            <div style={{ height: 46, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 12, padding: '0 14px', background: T.surface, borderBottom: `1px solid ${T.border}` }}>
+              <Avatar name={target.char} color={tc.hex} size={30} ring />
+              <span style={{ fontSize: T.fs.sm, fontWeight: 700, color: tc.hex }}>{target.char}</span>
+              <span style={{ fontSize: T.fs.md, color: T.text, fontFamily: "'Caveat', cursive", whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{target.text}</span>
+              <div style={{ flex: 1 }} />
+              <span style={{ fontSize: 11, color: T.text3, fontFamily: T.fontMono, whiteSpace: 'nowrap' }}>{fmtTC(target.start, 24)} → {fmtTC(target.end, 24)}</span>
+              <div style={{ display: 'flex', gap: 2 }}>
+                <Btn size="sm" icon={ICONS.skipBack} title="Réplique précédente" /><Btn size="sm" icon={ICONS.skipFwd} title="Réplique suivante" />
               </div>
             </div>
-
-            {/* mic stage */}
-            <div style={{ flex: 1, minHeight: 0, background: T.bg2, border: `1px solid ${T.border}`, borderRadius: T.r.card, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 24, position: 'relative' }}>
-              {/* live meter */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 2, height: 80 }}>
-                {lvl.map((v, i) => (
-                  <div key={i} style={{ width: 4, height: `${v * 100}%`, background: recording ? (v > 0.8 ? T.danger : accent) : T.border3, borderRadius: 2, transition: 'height .08s' }} />
-                ))}
+            {/* image */}
+            <div style={{ flex: 1, minHeight: 80, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+              <div style={{ height: '94%', aspectRatio: '16/9', maxWidth: '96%', background: `repeating-linear-gradient(0deg,#15151b 0 2px,#1a1a20 2px 6px)`, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+                <span style={{ color: T.text4, fontSize: 11, letterSpacing: 4, fontFamily: T.fontMono }}>IMAGE</span>
+                {phase === 'preroll' && (
+                  <div key={count} style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,.35)', animation: 'stCount .9s ease-out' }}>
+                    <span style={{ fontSize: 96, fontWeight: 800, color: accent, fontFamily: T.fontMono, textShadow: `0 0 40px ${accent}66` }}>{count}</span>
+                  </div>
+                )}
               </div>
-              <button onClick={() => setRecording(r => !r)} style={{
-                width: 76, height: 76, borderRadius: '50%', cursor: 'pointer',
-                background: recording ? T.danger : accent, border: `4px solid ${recording ? T.danger + '44' : accent + '44'}`,
-                display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: recording ? `0 0 30px ${T.danger}66` : `0 0 24px ${accent}44`,
-              }}>
-                <Icon d={recording ? ICONS.pause : ICONS.mic} size={30} stroke="#0b0b0d" fill={recording ? '#0b0b0d' : 'none'} />
-              </button>
-              <div style={{ fontSize: T.fs.sm, color: T.text2, fontFamily: T.fontMono }}>
-                {recording ? <span style={{ color: T.danger }}>● ENREGISTREMENT · 00:01.8</span> : 'Appuyer pour enregistrer · R'}
+              <div style={{ position: 'absolute', top: 12, left: 14, padding: '4px 10px', background: 'rgba(0,0,0,.65)', borderRadius: 6, fontFamily: T.fontMono, fontSize: 12, color: T.text, display: 'flex', alignItems: 'center', gap: 7 }}>
+                {phase === 'rec' ? <><span style={{ width: 8, height: 8, borderRadius: '50%', background: T.danger, animation: 'stBlink 1s steps(2) infinite' }} /><span style={{ color: T.danger, fontWeight: 700 }}>REC</span></> : <Dot color={phase === 'preroll' ? accent : T.text4} size={6} />}
+                {fmtTC(Math.max(0, t), 24)}
               </div>
-              <div style={{ position: 'absolute', top: 14, right: 16, display: 'flex', gap: 8 }}>
-                <Chip soft color={accent}><Icon d={ICONS.loop} size={11} stroke={accent} /> Pré-roll 3s</Chip>
+              <div style={{ position: 'absolute', top: 12, right: 14, display: 'flex', gap: 6 }}>
+                <Chip soft color={accent}><Icon d={ICONS.loop} size={11} stroke={accent} /> Pré-roll {PRE}s</Chip>
                 <Chip soft color={T.text2}>Micro · USB Yeti</Chip>
+              </div>
+            </div>
+            {/* bande rythmo — same renderer as Éditeur, follows the take */}
+            {Band && <Band t={Math.max(0, t)} setT={() => {}} setPlaying={() => {}} accent={accent} brStyle="classique" pxPerSec={150} font="manuscrite" showDet={true} filter={[]} h={bandH} layoutKey={phase + bandH} readOnly />}
+            {/* control strip */}
+            <div style={{ height: 60, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 16, padding: '0 16px', background: T.surface, borderTop: `1px solid ${T.border}` }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 2, height: 32, flex: 1, minWidth: 0 }}>
+                {lvl.map((v, i) => <div key={i} style={{ flex: 1, maxWidth: 5, height: `${v * 100}%`, background: phase === 'rec' ? (v > 0.86 ? T.danger : accent) : T.border3, borderRadius: 2, transition: 'height .08s' }} />)}
+              </div>
+              <button onClick={toggleRec} title="Enregistrer / arrêter (R)" style={{
+                width: 48, height: 48, borderRadius: '50%', cursor: 'pointer', flexShrink: 0,
+                background: phase === 'idle' ? accent : T.danger, border: `3px solid ${(phase === 'idle' ? accent : T.danger) + '44'}`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: phase === 'rec' ? `0 0 0 6px ${T.danger}22, 0 0 24px ${T.danger}66` : 'none', transition: 'box-shadow .2s',
+              }}>
+                {phase === 'idle' ? <Icon d={ICONS.mic} size={20} stroke="#0b0b0d" /> : <span style={{ width: 14, height: 14, borderRadius: 3, background: '#0b0b0d' }} />}
+              </button>
+              <div style={{ flex: 1, minWidth: 0, fontSize: T.fs.xs, fontFamily: T.fontMono, color: T.text2, textAlign: 'left', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {phase === 'idle' && <>Appuyer pour enregistrer · <span style={{ color: accent }}>R</span></>}
+                {phase === 'preroll' && <span style={{ color: accent }}>Pré-roll · bip {PRE - count + 1}/{PRE}</span>}
+                {phase === 'rec' && <span style={{ color: T.danger }}>● Prise en cours · {recEl.toFixed(1)}s / {(target.end - target.start).toFixed(1)}s</span>}
               </div>
             </div>
           </div>
@@ -65,7 +120,7 @@
           <div style={{ width: 340, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: T.fs.micro, letterSpacing: 1.4, color: T.text3, fontWeight: 700 }}>PRISES</span>
-              <span style={{ fontSize: T.fs.micro, color: T.text3, fontFamily: T.fontMono }}>{TAKES.length}</span>
+              <span style={{ fontSize: T.fs.micro, color: T.text3, fontFamily: T.fontMono }}>{takes.length}</span>
               <div style={{ flex: 1 }} />
               <button onClick={() => setAb(v => !v)}><Chip soft={!ab} active={ab} color={T.info}>A/B comparer</Chip></button>
             </div>
@@ -88,26 +143,37 @@
                 </div>
               </div>
             )}
-            {TAKES.map(tk => (
-              <div key={tk.n} style={{ background: T.surface, border: `1px solid ${tk.best ? accent + '55' : T.border}`, borderRadius: T.r.ctl, padding: 13 }}>
+            <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {takes.map(tk => {
+              const on = selTake === tk.n, pl = playTake && playTake.n === tk.n, p = pl ? playTake.p : 0;
+              return (
+              <div key={tk.n} onClick={() => setSelTake(tk.n)} style={{ background: T.surface, border: `1px solid ${on ? accent : tk.best ? accent + '55' : T.border}`, borderRadius: T.r.ctl, padding: 12, cursor: 'pointer', flexShrink: 0, animation: tk.fresh ? 'stIn .35s ease-out' : 'none' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 9 }}>
-                  <Btn size="sm" icon={ICONS.play} style={{ background: T.surface2, width: 30, height: 30 }} />
+                  <button onClick={e => { e.stopPropagation(); setPlayTake(pl ? null : { n: tk.n, p: 0 }); }} title={pl ? 'Pause' : 'Écouter'}
+                    style={{ width: 30, height: 30, borderRadius: T.r.chip, border: 'none', cursor: 'pointer', background: pl ? accent : T.surface2, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <Icon d={pl ? ICONS.pause : ICONS.play} size={13} stroke={pl ? '#0b0b0d' : T.text} fill={pl ? '#0b0b0d' : T.text} />
+                  </button>
                   <span style={{ fontSize: T.fs.sm, fontWeight: 600 }}>{tk.label}</span>
-                  {tk.best && <Chip color={accent} soft><Icon d={ICONS.check} size={10} stroke={accent} /> meilleure</Chip>}
+                  {tk.best && <Chip color={accent} soft><Icon d={ICONS.check} size={10} stroke={accent} /> validée</Chip>}
                   <div style={{ flex: 1 }} />
-                  <span style={{ fontSize: 10.5, color: T.text3, fontFamily: T.fontMono }}>{tk.dur}s</span>
-                  <Btn size="sm" icon={ICONS.trash} />
+                  <span style={{ fontSize: 11, color: pl ? accent : T.text3, fontFamily: T.fontMono }}>{pl ? (p * tk.dur).toFixed(1) + ' / ' : ''}{tk.dur}s</span>
+                  <Btn size="sm" icon={ICONS.trash} onClick={e => { e.stopPropagation(); setTakes(k => k.filter(x => x.n !== tk.n)); }} />
                 </div>
-                {/* mini waveform */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 1.5, height: 28 }}>
+                {/* waveform: played part lights up, bars near the head bounce */}
+                <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 1.5, height: 30 }}>
                   {Array.from({ length: 56 }).map((_, i) => {
-                    const v = (Math.sin(i * 0.4 + tk.n) * 0.4 + Math.sin(i * 0.9) * 0.3 + 0.4) * tk.level;
-                    return <div key={i} style={{ flex: 1, height: `${Math.abs(v) * 100}%`, background: tk.best ? accent + 'aa' : T.border3, borderRadius: 1 }} />;
+                    const base = Math.abs((Math.sin(i * 0.4 + tk.n) * 0.4 + Math.sin(i * 0.9) * 0.3 + 0.4) * tk.level);
+                    const f = i / 56, played = pl && f <= p, near = pl && Math.abs(f - p) < 0.06;
+                    const h = near ? Math.min(1, base * (1.25 + 0.35 * Math.sin(performance.now() / 70 + i))) : base;
+                    return <div key={i} style={{ flex: 1, height: `${Math.max(6, h * 100)}%`, background: played ? accent : (on || tk.best ? accent + '55' : T.border3), borderRadius: 1, transition: near ? 'none' : 'background .1s' }} />;
                   })}
+                  {pl && <div style={{ position: 'absolute', left: `${p * 100}%`, top: -3, bottom: -3, width: 2, background: '#fff', borderRadius: 1, boxShadow: '0 0 6px rgba(255,255,255,.6)' }} />}
                 </div>
               </div>
-            ))}
-            <Btn variant="solid" full icon={ICONS.check}>Valider la prise sélectionnée</Btn>
+            ); })}
+            </div>
+            <Btn variant={selTake && !(validated && validated.n === selTake) ? 'primary' : 'outline'} full icon={ICONS.check} disabled={!selTake}
+              onClick={() => selTake && setTakes(k => k.map(x => ({ ...x, best: x.n === selTake, fresh: false })))}>Valider la prise sélectionnée</Btn>
           </div>
         </div>
       </div>
