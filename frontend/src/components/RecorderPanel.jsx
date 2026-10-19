@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react'
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react'
 import { T, alpha, Icon, ICONS, Btn, Chip, Dot, Avatar, Kbd } from '../ui'
 import { TRACK_HEXES } from '../config/tracks'
 import { fmtClock, fmtSMPTE } from '../utils/timecode'
@@ -1070,7 +1070,8 @@ function MicStage({ analyser, phase, countdown, elapsed, notice, onToggle, chips
 // Studio line strip (46px) — avatar, character in its track colour, the line
 // in Caveat, TC in → out, per-character progress, previous / next réplique of
 // the same character (any character when it has none that way). Changing
-// réplique slides the old text out (left = forward) over .2 s.
+// réplique swaps the avatar and name at once and slides only the old text out
+// (left = forward) over .2 s.
 function LineStrip({ subtitles, takes, index, fps, onSelectIndex }) {
   const charIndex = useMemo(() => {
     const seen = []
@@ -1107,24 +1108,25 @@ function LineStrip({ subtitles, takes, index, fps, onSelectIndex }) {
   return (
     <div style={{ height: 46, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 12, padding: '0 14px', background: T.surface, borderBottom: `1px solid ${T.border}` }}>
       <Avatar name={target?.character || '?'} color={tc} size={30} ring />
+      {target && <span style={{ fontSize: T.fs.sm, fontWeight: 700, color: tc, whiteSpace: 'nowrap', flexShrink: 0 }}>{who}</span>}
       <div style={{ flex: 1, minWidth: 0, alignSelf: 'stretch', position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center' }}>
         {target ? (
-          <LineText key={index} sub={target} color={tc} animation={leaving ? `stFrom${leaving.dir === 'L' ? 'R' : 'L'} .18s ease-out .12s both` : 'none'} />
+          <LineText key={index} sub={target} animation={leaving ? `stFrom${leaving.dir === 'L' ? 'R' : 'L'} .18s ease-out .12s both` : 'none'} />
         ) : (
           <span style={{ fontSize: T.fs.sm, color: T.text3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
             {n ? 'Choisissez une réplique — la prise y sera rattachée.' : 'Aucune réplique — la prise sera enregistrée comme prise libre.'}
           </span>
         )}
         {leaving && (
-          <LineText key={leaving.key} sub={leaving.sub} color={colorOf(leaving.sub)} leaving
+          <LineText key={leaving.key} sub={leaving.sub} leaving
             animation={`stOut${leaving.dir} .2s ease-in forwards`} onDone={() => setLeaving(null)} />
         )}
       </div>
       {target && <span style={{ fontSize: 11, color: T.text3, fontFamily: T.fontMono, whiteSpace: 'nowrap' }}>{fmtSMPTE(target.start, fps)} → {fmtSMPTE(target.end, fps)}</span>}
       {progress && progress.total > 0 && (
         <span title={`Répliques de ${who} avec une prise validée / répliques de ${who}`}
-          style={{ fontSize: 11, color: T.text3, whiteSpace: 'nowrap' }}>
-          Prises <span style={{ fontFamily: T.fontMono }}>{progress.done} / {progress.total}</span> · {who}
+          style={{ fontSize: 11, color: progress.done === progress.total ? T.success : T.text3, whiteSpace: 'nowrap' }}>
+          {who} · <span style={{ fontFamily: T.fontMono }}>{progress.done}/{progress.total}</span> validées
         </span>
       )}
       {n > 0 && (
@@ -1141,19 +1143,20 @@ function LineStrip({ subtitles, takes, index, fps, onSelectIndex }) {
   )
 }
 
-function LineText({ sub, color, animation, leaving = false, onDone }) {
+// The Caveat line alone — the avatar and name swap instantly, only this slides.
+function LineText({ sub, animation, leaving = false, onDone }) {
   return (
     <div onAnimationEnd={leaving ? onDone : undefined} style={{
-      display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, maxWidth: '100%', animation,
+      display: 'flex', alignItems: 'center', minWidth: 0, maxWidth: '100%', animation,
       ...(leaving ? { position: 'absolute', inset: 0, pointerEvents: 'none' } : null),
     }}>
-      <span style={{ fontSize: T.fs.sm, fontWeight: 700, color, whiteSpace: 'nowrap' }}>{sub.character || 'Sans personnage'}</span>
       <span title={sub.note ? `${sub.text} — ${sub.note}` : sub.text} style={{ fontSize: T.fs.md, color: T.text, fontFamily: "'Caveat', cursive", whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{sub.text}</span>
     </div>
   )
 }
 
-// Studio A/B bar — [A ▶] [B ▶]  ⇄ basculer (Tab). The audible slot lights up.
+// Studio A/B bar — [A ▶ 1.9s] [B ▶ 1.5s]  ⇄ basculer (Tab). The audible slot
+// lights up. It carries the take durations the A/B cards may drop.
 function AbBar({ takeA, takeB, slot, onSlot, canSwap }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, padding: 6, background: T.surface, border: `1px solid ${alpha(T.info, '44')}`, borderRadius: T.r.ctl }}>
@@ -1161,7 +1164,7 @@ function AbBar({ takeA, takeB, slot, onSlot, canSwap }) {
         const on = slot === x.s
         return (
           <button key={x.s} data-rd disabled={!x.t} onClick={() => onSlot(x.s)}
-            title={x.t ? (on ? `Arrêter ${x.s}` : `Écouter ${x.s}`) : `Aucune prise ${x.s} — cliquez la pastille A/B d’une carte`}
+            title={x.t ? (on ? `Arrêter ${x.s}` : `Écouter ${x.s}`) : `Aucune prise ${x.s} — cliquez le + d’une carte`}
             style={{
               height: 30, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0 9px 0 4px', borderRadius: T.r.chip,
               background: on ? alpha(x.c, '22') : T.surface2, border: `1px solid ${on ? x.c : T.border2}`,
@@ -1169,6 +1172,7 @@ function AbBar({ takeA, takeB, slot, onSlot, canSwap }) {
             }}>
             <span style={{ width: 22, height: 22, borderRadius: 6, background: alpha(x.c, '22'), color: x.c, fontWeight: 800, fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{x.s}</span>
             <Icon d={on ? ICONS.pause : ICONS.play} size={12} stroke={on ? x.c : T.text} fill={on ? x.c : T.text} />
+            {x.t && <span style={{ fontSize: 11, fontFamily: T.fontMono, color: on ? x.c : T.text3 }}>{(x.t.duration || 0).toFixed(1)}s</span>}
           </button>
         )
       })}
@@ -1216,6 +1220,33 @@ function TakeWave({ url, bars = 56, height = 30, gap = 1.5, barWidth, color, pro
   )
 }
 
+const CARD_ROW_GAP = 6
+
+// Whether the take duration fits in the card row. It is the first thing to go
+// when the row is short (Studio A/B: chip + A/B pill) — the "validée" chip stays.
+// Hidden, the duration is still laid out off-flow, so its width stays measurable.
+function useDurationFits(rowRef, spacerRef, durRef) {
+  const [fits, setFits] = useState(true)
+  const check = useCallback(() => {
+    const row = rowRef.current
+    const spacer = spacerRef.current
+    const dur = durRef.current
+    if (!row || !spacer || !dur) return
+    setFits(was => (was
+      ? row.scrollWidth <= row.clientWidth
+      : spacer.offsetWidth >= dur.offsetWidth + CARD_ROW_GAP))
+  }, [rowRef, spacerRef, durRef])
+  useLayoutEffect(check)
+  useEffect(() => {
+    const row = rowRef.current
+    if (!row || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(check)
+    ro.observe(row)
+    return () => ro.disconnect()
+  }, [rowRef, check])
+  return fits
+}
+
 // `onImage` (Studio only): null = no "écouter sur l'image" button, else whether
 // this take is playing over the image.
 function TakeCard({ take, label, selected, fresh, isPlaying, progress, clock, onImage = null, onImageDisabled, isSyncing, ab, hasVideo, showAB, onSelect, onPlay, onPlayOnImage, onSync, onAB, onDelete }) {
@@ -1223,6 +1254,10 @@ function TakeCard({ take, label, selected, fresh, isPlaying, progress, clock, on
   const dur = take.duration || 0
   const audioOnly = isPlaying && !onImage
   const abColor = ab === 'A' ? T.accent : ab === 'B' ? T.info : null
+  const rowRef = useRef(null)
+  const spacerRef = useRef(null)
+  const durRef = useRef(null)
+  const durFits = useDurationFits(rowRef, spacerRef, durRef)
   return (
     <div onClick={onSelect} style={{
       background: isSyncing ? T.accentDim : T.surface,
@@ -1230,7 +1265,7 @@ function TakeCard({ take, label, selected, fresh, isPlaying, progress, clock, on
       borderRadius: T.r.ctl, padding: 12, flexShrink: 0, cursor: 'pointer',
       animation: fresh ? 'stIn .35s ease-out' : 'none',
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: onImage != null ? 6 : 9, marginBottom: 9 }}>
+      <div ref={rowRef} style={{ display: 'flex', alignItems: 'center', gap: onImage != null ? CARD_ROW_GAP : 9, marginBottom: 9, position: 'relative' }}>
         <button data-rd onClick={e => { e.stopPropagation(); onPlay() }} title={audioOnly ? 'Pause' : 'Écouter'} style={{
           width: 30, height: 30, borderRadius: T.r.chip, border: 'none', cursor: 'pointer', padding: 0, flexShrink: 0,
           background: audioOnly ? T.accent : T.surface2, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -1243,24 +1278,28 @@ function TakeCard({ take, label, selected, fresh, isPlaying, progress, clock, on
             onClick={e => { e?.stopPropagation?.(); onPlayOnImage() }} />
         )}
         <span style={{ fontSize: T.fs.sm, fontWeight: 600, color: T.text, minWidth: 0, flexShrink: label.length <= 12 ? 0 : 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>
-        {best && (onImage != null && showAB
-          // Studio A/B: the card row also holds the A/B pill — the chip keeps its check only.
-          ? <span title="Prise validée" style={{ display: 'inline-flex', flexShrink: 0 }}><Chip color={T.accent} soft style={{ padding: '3px 6px' }}><Icon d={ICONS.check} size={10} stroke={T.accent} /></Chip></span>
-          : <Chip color={T.accent} soft style={{ flexShrink: 0 }}><Icon d={ICONS.check} size={10} stroke={T.accent} /> validée</Chip>)}
-        <div style={{ flex: 1 }} />
-        <span style={{ fontSize: 11, color: isPlaying ? T.accent : T.text3, fontFamily: T.fontMono, whiteSpace: 'nowrap', flexShrink: 0 }}>
+        {best && <Chip color={T.accent} soft style={{ flexShrink: 0 }}><Icon d={ICONS.check} size={10} stroke={T.accent} /> validée</Chip>}
+        <div ref={spacerRef} style={{ flex: 1 }} />
+        <span ref={durRef} aria-hidden={!durFits} style={{
+          fontSize: 11, color: isPlaying ? T.accent : T.text3, fontFamily: T.fontMono, whiteSpace: 'nowrap', flexShrink: 0,
+          ...(durFits ? null : { position: 'absolute', visibility: 'hidden', pointerEvents: 'none' }),
+        }}>
           {isPlaying ? `${((progress || 0) * dur).toFixed(1)} / ` : ''}{dur.toFixed(1)}s
         </span>
         {hasVideo && (
           <Btn size="sm" active={isSyncing} icon={isSyncing ? ICONS.stop : ICONS.film} title="Écouter avec la vidéo" onClick={e => { e?.stopPropagation?.(); onSync() }} />
         )}
-        {showAB && (
-          <Btn size="sm" active={!!ab} onClick={e => { e?.stopPropagation?.(); onAB() }}
-            title={ab ? `Prise ${ab} — cliquer pour retirer` : 'Comparer A/B — 1er clic A, 2e clic B'}
-            style={{ padding: '0 7px', fontWeight: 700, ...(abColor ? { color: abColor, background: alpha(abColor, '22') } : null) }}>
-            {ab || 'A/B'}
-          </Btn>
-        )}
+        {showAB && (ab
+          ? (
+            <Btn size="sm" active onClick={e => { e?.stopPropagation?.(); onAB() }}
+              title={`Prise ${ab} — cliquer pour retirer`}
+              style={{ padding: '0 7px', fontWeight: 700, color: abColor, background: alpha(abColor, '22') }}>
+              {ab}
+            </Btn>
+          ) : (
+            <Btn size="sm" variant="outline" icon={ICONS.plus} title="Assigner A / B"
+              onClick={e => { e?.stopPropagation?.(); onAB() }} />
+          ))}
         <Btn size="sm" icon={ICONS.trash} title="Supprimer" onClick={e => { e?.stopPropagation?.(); onDelete() }} />
       </div>
       <TakeWave url={take.audio_url} color={selected || best ? alpha(T.accent, '55') : T.border3} playedColor={T.accent} progress={isPlaying ? (progress || 0) : null} clock={clock} />
