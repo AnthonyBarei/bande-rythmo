@@ -11,7 +11,8 @@ This time the design source is included. **`reference/` is the spec.** It is pla
 
 ## What's in this folder
 
-- `FIXES_R8.md`: **round 8. Start here.** This is the review of the r7 screenshots: 8 small items, then the final acceptance pass.
+- `FINAL_REVIEW.md`: **start here.** The redesign is accepted. This file lists the last cleanup and polish items at 1100px.
+- `FIXES_R8.md`: **round 8.** It's done, and so is the final acceptance pass.
 - `FIXES_R7.md`: **round 7.** It's done.
 - `FIXES_R6.md`: **round 6.** It's done.
 - `FIXES_R5.md`: **round 5.** This is the polish pass plus the Studio stage. It's done. #10 came from the capture mock.
