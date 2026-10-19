@@ -55,6 +55,16 @@ function isNewClipKey(e, { section, overlayOpen }) {
   return !N_KEY_EXCLUDED.has(section)
 }
 
+// FIXES_R7 #3 — "/" focuses the screen's own search field when it has one
+// (marked data-local-search, e.g. the Bibliothèque), else opens the palette.
+function focusLocalSearch() {
+  const field = document.querySelector('input[data-local-search]')
+  if (!field || !field.offsetParent) return false
+  field.focus()
+  field.select()
+  return true
+}
+
 // Top bar — port of redesign shell.jsx TopBar.
 function TopBar({ accent, onCmd, onHelp, onActivity }) {
   return (
@@ -131,7 +141,8 @@ function AppInner() {
     keyCtxRef.current = { section, overlayOpen: cmdOpen || shortcutsOpen }
   }, [section, cmdOpen, shortcutsOpen])
 
-  // Global keys: "?" → shortcuts · ⌘K/Ctrl+K or "/" → command palette · N → Importer.
+  // Global keys: "?" → shortcuts · ⌘K/Ctrl+K → command palette · "/" → local
+  // search, else palette · N → Importer.
   useEffect(() => {
     function onKey(e) {
       const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName) || e.target.isContentEditable
@@ -139,7 +150,11 @@ function AppInner() {
         e.preventDefault(); setCmdOpen(v => !v); return
       }
       if (typing) return
-      if (e.key === '/' && !e.shiftKey) { e.preventDefault(); setCmdOpen(true); return }
+      if (e.key === '/' && !e.shiftKey) {
+        e.preventDefault()
+        if (!focusLocalSearch()) setCmdOpen(true)
+        return
+      }
       if (e.key === '?' || (e.key === '/' && e.shiftKey)) {
         e.preventDefault(); setShortcutsOpen(v => !v); return
       }

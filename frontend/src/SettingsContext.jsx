@@ -14,6 +14,8 @@ const DEFAULTS = {
   whisperModel: 'large-v3',         // mirrors backend WHISPER_MODEL env var, info-only here
   // Export defaults — pre-filled in ExportPanel form.
   exportDetectionBurn: false,
+  // Studio « Écouter sur l'image » — VO volume (0..1) under the take: 0 / .15 / .5.
+  listenVoLevel: 0.15,
 }
 
 const DENSITY_FONT = { compact: 13, normal: 14, comfortable: 15 }

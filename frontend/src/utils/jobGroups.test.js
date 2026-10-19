@@ -11,9 +11,38 @@ describe('groupJobs', () => {
     expect(groups[0]).toMatchObject({ key: 'b', count: 2, groupKeys: ['a', 'b'] })
   })
 
-  it('never groups running jobs', () => {
-    const groups = groupJobs([run('a'), run('b')], toastGroupKey)
+  it('never groups running jobs in Activité', () => {
+    const groups = groupJobs([run('a'), run('b')], failureGroupKey)
     expect(groups.map(g => [g.key, g.count])).toEqual([['a', 1], ['b', 1]])
+  })
+
+  it('collapses identical running toasts (kind + clip + options) led by the newest', () => {
+    const opts = { options: '{"quality":"youtube"}' }
+    const groups = groupJobs([run('a', opts), run('b', opts)], toastGroupKey)
+    expect(groups).toHaveLength(1)
+    expect(groups[0]).toMatchObject({ key: 'b', count: 2, groupKeys: ['a', 'b'] })
+  })
+
+  it('keeps running toasts with a different clip, kind or options apart', () => {
+    const jobs = [
+      run('a', { options: 'q1' }), run('b', { options: 'q2' }),
+      run('c', { options: 'q1', clipId: 'c2' }), run('d', { options: 'q1', kind: 'export-gif' }),
+    ]
+    expect(groupJobs(jobs, toastGroupKey)).toHaveLength(4)
+  })
+
+  it('groups running toasts without options by kind + clip', () => {
+    expect(groupJobs([run('a'), run('b')], toastGroupKey)).toHaveLength(1)
+  })
+
+  it('never mixes a running job with a failed one of the same kind', () => {
+    const jobs = [run('a'), fail('b', { kind: 'export-mp4' })]
+    expect(groupJobs(jobs, toastGroupKey)).toHaveLength(2)
+  })
+
+  it('leaves done and cancelled toasts single', () => {
+    const jobs = [run('a', { status: 'done' }), run('b', { status: 'done' }), run('c', { status: 'cancelled' }), run('d', { status: 'cancelled' })]
+    expect(groupJobs(jobs, toastGroupKey).map(g => g.count)).toEqual([1, 1, 1, 1])
   })
 
   it('keeps different errors, kinds and clips apart', () => {

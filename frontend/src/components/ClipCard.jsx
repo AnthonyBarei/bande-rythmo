@@ -219,10 +219,12 @@ export default function ClipCard({ clip, onDub, onRecord, onMeme, onDelete, onRe
         </div>
       </div>
 
-      {/* Actions — revealed on hover (also on keyboard focus and touch screens) */}
+      {/* Actions — revealed on hover (also on keyboard focus and touch screens).
+          FIXES_R7 #1: the 44px row is reserved at rest (visibility:hidden), so a
+          hover never changes the card height nor moves the next grid row. */}
       <div style={{
-        display: 'grid', gridTemplateColumns: '1fr auto auto auto auto', borderTop: `1px solid ${T.border}`,
-        opacity: showActions ? 1 : 0.0, maxHeight: showActions ? 44 : 0, transition: 'opacity .15s, max-height .15s', overflow: 'hidden',
+        display: 'grid', gridTemplateColumns: '1fr auto auto auto auto', borderTop: `1px solid ${T.border}`, height: 44, flexShrink: 0,
+        opacity: showActions ? 1 : 0, visibility: showActions ? 'visible' : 'hidden', transition: 'opacity .15s, visibility .15s', overflow: 'hidden',
       }}>
         <button data-rd onClick={e => { e.stopPropagation(); onDub(clip) }} title="Doublage" style={{
           height: 44, padding: '0 14px', background: 'transparent', border: 'none', borderRight: `1px solid ${T.border}`,

@@ -11,16 +11,18 @@ const newId = () => ++_pendingId
 const NO_MARK = { markIn: null, markOut: null }
 const DEFAULT_FPS = 25
 const isTyping = el => !!el && (['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName) || el.isContentEditable)
-const UNTITLED = 'Sans nom — cliquer pour nommer'
+const UNTITLED = 'Nom du clip…'
 
-// Pending-row name field: reads as plain text at rest, placeholder in text3.
+// FIXES_R7 #5 — pending-row name field: the reference's focused input box
+// (bg2, radius 6, 5px 8px) at rest too, `border` colour instead of the accent;
+// placeholder in text3.
 const NAME_CSS = `
-.br-pending-name { width: 100%; min-width: 0; margin-left: -8px; padding: 4px 7px; border-radius: 6px;
-  background: transparent; border: 1px solid transparent; outline: none;
+.br-pending-name { width: 100%; min-width: 0; padding: 5px 8px; border-radius: 6px;
+  background: var(--bg2); border: 1px solid var(--border); outline: none;
   font: 500 ${T.fs.sm}px var(--font-ui); color: var(--text); font-style: normal; cursor: text; }
 .br-pending-name::placeholder { color: var(--text3); opacity: 1; font-style: normal; }
 .br-pending-name:hover:not(:focus) { border-color: var(--border2); }
-.br-pending-name:focus { border-color: var(--accent); background: var(--bg2); }
+.br-pending-name:focus { border-color: var(--accent); }
 `
 
 // Importer left column — reference screen-import.jsx Preview · ZoomTimeline · PendingList.
@@ -248,12 +250,15 @@ export default function VideoEditor({ video, onClipsCreated, videoStream, audioS
       />
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexShrink: 0 }}>
-          <span style={{ fontSize: T.fs.micro, letterSpacing: 1.4, color: T.text3, fontWeight: 700 }}>CLIPS EN ATTENTE</span>
-          <span style={{ fontSize: T.fs.micro, color: T.text3, fontFamily: T.fontMono }}>{allPending.length}</span>
-          <div style={{ flex: 1 }} />
-          {allPending.length > 0 && <span style={{ fontSize: 10.5, color: T.text4 }}>cliquer le nom pour éditer · ⏎ valider</span>}
-        </div>
+        {/* FIXES_R7 #4 — heading only once a clip is pending. */}
+        {allPending.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexShrink: 0 }}>
+            <span style={{ fontSize: T.fs.micro, letterSpacing: 1.4, color: T.text3, fontWeight: 700 }}>CLIPS EN ATTENTE</span>
+            <span style={{ fontSize: T.fs.micro, color: T.text3, fontFamily: T.fontMono }}>{allPending.length}</span>
+            <div style={{ flex: 1 }} />
+            <span style={{ fontSize: 10.5, color: T.text4 }}>cliquer le nom pour éditer · ⏎ valider</span>
+          </div>
+        )}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {allPending.map((c, i) => (
             <div key={c._id} title={c.mark ? 'Plage IN → OUT · « Marquer un clip » l’ajoute au lot, Ctrl+S crée les clips' : undefined} style={{

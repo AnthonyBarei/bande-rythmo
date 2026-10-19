@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useSettings } from '../SettingsContext'
 import { Btn, Segmented, Select, Toggle, Chip, Dot, ScreenHeader, Icon, ICONS, T } from '../ui'
+import { fetchUploadedFonts, fontOptions } from '../config/fonts'
 
 // Réglages — reference screen-misc.jsx Settings (Section max 720 + Field rows).
 
@@ -31,12 +32,11 @@ const WHISPER_LANGS = [
   { v: 'ja', l: 'JA — 日本語' }, { v: 'auto', l: 'Auto-détection' },
 ]
 
-const BR_FONTS = [
-  { v: 'atkinson',  l: 'Atkinson' },
-  { v: 'lisible',   l: 'Manuscrite lisible' },
-  { v: 'cursive',   l: 'Cursive (Caveat)' },
-  { v: 'inter',     l: 'Inter' },
-  { v: 'jetbrains', l: 'JetBrains Mono' },
+// VO level under a take played over the picture (Studio « Écouter sur l'image »).
+const LISTEN_VO_LEVELS = [
+  { v: 0,    l: '0 %',  desc: 'VO coupée' },
+  { v: 0.15, l: '15 %', desc: 'Par défaut' },
+  { v: 0.5,  l: '50 %', desc: 'VO bien audible' },
 ]
 
 function Section({ title, desc, children }) {
@@ -68,8 +68,7 @@ export default function Preferences() {
   const [aiStatus, setAiStatus] = useState({ translate: null, vocal: null })
   const [uploadedFonts, setUploadedFonts] = useState([])
 
-  const loadFonts = useCallback(() => fetch('/api/fonts')
-    .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() })
+  const loadFonts = useCallback(() => fetchUploadedFonts()
     .then(setUploadedFonts)
     .catch(e => console.warn('Chargement des polices importées échoué', e)), [])
   useEffect(() => { loadFonts() }, [loadFonts])
@@ -106,8 +105,8 @@ export default function Preferences() {
             <Segmented value={settings.brStyle} onChange={v => update({ brStyle: v })} options={BR_STYLES} />
           </Field>
           <Field label="Police de bande rythmo">
-            <Select width={200} value={settings.brFont} onChange={v => update({ brFont: v })}
-              options={[...BR_FONTS, ...uploadedFonts.map(f => ({ v: f.id, l: f.name }))]} />
+            <Select width={200} menuWidth={280} value={settings.brFont} onChange={v => update({ brFont: v })}
+              options={fontOptions(uploadedFonts)} />
           </Field>
           <Field label="Densité">
             <Segmented value={settings.density} onChange={v => update({ density: v })} options={DENSITIES} />
@@ -148,6 +147,12 @@ export default function Preferences() {
         <Section title="Export" desc="Valeurs par défaut.">
           <Field label="Incruster la détection (MP4)">
             <Toggle on={!!settings.exportDetectionBurn} onClick={() => update({ exportDetectionBurn: !settings.exportDetectionBurn })} />
+          </Field>
+        </Section>
+
+        <Section title="Studio" desc="Enregistrement et écoute des prises.">
+          <Field label="VO pendant l'écoute">
+            <Segmented value={settings.listenVoLevel} onChange={v => update({ listenVoLevel: v })} options={LISTEN_VO_LEVELS} />
           </Field>
         </Section>
 

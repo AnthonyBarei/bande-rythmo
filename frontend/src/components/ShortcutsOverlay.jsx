@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { T, Icon, ICONS, Btn, Kbd } from '../ui'
 
 // Port of redesign shell.jsx ShortcutsOverlay — reference rows + the app's
-// extra keys (⌫, R, /, E).
+// extra keys (⌫, R, /, E) and the Studio group (FIXES_R7 Phase 2).
 const GROUPS = [
   { title: 'Transport', rows: [
     { k: ['Espace', 'K'], l: 'Lecture / pause' }, { k: ['J'], l: 'Vitesse 0,5×' }, { k: ['L'], l: 'Vitesse 1,5×' },
@@ -15,6 +15,13 @@ const GROUPS = [
     { k: ['Suppr', '⌫'], l: 'Supprimer la réplique' }, { k: ['R'], l: 'Enregistrer / arrêter la prise' },
     { k: ['Échap'], l: 'Quitter loop / édition' },
   ]},
+  { title: 'Studio', rows: [
+    { k: ['R'], l: 'Enregistrer / arrêter' },
+    { k: ['←', '→'], l: 'Réplique précédente / suivante (même personnage)' },
+    { k: ['Alt+←', 'Alt+→'], l: 'Toute réplique' },
+    { k: ['Tab'], l: 'Basculer A/B' },
+    { k: ['Échap'], l: "Arrêter l'écoute" },
+  ]},
   { title: 'Canvas — gestes', rows: [
     { k: ['maintenir'], l: 'Déplacer le curseur' }, { k: ['glisser'], l: 'Créer une réplique' }, { k: ['⇧ glisser'], l: 'Région de boucle' },
     { k: ['alt glisser'], l: 'Dupliquer' }, { k: ['ctrl molette'], l: 'Zoom px/s' }, { k: ['clic lettre'], l: 'Signe de détection' },
@@ -22,7 +29,7 @@ const GROUPS = [
   ]},
   { title: 'Général', rows: [
     { k: ['Ctrl', 'Z'], l: 'Annuler' }, { k: ['Ctrl', 'Y'], l: 'Rétablir' }, { k: ['⌘', 'K'], l: 'Palette de commandes' },
-    { k: ['/'], l: 'Palette de commandes' }, { k: ['Ctrl', 'S'], l: 'Sauvegarder' }, { k: ['E'], l: 'Exporter' },
+    { k: ['/'], l: 'Rechercher (ou palette)' }, { k: ['Ctrl', 'S'], l: 'Sauvegarder' }, { k: ['E'], l: 'Exporter' },
     { k: ['\\'], l: 'Afficher / masquer le panneau' }, { k: ['N'], l: 'Nouveau clip (importer une vidéo)' },
     { k: ['?'], l: 'Cette aide' },
   ]},

@@ -1,11 +1,20 @@
 // FIXES_R5 §1/§2: identical failures collapse into one toast / one Activité
-// row with a ×N count. Only failed jobs group; running/done jobs stay single.
+// row with a ×N count. FIXES_R7 #6: identical running jobs collapse into one
+// toast too. Done / cancelled jobs stay single.
 import { errorKey } from './jobErrors'
 
-// Toasts: same job kind + same error.
-export const toastGroupKey = j => (j.status === 'error' ? `${j.kind}|${errorKey(j.error)}` : null)
+// Running toasts: same job kind + same clip + same options (producer-supplied
+// signature; jobs without one compare by kind + clip only).
+const runningKey = j => `run|${j.kind}|${j.clipId ?? ''}|${j.options ?? ''}`
 
-// Activité: same job kind + same clip + same error.
+// Toasts: failures by job kind + error; running jobs by kind + clip + options.
+export const toastGroupKey = j => {
+  if (j.status === 'error') return `${j.kind}|${errorKey(j.error)}`
+  if (j.status === 'running') return runningKey(j)
+  return null
+}
+
+// Activité: same job kind + same clip + same error (running rows stay single).
 export const failureGroupKey = j => (j.status === 'error' ? `${j.kind}|${j.clipId ?? ''}|${errorKey(j.error)}` : null)
 
 // jobs (oldest first) → groups in the same order, each placed where its newest

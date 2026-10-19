@@ -274,6 +274,7 @@ export function Select({ value, options, onChange, width = 'auto', size = 'md', 
       )}>
       {close => options.map(o => (
         <MenuItem key={o.v} active={o.v === value} color={o.color} icon={o.dot ? undefined : o.icon}
+          right={o.hint && <span style={{ fontSize: T.fs.xs, color: T.text3, whiteSpace: 'nowrap', flexShrink: 0 }}>{o.hint}</span>}
           onClick={() => { onChange?.(o.v); close() }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>{o.dot && <Dot color={o.dot} size={7} />}<span style={{ overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{o.l}</span></span>
         </MenuItem>

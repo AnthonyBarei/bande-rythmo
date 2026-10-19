@@ -271,7 +271,7 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
                 title={saving ? 'Création des clips en cours…' : count === 0 ? 'Tracez un clip sur la timeline ou marquez IN / OUT (I, O)' : 'Créer les clips en attente (Ctrl+S)'}>
                 {saving
                   ? <><Spinner size={12} color={T.text3} /> Création…</>
-                  : <>Créer {count} clip{count > 1 ? 's' : ''} <span style={{ display: 'inline-flex', gap: 3, marginLeft: 4 }}><Kbd>Ctrl</Kbd><Kbd>S</Kbd></span></>}
+                  : <>{count === 0 ? 'Créer le clip' : `Créer ${count} clip${count > 1 ? 's' : ''}`} <span style={{ display: 'inline-flex', gap: 3, marginLeft: 4 }}><Kbd>Ctrl</Kbd><Kbd>S</Kbd></span></>}
               </Btn>
             </>
           )}

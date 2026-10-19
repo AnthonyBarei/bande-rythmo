@@ -3,14 +3,7 @@ import { T, alpha, Btn, ICONS, Popover, Select } from '../../ui'
 import { activeIndexAt } from '../../utils/band'
 import { RespMenu, ReactMenu, StateMenu, PlansMenu, NoteMenu } from './BandMenus'
 import StylePanel from './StylePanel'
-
-const BUNDLED_FONTS = [
-  { v: 'atkinson', l: 'Atkinson' },
-  { v: 'lisible', l: 'Manuscrite lisible' },
-  { v: 'cursive', l: 'Manuscrite' },
-  { v: 'inter', l: 'Inter' },
-  { v: 'jetbrains', l: 'Mono' },
-]
+import { fontOptions as bandFontOptions } from '../../config/fonts'
 
 function Cluster({ children }) {
   return (
@@ -79,7 +72,7 @@ export default function BandToolbar({
     setShowStyle(s => !s)
   }
 
-  const fontOptions = [...BUNDLED_FONTS, ...uploadedFonts.map(f => ({ v: f.id, l: f.name }))]
+  const fontOptions = bandFontOptions(uploadedFonts)
 
   return (
     <div style={{ height: 48, flexShrink: 0, padding: '0 14px', display: 'flex', alignItems: 'center', gap: 8, background: T.surface, borderTop: `1px solid ${T.border}`, flexWrap: 'wrap', overflow: 'visible' }}>
@@ -125,7 +118,7 @@ export default function BandToolbar({
       <div style={{ flex: 1 }} />
 
       {/* font select */}
-      <Select size="sm" width={132} placement="top" value={brFont} onChange={setBrFont} options={fontOptions} />
+      <Select size="sm" width={132} menuWidth={260} placement="top" value={brFont} onChange={setBrFont} options={fontOptions} />
       {/* view cluster */}
       <Cluster>
         <Btn size="sm" icon={locked ? ICONS.lock : ICONS.unlock} active={locked} onClick={() => setLocked(l => !l)}

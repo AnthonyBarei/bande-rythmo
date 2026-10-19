@@ -10,6 +10,7 @@ import { primaryRowKey } from '../utils/primaryRow'
 import { EXPORT_QUEUE, inExportQueue } from '../utils/toastScope'
 import { useNow } from '../utils/useNow'
 import { formatColor, NEUTRAL_FORMAT_COLOR } from '../utils/formatColors'
+import { PRIMARY_FONT_IDS, fetchUploadedFonts, fontLabel } from '../config/fonts'
 
 // Export screen — port of redesign screen-record-export.jsx → Export,
 // QueueRow, RangeField, ExportOptions.
@@ -50,8 +51,6 @@ const QUALITY_HINT = {
   standard: 'preset medium · crf 21 · ss3',
   youtube:  'preset slow · crf 19 · ss4',
 }
-
-const FONT_LABELS = { cursive: 'Manuscrite', atkinson: 'Atkinson', lisible: 'Lisible', inter: 'Inter', jetbrains: 'JetBrains' }
 
 // Progress jobs started from this screen, by job key → { fmt, file } (the job
 // itself carries clipId + queue). Module-level so the queue survives closing/reopening the screen.
@@ -235,11 +234,13 @@ function ExportScreen({ segmentId, subtitles, boucles = [], pxPerSec = 180, brOf
       return job_id
     }
     const jobId = await fireJob()
+    const { subtitles: _subs, boucles: _boucles, ...settingsOnly } = body
     const handle = progress.start({
       kind: `export-${format}`,
       title: job.title,
       jobId,
       clipId: segmentId,
+      options: JSON.stringify(settingsOnly),
       queue: EXPORT_QUEUE,
       retry: fireJob,
       downloadOnDone: autoDownload,
@@ -618,10 +619,26 @@ function RangeField({ on, setOn, rangeIn, setRangeIn, rangeOut, setRangeOut, dur
   )
 }
 
+// Uploaded font names — only needed when the project band uses one.
+function useUploadedFontsFor(fontId) {
+  const [fonts, setFonts] = useState([])
+  const uploaded = !!fontId && fontId.startsWith('u-')
+  useEffect(() => {
+    if (!uploaded) return
+    let alive = true
+    fetchUploadedFonts()
+      .then(list => { if (alive) setFonts(list) })
+      .catch(e => console.warn('Chargement des polices importées échoué', e))
+    return () => { alive = false }
+  }, [uploaded])
+  return fonts
+}
+
 function ExportOptions({ sel, quality, setQuality, detectionBurn, setDetectionBurn, exportFont, setExportFont, brFont, gpu, setGpu, hwEncoders }) {
+  const uploadedFonts = useUploadedFontsFor(brFont)
   if (sel === 'mp4') {
-    const fontOptions = [{ v: 'cursive', l: 'Manuscrite' }, { v: 'atkinson', l: 'Atkinson' }]
-    if (!fontOptions.some(o => o.v === brFont)) fontOptions.push({ v: brFont, l: FONT_LABELS[brFont] || 'Perso' })
+    const fontIds = PRIMARY_FONT_IDS.includes(brFont) ? PRIMARY_FONT_IDS : [...PRIMARY_FONT_IDS, brFont]
+    const fontOptions = fontIds.map(id => ({ v: id, l: fontLabel(id, uploadedFonts) }))
     const encoders = hwEncoders ? ['nvenc', 'qsv', 'amf'].filter(k => hwEncoders[k]) : []
     return (<>
       <Row label="Qualité">
@@ -638,7 +655,7 @@ function ExportOptions({ sel, quality, setQuality, detectionBurn, setDetectionBu
         <Segmented value={exportFont} onChange={setExportFont} options={fontOptions} />
         <div style={{ fontSize: 10, color: T.text3, marginTop: 6 }}>
           {exportFont === brFont ? 'Police de la bande du projet' : (<>
-            Remplace la police du projet ({FONT_LABELS[brFont] || brFont}) ·{' '}
+            Remplace la police du projet ({fontLabel(brFont, uploadedFonts)}) ·{' '}
             <button data-rd onClick={() => setExportFont(brFont)}
               style={{ background: 'none', border: 'none', padding: 0, color: T.accent, fontSize: 10, cursor: 'pointer', fontFamily: T.fontUI }}>rétablir</button>
           </>)}

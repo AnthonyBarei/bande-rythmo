@@ -257,9 +257,10 @@ CLICK_INSPECTOR_TAB = """(async () => {
 # FIXES_R6 #11: the hover target must be on screen — a mouseMoved outside the
 # 1440x900 viewport hits nothing (r5 aimed at a third-row card, y > 900).
 # Prefer a card without a project so the "+ Projet" chip is part of the proof.
+# textContent, not innerText: the action row is visibility:hidden at rest (R7 #1).
 HOVER_CARD = """(async () => {
   const cards = [...document.querySelectorAll('button')]
-    .filter(b => b.innerText.trim() === 'Doubler')
+    .filter(b => b.textContent.trim() === 'Doubler')
     .map(b => b.parentElement && b.parentElement.parentElement)
     .filter(Boolean);
   const card = cards.find(c => c.querySelector('[title="Assigner à un projet"]')) || cards[0];

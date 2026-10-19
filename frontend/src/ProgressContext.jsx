@@ -27,6 +27,8 @@ import JobError from './components/JobError'
        queue: 'export',           // optional — the screen that lists this job (no toast there)
        toast: false,              // optional — tracked + listed in Activité, never toasted
                                   // (the screen shows its own inline <JobError>)
+       options: '…',              // optional — settings signature: running jobs with the
+                                  // same kind + clip + options share one ×N toast
      })
      handle.cancel()              // user-initiated cancel
 */
@@ -218,6 +220,7 @@ export function ProgressProvider({ children }) {
       kind: opts.kind || 'job',
       title: opts.title || 'Tâche',
       clipId: opts.clipId || null,
+      options: opts.options ?? null,
       queue: opts.queue || null,
       toast: opts.toast !== false,
       stage: opts.stage || 'Démarrage…',
@@ -315,10 +318,12 @@ const SAFE_VAR = '--toast-safe-bottom'
 export function ProgressToasts({ route, queueClipId = null, onOpenActivity }) {
   const { jobs, cancelByKey, dismiss, retry } = useProgress()
   // FIXES_R5 §1: toast:false jobs never toast; identical failures (same kind +
-  // same error) collapse into one card with a ×N count.
+  // same error) collapse into one card with a ×N count. FIXES_R7 #6: so do
+  // identical running jobs (same kind + clip + options); Annuler cancels them all.
   const grouped = groupJobs(jobs.filter(j => j.toast), toastGroupKey)
   const { shown, hidden } = toastsFor(grouped, { route, queueClipId })
   const dismissGroup = (g) => g.groupKeys.forEach(dismiss)
+  const cancelGroup = (g) => g.groupKeys.forEach(cancelByKey)
   const retryGroup = (g) => { siblingsOf(g).forEach(dismiss); retry(g.key) }
   const stackRef = useRef(null)
   const visible = shown.length > 0
@@ -356,7 +361,7 @@ export function ProgressToasts({ route, queueClipId = null, onOpenActivity }) {
           }}>+{hidden}</button>
       )}
       {shown.map(j => (
-        <ProgressCard key={j.key} job={j} onCancel={() => cancelByKey(j.key)} onDismiss={() => dismissGroup(j)} onRetry={() => retryGroup(j)} />
+        <ProgressCard key={j.key} job={j} onCancel={() => cancelGroup(j)} onDismiss={() => dismissGroup(j)} onRetry={() => retryGroup(j)} />
       ))}
     </div>
   )
@@ -374,6 +379,7 @@ function ProgressCard({ job, onCancel, onDismiss, onRetry }) {
     : isDone ? 'var(--success)'
     : isCanc ? 'var(--text3)'
     : 'var(--accent)'
+  const countColor = isRun ? 'var(--accent)' : 'var(--danger)'
 
   return (
     <div style={{
@@ -390,16 +396,17 @@ function ProgressCard({ job, onCancel, onDismiss, onRetry }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
         <span style={{ fontWeight: 600, flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{job.title}</span>
         {job.count > 1 && (
-          <span title={`${job.count} échecs identiques`} style={{
-            fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 600, color: 'var(--danger)',
-            border: '1px solid color-mix(in srgb, var(--danger) 27%, transparent)',
-            background: 'color-mix(in srgb, var(--danger) 11%, transparent)',
+          <span title={isRun ? `${job.count} tâches identiques en cours` : `${job.count} échecs identiques`} style={{
+            fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 600, color: countColor,
+            border: `1px solid color-mix(in srgb, ${countColor} 27%, transparent)`,
+            background: `color-mix(in srgb, ${countColor} 11%, transparent)`,
             borderRadius: 99, padding: '1px 7px', flexShrink: 0,
           }}>×{job.count}</span>
         )}
         {isRun && (
           <button
             onClick={onCancel}
+            title={job.count > 1 ? `Annuler les ${job.count} tâches` : undefined}
             style={{
               background: 'transparent', border: '1px solid var(--border2)',
               color: 'var(--text2)', borderRadius: 4,

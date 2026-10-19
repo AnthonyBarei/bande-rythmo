@@ -98,7 +98,7 @@ export default function ClipsLibrary({ clips, onDub, onRecord, onMeme, onDelete,
           }}>
             <Icon d={ICONS.search} size={15} stroke={T.text3} />
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Rechercher un clip…"
-              aria-label="Rechercher un clip"
+              aria-label="Rechercher un clip" data-local-search
               style={{ flex: 1, minWidth: 0, background: 'transparent', border: 'none', outline: 'none', padding: 0, color: T.text, fontSize: T.fs.sm, fontFamily: T.fontUI }} />
             <span style={{ fontSize: 10, color: T.text4, fontFamily: T.fontMono, border: `1px solid ${T.border2}`, borderRadius: 4, padding: '1px 5px' }}>/</span>
           </div>
