@@ -161,4 +161,11 @@ Proof captures are in `design/app_screens_2026-10-14_final/` at `1440x900/` and 
   - Real recordings, validations and exports (they write data; checked only up to the mocked request).
   - Band canvas rendering was checked visually on the captures.
 - **Library card actions:** the row is revealed on focus-within by React, so very fast Tab presses (under about 100 ms apart) can skip it.
-- **`VideoPlayer.jsx`** is no longer imported anywhere (dead code that still has an `MM:SS.ss` formatter). It was left in place because removing it is out of scope.
+- ~~`VideoPlayer.jsx` dead code~~ — removed in the final-review cleanup, with the `fmtClock*` helpers and `ui.jsx` `fmtTC`/`fmt`.
+
+
+## Final review (accepted)
+- Dead code removed (`VideoPlayer.jsx`, `fmtClock*`, `ui.jsx` `fmtTC`/`fmt`)
+- `Input` primitive (Lexique, Importer name + TC field, comédien, palette); focus ring drawn on pill wrappers (`.field-ring`)
+- Clip card actions revealed by CSS (fast Tab reaches them)
+- Éditeur band toolbar and transport stay on one row down to 1100px (width-driven, inspector-aware)

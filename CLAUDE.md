@@ -70,7 +70,10 @@ frontend/src/
     VideoEditor.jsx        # éditeur clip (job-mode batch)
     TimelineBar.jsx        # timeline zoom + minimap (import)
     BRTimeline.jsx         # nav plein-clip sous canvas BR (waveform/boucles/scenes/playhead)
-    VideoPlayer.jsx        # player custom réutilisable
+    import/                # ImportPlayer, SeekBar, PlayerControls (lecteur Importer)
+    band/                  # BandCanvas + bandRender/bandHit — rendu bande partagé Éditeur/Studio
+    editor/                # EditorHeader, VideoStage, Transport, TimelineNav, BandToolbar, Inspector + onglets
+    StudioScreen.jsx       # écran Studio (scène de doublage, pré-roll, A/B, écoute sur l'image)
     ClipsLibrary.jsx       # grille clips + filtres status + chips projet
     ClipCard.jsx           # card: thumbnail, rename, projet, Doubler / ▶ / MP3 / GIF / ✕
     DubbingWorkspace.jsx   # BR pro: SMPTE, détection, boucles, undo/redo, proxy, traduction, scènes, auto-save
@@ -260,7 +263,7 @@ Backend: fichier absent → `_BR_FONT_FALLBACKS` (warning loggé une fois par id
 - ClipsLibrary refonte (filtres status, cards)
 - Set d'icônes SVG unifié (Icons.jsx)
 - Export MP3/WAV
-- VideoPlayer custom (composant)
+- VideoPlayer custom (composant) — remplacé par import/ImportPlayer (redesign v2)
 - Intégration Plex (PlexBrowser + route, restyle complet)
 - Générateur de memes
 - **BR Pro (2026-05-30)** : SMPTE fmtTC, détection layer, START/BIP/PI, boucles, line flags, Clip.fps, DetX pro, Croisillé, police Shantell
@@ -328,6 +331,11 @@ Backend: fichier absent → `_BR_FONT_FALLBACKS` (warning loggé une fois par id
 - Annulation de job = `kill_process_tree` (ffmpeg Chocolatey = shim → l'enfant survivait à `kill()`)
 - Ids clip validés (middleware anti `..`/`\` + `SafeId` sur `segment_id`)
 - Rechargement page → restaure la vue + le clip ouvert (`sessionStorage` `br-nav`)
+
+### Fait — Redesign v2 (2026-10-14 → 2026-10-19)
+- Port intégral du prototype Claude Design (`design/design_handoff_redesign_v2/`), 8 rounds de revue + revue finale acceptée
+- Détail par écran : `CHANGELOG_REDESIGN.md` ; captures finales `design/app_screens_2026-10-14_final/`
+- Captures reproductibles : `backend/venv/Scripts/python.exe design/app_screens_2026-10-14/shoot.py <out> --extras --mock-states [--size WxH]`
 
 ### Reste à faire (non démarré)
 - **Phase 2 (REMAKE_PLAN)** : split DubbingWorkspace (3 650 lignes) en hooks,
