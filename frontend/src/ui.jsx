@@ -253,11 +253,11 @@ export function MenuLabel({ children }) {
 export function MenuSep() { return <div style={{ height: 1, background: T.border, margin: '5px 4px' }} /> }
 
 // Native-feeling Select (opens a Popover menu)
-export function Select({ value, options, onChange, width = 'auto', size = 'md', placeholder, placement }) {
+export function Select({ value, options, onChange, width = 'auto', size = 'md', placeholder, placement, menuWidth }) {
   const H = { sm: 30, md: 36 }[size] || 36
   const cur = options.find(o => o.v === value)
   return (
-    <Popover width={Math.max(220, typeof width === 'number' ? width : 200)} placement={placement}
+    <Popover width={menuWidth ?? Math.max(220, typeof width === 'number' ? width : 200)} placement={placement}
       trigger={(open, toggle) => (
         <button data-rd onClick={toggle} title={cur ? cur.l : undefined} style={{
           height: H, padding: '0 10px 0 12px', borderRadius: T.r.ctl, cursor: 'pointer', whiteSpace: 'nowrap', minWidth: 0, flexShrink: 0,

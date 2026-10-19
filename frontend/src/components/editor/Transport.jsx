@@ -51,7 +51,7 @@ export default function Transport({
         <div style={{ position: 'absolute', left: `${pct}%`, top: -3, width: 12, height: 12, borderRadius: '50%', background: T.accent, transform: 'translateX(-50%)', boxShadow: '0 1px 4px rgba(0,0,0,.4)' }} />
       </div>
       <span title="Vitesse de lecture" style={{ display: 'inline-flex', flexShrink: 0 }}>
-        <Select size="sm" width={64} placement="top" value={speed} onChange={onChangeSpeed} options={SPEEDS} />
+        <Select size="sm" width={64} menuWidth={96} placement="top" value={speed} onChange={onChangeSpeed} options={SPEEDS} />
       </span>
       <Btn size="sm" icon={muted ? ICONS.mute : ICONS.volume} onClick={onToggleMute} title={muted ? 'Activer le son (M)' : 'Couper le son (M)'} />
     </div>
