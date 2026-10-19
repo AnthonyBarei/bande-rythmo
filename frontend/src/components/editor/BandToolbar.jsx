@@ -72,7 +72,7 @@ export default function BandToolbar({
     setShowStyle(s => !s)
   }
 
-  const fontOptions = bandFontOptions(uploadedFonts)
+  const fontOptions = bandFontOptions(uploadedFonts, brFont)
 
   return (
     <div style={{ height: 48, flexShrink: 0, padding: '0 14px', display: 'flex', alignItems: 'center', gap: 8, background: T.surface, borderTop: `1px solid ${T.border}`, flexWrap: 'wrap', overflow: 'visible' }}>

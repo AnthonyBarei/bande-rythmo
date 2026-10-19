@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { T, Icon, ICONS, Avatar, Btn, Chip, Dot, alpha } from '../ui'
+import { T, Icon, ICONS, Avatar, Btn, Dot, alpha } from '../ui'
 import { TRACK_HEXES } from '../config/tracks'
 import { useToast } from '../ToastContext'
 import { fmtDuration } from '../utils/duration'
@@ -55,6 +55,14 @@ export default function ClipCard({ clip, onDub, onRecord, onMeme, onDelete, onRe
     const c = s.character || ''
     if (c && !chars.includes(c)) chars.push(c)
   }
+  // FIXES_R8 #7: the hover action row covers the meta row — the thumbnail
+  // tooltip carries the same information.
+  const metaTip = [
+    clip.name,
+    `${replCount} répl.`,
+    chars.length ? chars.join(', ') : null,
+    clip.project ? `Projet : ${clip.project}` : null,
+  ].filter(Boolean).join(' · ')
 
   // Enter/Escape unmount the input, which also fires blur — commit only once.
   function submitRename() {
@@ -126,10 +134,10 @@ export default function ClipCard({ clip, onDub, onRecord, onMeme, onDelete, onRe
         background: T.surface, border: `1px solid ${h ? T.border2 : T.border}`, borderRadius: T.r.card,
         overflow: 'hidden', cursor: 'pointer', transition: 'border-color .15s, transform .15s, box-shadow .15s',
         transform: h ? 'translateY(-3px)' : 'none', boxShadow: h ? T.shadow : 'none',
-        display: 'flex', flexDirection: 'column',
+        display: 'flex', flexDirection: 'column', position: 'relative',
       }}>
       {/* Thumb */}
-      <div style={{
+      <div title={metaTip} style={{
         height: 168, flexShrink: 0, position: 'relative',
         background: `linear-gradient(135deg, hsl(${hue},22%,20%), hsl(${hue + 40},20%,12%))`,
       }}>
@@ -158,6 +166,24 @@ export default function ClipCard({ clip, onDub, onRecord, onMeme, onDelete, onRe
             fontSize: 10, fontWeight: 700, letterSpacing: 0.8, textTransform: 'uppercase',
             background: st.bg, color: st.color, backdropFilter: 'blur(6px)', cursor: 'pointer', fontFamily: T.fontUI,
           }}>{st.label}</button>
+        {onAssignProject && (
+          /* Top-right of the thumbnail so the hover action row never covers it.
+             "+ Projet" only on hover / focus (FIXES_R5 #8); an assigned project always shows. */
+          <button
+            data-rd
+            onClick={e => { e.stopPropagation(); onAssignProject(clip.clip_id) }}
+            title={clip.project ? `Projet : ${clip.project} — cliquez pour changer` : 'Assigner à un projet'}
+            style={{
+              position: 'absolute', top: 10, right: 10, maxWidth: 140, padding: '3px 9px', borderRadius: 6, border: 'none',
+              display: 'inline-flex', alignItems: 'center', gap: 5, overflow: 'hidden',
+              fontSize: 11, fontWeight: 600, fontFamily: T.fontUI, cursor: 'pointer',
+              background: 'rgba(0,0,0,.6)', color: clip.project ? T.accent : '#fff', backdropFilter: 'blur(6px)',
+              opacity: clip.project || showActions ? 1 : 0, transition: 'opacity .15s',
+            }}>
+            <Icon d={clip.project ? ICONS.folder : ICONS.plus} size={12} stroke="currentColor" style={{ flexShrink: 0 }} />
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{clip.project || 'Projet'}</span>
+          </button>
+        )}
         <div style={{
           position: 'absolute', bottom: 10, right: 10, padding: '2px 8px', borderRadius: 5,
           fontFamily: T.fontMono, fontSize: 11, fontWeight: 600, background: 'rgba(0,0,0,.7)', color: '#fff',
@@ -200,31 +226,20 @@ export default function ClipCard({ clip, onDub, onRecord, onMeme, onDelete, onRe
               ))}
             </div>
           )}
-          {onAssignProject && (
-            <>
-              <div style={{ flex: 1 }} />
-              {/* FIXES_R5 #8 — "+ Projet" only on hover / focus; an assigned project always shows. */}
-              <Chip soft={!!clip.project} color={clip.project ? T.accent : T.text3}
-                onClick={e => { e.stopPropagation(); onAssignProject(clip.clip_id) }}
-                style={{
-                  maxWidth: 130, overflow: 'hidden', whiteSpace: 'nowrap', flexShrink: 1, minWidth: 0,
-                  opacity: clip.project || showActions ? 1 : 0, transition: 'opacity .15s',
-                }}>
-                <Icon d={clip.project ? ICONS.folder : ICONS.plus} size={12} stroke="currentColor" />
-                <span title={clip.project ? `Projet : ${clip.project} — cliquez pour changer` : 'Assigner à un projet'}
-                  style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{clip.project || 'Projet'}</span>
-              </Chip>
-            </>
-          )}
         </div>
       </div>
 
-      {/* Actions — revealed on hover (also on keyboard focus and touch screens).
-          FIXES_R7 #1: the 44px row is reserved at rest (visibility:hidden), so a
-          hover never changes the card height nor moves the next grid row. */}
+      {/* Actions — revealed on hover / keyboard focus (FIXES_R8 #7): overlaid on
+          the bottom of the body, sliding up 8px with a fade, so the card height
+          never changes and no empty strip is reserved at rest. Touch screens
+          (no hover) keep the row in flow, always visible. */}
       <div style={{
+        position: NO_HOVER ? 'static' : 'absolute', left: 0, right: 0, bottom: 0,
         display: 'grid', gridTemplateColumns: '1fr auto auto auto auto', borderTop: `1px solid ${T.border}`, height: 44, flexShrink: 0,
-        opacity: showActions ? 1 : 0, visibility: showActions ? 'visible' : 'hidden', transition: 'opacity .15s, visibility .15s', overflow: 'hidden',
+        background: T.surface, overflow: 'hidden',
+        opacity: showActions ? 1 : 0, visibility: showActions ? 'visible' : 'hidden',
+        transform: showActions ? 'none' : 'translateY(8px)',
+        transition: 'opacity .15s, transform .15s, visibility .15s',
       }}>
         <button data-rd onClick={e => { e.stopPropagation(); onDub(clip) }} title="Doublage" style={{
           height: 44, padding: '0 14px', background: 'transparent', border: 'none', borderRight: `1px solid ${T.border}`,

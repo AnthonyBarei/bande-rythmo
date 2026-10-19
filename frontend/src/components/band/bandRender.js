@@ -24,7 +24,8 @@ export const BR_FONTS = [
   { id: 'atkinson',  label: 'Atkinson Hyperlegible', stack: "'Atkinson Hyperlegible', sans-serif" },
   { id: 'lisible',   label: 'Manuscrite lisible',    stack: "'Shantell Sans', 'Caveat', cursive" },
   { id: 'cursive',   label: 'Caveat (manuscrite)',   stack: "'Caveat', cursive" },
-  { id: 'inter',     label: 'Inter',                 stack: "'Inter', sans-serif" },
+  { id: 'plex',      label: 'IBM Plex Sans',         stack: "'IBM Plex Sans', sans-serif" },
+  { id: 'inter',     label: 'Inter',                 stack: "'Inter', sans-serif" }, // legacy — not offered
   { id: 'jetbrains', label: 'JetBrains Mono',        stack: "'JetBrains Mono', 'Courier New', monospace" },
 ]
 // Uploaded fonts (id starts 'u-') resolve to the @font-face family injected

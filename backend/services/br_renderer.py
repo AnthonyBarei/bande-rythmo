@@ -1,3 +1,4 @@
+import logging
 import math
 import os
 import subprocess
@@ -8,6 +9,8 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 from services.detection import classify_char
 from services.jobs import CancelledJobError, kill_process_tree
+
+log = logging.getLogger("br.renderer")
 
 CURSOR_X_RATIO = 0.30
 BG = (5, 5, 5)
@@ -30,16 +33,57 @@ def _blend(fg, a, bg):
 # Bundled BR fonts — keyed by the id sent from the frontend font picker.
 _FONTS_DIR = os.path.join(os.path.dirname(__file__), "..", "fonts")
 _ATKINSON_BOLD = os.path.join(_FONTS_DIR, "AtkinsonHyperlegible-Bold.ttf")
+_INTER = os.path.join(_FONTS_DIR, "Inter.ttf")
 _BR_FONT_FILES = {
     "atkinson":  os.path.join(_FONTS_DIR, "AtkinsonHyperlegible-Bold.ttf"),
     # Legible-handwriting alternative to the cursive Caveat — keeps the
     # manuscript feel while staying readable in motion. Falls back to
     # atkinson if ShantellSans.ttf isn't bundled yet.
     "lisible":   os.path.join(_FONTS_DIR, "ShantellSans.ttf"),
-    "inter":     os.path.join(_FONTS_DIR, "Inter.ttf"),
+    # « Neutre » — IBM Plex Sans SemiBold (canvas draws the band text at 600).
+    "plex":      os.path.join(_FONTS_DIR, "IBMPlexSans-SemiBold.ttf"),
+    # Legacy « Neutre » — no longer offered, kept for existing projects.
+    "inter":     _INTER,
     "jetbrains": os.path.join(_FONTS_DIR, "JetBrainsMono-Bold.ttf"),
     "cursive":   os.path.join(_FONTS_DIR, "Caveat.ttf"),
 }
+# Substitute when a bundled file is missing (not bundled yet); default atkinson.
+_BR_FONT_FALLBACKS = {
+    "plex": _INTER,
+}
+_warned_missing_fonts = set()
+
+
+def resolve_br_font_path(br_font: Optional[str]) -> str:
+    """Font file for a picker id: bundled id → its file (or its fallback when
+    the file isn't bundled, with a one-time warning), 'u-…' → uploaded font,
+    anything else → Atkinson."""
+    chosen = _BR_FONT_FILES.get(br_font or "")
+    if chosen:
+        if os.path.isfile(chosen):
+            return chosen
+        fallback = _BR_FONT_FALLBACKS.get(br_font, _ATKINSON_BOLD)
+        if br_font not in _warned_missing_fonts:
+            _warned_missing_fonts.add(br_font)
+            log.warning("BR font %r: %s missing in %s — falling back to %s",
+                        br_font, os.path.basename(chosen), os.path.abspath(_FONTS_DIR),
+                        os.path.basename(fallback))
+        return fallback
+    if br_font and br_font.startswith("u-"):
+        try:
+            from routes.fonts import resolve_font_path
+            uploaded = resolve_font_path(br_font)
+        except Exception:
+            log.exception("BR font %r: uploaded font lookup failed — using Atkinson", br_font)
+            return _ATKINSON_BOLD
+        if uploaded:
+            return uploaded
+        log.warning("BR font %r: uploaded font not found — using Atkinson", br_font)
+        return _ATKINSON_BOLD
+    if br_font:
+        log.warning("BR font %r: unknown id — using Atkinson", br_font)
+    return _ATKINSON_BOLD
+
 
 TRACK_COLORS = [
     {"bg": (245, 197, 24),  "bg_a": 26,  "label": (245, 197, 24)},
@@ -78,16 +122,7 @@ def _get_fonts(font_size: int, label_size: int = 10, avatar_size: int = 9,
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
     ]
-    chosen = _BR_FONT_FILES.get(br_font)
-    if not chosen and br_font and br_font.startswith("u-"):
-        # Uploaded font — resolve from the fonts registry.
-        try:
-            from routes.fonts import resolve_font_path
-            chosen = resolve_font_path(br_font)
-        except Exception:
-            chosen = None
-    if not chosen:
-        chosen = _ATKINSON_BOLD
+    chosen = resolve_br_font_path(br_font)
     candidates = [chosen] + fallback
     return (
         _load_font(candidates, font_size),     # BR dialogue text

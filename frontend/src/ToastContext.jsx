@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useRef, useState } from 'react'
+import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react'
 import { Icon, ICONS } from './Icons'
 
 /* Toast surface with an undoable variant.
@@ -13,10 +13,16 @@ import { Icon, ICONS } from './Icons'
        onCommit: () => fireBackendDelete(),     // window elapsed → commit destructive op
        duration: 5000,
      })
+
+   The provider renders nothing itself: <ToastCards /> is placed by the shared
+   bottom-right dock (ProgressContext ToastDock), under the progress cards, so
+   every toast lives in one stack (FIXES_R8 #2).
 */
 
 const ToastCtx = createContext(null)
+const ToastListCtx = createContext({ toasts: [], dismiss: () => {} })
 export const useToast = () => useContext(ToastCtx)
+export const useToastList = () => useContext(ToastListCtx)
 
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([])
@@ -88,27 +94,27 @@ export function ToastProvider({ children }) {
     return { id, cancel: action.run, commit }
   }, [dismiss])
 
+  const api = useMemo(() => ({ show, dismiss, error, success, undo }), [show, dismiss, error, success, undo])
+  const list = useMemo(() => ({ toasts, dismiss }), [toasts, dismiss])
+
   return (
-    <ToastCtx.Provider value={{ show, dismiss, error, success, undo }}>
-      {children}
-      <ToastStack toasts={toasts} onDismiss={dismiss} />
+    <ToastCtx.Provider value={api}>
+      <ToastListCtx.Provider value={list}>
+        {children}
+      </ToastListCtx.Provider>
     </ToastCtx.Provider>
   )
 }
 
-function ToastStack({ toasts, onDismiss }) {
-  if (!toasts.length) return null
-  return (
-    <div style={{
-      position: 'fixed', left: 14, bottom: 14, zIndex: 'var(--z-toast)',
-      display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 360,
-    }}>
-      {toasts.map(t => (
-        <ToastCard key={t.id} toast={t} onDismiss={onDismiss} />
-      ))}
-    </div>
-  )
+// Cards only — positioned by the dock that hosts them.
+export function ToastCards() {
+  const { toasts, dismiss } = useToastList()
+  return toasts.map(t => <ToastCard key={t.id} toast={t} onDismiss={dismiss} />)
 }
+
+// A long action label ("Exporter le MP4 doublé") goes under the message so the
+// 280px dock never squeezes the text; a short one ("Annuler") stays inline.
+const INLINE_ACTION_MAX = 12
 
 function ToastCard({ toast, onDismiss }) {
   const colors = {
@@ -118,34 +124,40 @@ function ToastCard({ toast, onDismiss }) {
     undo:    { border: 'var(--accent)',    icon: ICONS.undo,  iconColor: 'var(--accent)' },
   }[toast.kind] || { border: 'var(--border2)', icon: ICONS.dot, iconColor: 'var(--text3)' }
 
+  const inlineAction = toast.action && toast.action.label.length <= INLINE_ACTION_MAX
+  const actionBtn = toast.action && (
+    <button
+      onClick={toast.action.run}
+      style={{
+        background: 'transparent', border: '1px solid var(--border2)',
+        color: 'var(--accent)', borderRadius: 4, flexShrink: 0,
+        padding: '0 10px', minHeight: 32, fontSize: 11, fontWeight: 600, cursor: 'pointer',
+      }}>{toast.action.label}</button>
+  )
+
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 10,
+    <div role={toast.kind === 'error' ? 'alert' : 'status'} style={{
       padding: '10px 12px',
       background: 'var(--surface2)',
       border: `1px solid ${colors.border}`,
-      borderRadius: 6,
+      borderRadius: 8,
       boxShadow: '0 4px 14px rgba(0,0,0,0.35)',
       fontSize: 12.5, color: 'var(--text)',
-      minWidth: 260,
     }}>
-      <Icon d={colors.icon} size={15} stroke={colors.iconColor} style={{ color: colors.iconColor }} />
-      <span style={{ flex: 1 }}>{toast.msg}</span>
-      {toast.action && (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <Icon d={colors.icon} size={15} stroke={colors.iconColor} style={{ color: colors.iconColor, flexShrink: 0 }} />
+        <span style={{ flex: 1, minWidth: 0 }}>{toast.msg}</span>
+        {inlineAction && actionBtn}
         <button
-          onClick={toast.action.run}
-          style={{
-            background: 'transparent', border: '1px solid var(--border2)',
-            color: 'var(--accent)', borderRadius: 4,
-            padding: '0 10px', minHeight: 32, fontSize: 11, fontWeight: 600, cursor: 'pointer',
-          }}>{toast.action.label}</button>
+          onClick={() => toast.onClose ? toast.onClose() : onDismiss(toast.id)}
+          title="Fermer" aria-label="Fermer"
+          style={{ background: 'transparent', border: 'none', color: 'var(--text3)', cursor: 'pointer', width: 32, height: 32, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
+          <Icon d={ICONS.close} size={14} />
+        </button>
+      </div>
+      {toast.action && !inlineAction && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 6 }}>{actionBtn}</div>
       )}
-      <button
-        onClick={() => toast.onClose ? toast.onClose() : onDismiss(toast.id)}
-        title="Fermer" aria-label="Fermer"
-        style={{ background: 'transparent', border: 'none', color: 'var(--text3)', cursor: 'pointer', width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
-        <Icon d={ICONS.close} size={14} />
-      </button>
     </div>
   )
 }

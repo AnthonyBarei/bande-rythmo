@@ -106,7 +106,7 @@ export default function Preferences() {
           </Field>
           <Field label="Police de bande rythmo">
             <Select width={200} menuWidth={280} value={settings.brFont} onChange={v => update({ brFont: v })}
-              options={fontOptions(uploadedFonts)} />
+              options={fontOptions(uploadedFonts, settings.brFont)} />
           </Field>
           <Field label="Densité">
             <Segmented value={settings.density} onChange={v => update({ density: v })} options={DENSITIES} />

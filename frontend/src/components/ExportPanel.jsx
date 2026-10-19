@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { T, alpha, Icon, ICONS, Btn, Chip, Segmented, Toggle, ProgressBar, ScreenHeader } from '../ui'
+import { T, alpha, Icon, ICONS, Btn, Chip, Segmented, Select, Toggle, ProgressBar, ScreenHeader } from '../ui'
 import { useProgress } from '../ProgressContext'
 import { useSettings } from '../SettingsContext'
 import { fmtClock } from '../utils/timecode'
@@ -10,7 +10,7 @@ import { primaryRowKey } from '../utils/primaryRow'
 import { EXPORT_QUEUE, inExportQueue } from '../utils/toastScope'
 import { useNow } from '../utils/useNow'
 import { formatColor, NEUTRAL_FORMAT_COLOR } from '../utils/formatColors'
-import { PRIMARY_FONT_IDS, fetchUploadedFonts, fontLabel } from '../config/fonts'
+import { fetchUploadedFonts, fontLabel, fontOptions as bandFontOptions } from '../config/fonts'
 
 // Export screen — port of redesign screen-record-export.jsx → Export,
 // QueueRow, RangeField, ExportOptions.
@@ -619,26 +619,24 @@ function RangeField({ on, setOn, rangeIn, setRangeIn, rangeOut, setRangeOut, dur
   )
 }
 
-// Uploaded font names — only needed when the project band uses one.
-function useUploadedFontsFor(fontId) {
+// Uploaded fonts — offered in the « Police BR » Select like in the Éditeur.
+function useUploadedFonts(enabled) {
   const [fonts, setFonts] = useState([])
-  const uploaded = !!fontId && fontId.startsWith('u-')
   useEffect(() => {
-    if (!uploaded) return
+    if (!enabled) return
     let alive = true
     fetchUploadedFonts()
       .then(list => { if (alive) setFonts(list) })
       .catch(e => console.warn('Chargement des polices importées échoué', e))
     return () => { alive = false }
-  }, [uploaded])
+  }, [enabled])
   return fonts
 }
 
 function ExportOptions({ sel, quality, setQuality, detectionBurn, setDetectionBurn, exportFont, setExportFont, brFont, gpu, setGpu, hwEncoders }) {
-  const uploadedFonts = useUploadedFontsFor(brFont)
+  const uploadedFonts = useUploadedFonts(sel === 'mp4')
   if (sel === 'mp4') {
-    const fontIds = PRIMARY_FONT_IDS.includes(brFont) ? PRIMARY_FONT_IDS : [...PRIMARY_FONT_IDS, brFont]
-    const fontOptions = fontIds.map(id => ({ v: id, l: fontLabel(id, uploadedFonts) }))
+    const fontOptions = bandFontOptions(uploadedFonts, exportFont)
     const encoders = hwEncoders ? ['nvenc', 'qsv', 'amf'].filter(k => hwEncoders[k]) : []
     return (<>
       <Row label="Qualité">
@@ -652,7 +650,7 @@ function ExportOptions({ sel, quality, setQuality, detectionBurn, setDetectionBu
       <Tg label="Incruster la détection" on={detectionBurn} onToggle={() => setDetectionBurn(v => !v)}
         desc="Off par défaut — bande propre, détails dans le DetX." />
       <Row label="Police BR">
-        <Segmented value={exportFont} onChange={setExportFont} options={fontOptions} />
+        <Select size="sm" width={160} menuWidth={260} value={exportFont} onChange={setExportFont} options={fontOptions} />
         <div style={{ fontSize: 10, color: T.text3, marginTop: 6 }}>
           {exportFont === brFont ? 'Police de la bande du projet' : (<>
             Remplace la police du projet ({fontLabel(brFont, uploadedFonts)}) ·{' '}

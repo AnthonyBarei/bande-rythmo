@@ -236,15 +236,20 @@ Cursor TC chip : `HH:MM:SS:FF` à `clip.fps` (accent, bordure accent).
 Format `croisille` disponible via `POST /api/export/export`.
 
 ## Polices BR (picker)
+Liste unique `frontend/src/config/fonts.js` (Réglages, barre Éditeur, Exporter — même `Select`) ;
+rendu canevas `band/bandRender.js` (`BR_FONTS`, graisse 600) ; export `br_renderer.resolve_br_font_path`.
 ```
-atkinson  → AtkinsonHyperlegible-Bold.ttf  (défaut)
-lisible   → ShantellSans.ttf               (manuscrite lisible, à bundler)
-cursive   → Caveat.ttf                     (manuscrite authentique)
-inter     → Inter.ttf
-jetbrains → JetBrainsMono-Bold.ttf
+cursive   → Manuscrite → Caveat.ttf
+atkinson  → Lisible    → AtkinsonHyperlegible-Bold.ttf  (fallback générique)
+lisible   → Feutre     → ShantellSans.ttf               (à bundler → repli atkinson + warning)
+plex      → Neutre     → IBMPlexSans-SemiBold.ttf       (à bundler → repli Inter.ttf + warning)
+jetbrains → Mono       → JetBrainsMono-Bold.ttf
+inter     → (legacy, plus proposé) → Inter.ttf — projets/réglages existants ; n'apparaît
+            dans un Select que tant qu'il est la valeur sélectionnée
+u-…       → police uploadée (routes/fonts.resolve_font_path) → repli atkinson + warning
 ```
-Web: Shantell Sans chargé depuis Google Fonts dans `index.html`.
-Backend: `_BR_FONT_FILES["lisible"]` → fallback atkinson si fichier absent.
+Web: IBM Plex Sans / Shantell Sans / Inter (legacy) chargés depuis Google Fonts dans `index.html`.
+Backend: fichier absent → `_BR_FONT_FALLBACKS` (warning loggé une fois par id, `br.renderer`).
 
 ## Roadmap
 

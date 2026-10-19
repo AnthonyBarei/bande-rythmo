@@ -4,6 +4,7 @@ import { filenameFromDisposition, saveBlob } from './download'
 import { toastsFor } from './utils/toastScope'
 import { groupJobs, siblingsOf, toastGroupKey } from './utils/jobGroups'
 import JobError from './components/JobError'
+import { ToastCards, useToastList } from './ToastContext'
 
 /* Progress surface — one place for long ops (Whisper, MP4 burn, Plex remux,
    GIF export, batch clip cut).
@@ -313,10 +314,17 @@ const TOAST_CLEARANCE = 12
 // containers add it to their bottom padding so their last row stays reachable.
 const SAFE_VAR = '--toast-safe-bottom'
 
-/* Rendered by App, which knows the open screen: hidden on Activité, filtered
-   to jobs outside the queue on Exporter, newest two + "+N" everywhere. */
-export function ProgressToasts({ route, queueClipId = null, onOpenActivity }) {
+// The Éditeur's inspector ends with a 40px hint bar — the dock sits above it.
+const EDITOR_HINT_BAR = 40
+
+/* The one toast stack (FIXES_R8 #2), bottom-right, rendered by App which knows
+   the open screen. One flex column: "+N" chip, progress cards (hidden on
+   Activité, filtered to jobs outside the queue on Exporter, newest two), then
+   the ToastContext notifications (undo, errors, "toutes validées"…) — a single
+   column, so the two kinds can never overlap. */
+export function ToastDock({ route, queueClipId = null, onOpenActivity }) {
   const { jobs, cancelByKey, dismiss, retry } = useProgress()
+  const { toasts } = useToastList()
   // FIXES_R5 §1: toast:false jobs never toast; identical failures (same kind +
   // same error) collapse into one card with a ×N count. FIXES_R7 #6: so do
   // identical running jobs (same kind + clip + options); Annuler cancels them all.
@@ -326,7 +334,7 @@ export function ProgressToasts({ route, queueClipId = null, onOpenActivity }) {
   const cancelGroup = (g) => g.groupKeys.forEach(cancelByKey)
   const retryGroup = (g) => { siblingsOf(g).forEach(dismiss); retry(g.key) }
   const stackRef = useRef(null)
-  const visible = shown.length > 0
+  const visible = shown.length > 0 || toasts.length > 0
 
   useLayoutEffect(() => {
     const root = document.documentElement
@@ -348,8 +356,7 @@ export function ProgressToasts({ route, queueClipId = null, onOpenActivity }) {
   if (!visible) return null
   return (
     <div ref={stackRef} style={{
-      // In the editor, sit above the inspector's 40px hint bar so it stays usable.
-      position: 'fixed', right: TOAST_EDGE, bottom: route === 'dub' ? TOAST_EDGE + 40 : TOAST_EDGE, width: TOAST_W, zIndex: 'var(--z-toast)',
+      position: 'fixed', right: TOAST_EDGE, bottom: route === 'dub' ? TOAST_EDGE + EDITOR_HINT_BAR : TOAST_EDGE, width: TOAST_W, zIndex: 'var(--z-toast)',
       display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 8,
     }}>
       {hidden > 0 && (
@@ -363,6 +370,7 @@ export function ProgressToasts({ route, queueClipId = null, onOpenActivity }) {
       {shown.map(j => (
         <ProgressCard key={j.key} job={j} onCancel={() => cancelGroup(j)} onDismiss={() => dismissGroup(j)} onRetry={() => retryGroup(j)} />
       ))}
+      <ToastCards />
     </div>
   )
 }
