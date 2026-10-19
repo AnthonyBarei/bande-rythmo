@@ -11,11 +11,13 @@ const MIN_LOOP = 0.3
 // the real clip data by BRTimeline. Boucles (and the view-only ⇧-drag loop
 // region) are draggable divs over the canvas: body = move, 8px edges = trim.
 // Boucles persist on pointer-up through `onBouclesChange` (the DubbingWorkspace
-// boucles save path); the loop region updates live through `onLoopRegionChange`.
+// boucles save path); the loop region updates live through `onLoopRegionChange`,
+// and a boucle drag previews live through `onBouclesPreview({ boucles, number } | null)` so the
+// Boucles list follows the trim/move (FIXES_R5 #18).
 // The top LABEL_ROW_H strip holds only the labels: canvas marks and the
 // boucle regions all start below it (FIXES_R4 #7/#8).
 export default function TimelineNav({
-  bandNow, clipFps, boucles, loopRegion, onBouclesChange, onLoopRegionChange, duration, ...timelineProps
+  bandNow, clipFps, boucles, loopRegion, onBouclesChange, onBouclesPreview, onLoopRegionChange, duration, ...timelineProps
 }) {
   const boxRef = useRef(null)
   const [drag, setDrag] = useState(null)   // { key, s, e }
@@ -41,6 +43,7 @@ export default function TimelineNav({
     // Tolerate pre-existing overlaps: the region may already sit past a neighbour.
     const lo = Math.min(region.lo, s0), hi = Math.max(region.hi, e0)
     let cur = { s: s0, e: e0 }
+    const withCur = () => boucles.map(b => (b.number === region.number ? { ...b, start: cur.s, end: cur.e } : b))
     const move = ev => {
       const dt = ((ev.clientX - x0) / box.width) * dur
       if (mode === 'move') {
@@ -53,15 +56,15 @@ export default function TimelineNav({
       }
       setDrag({ key: region.key, ...cur })
       if (region.kind === 'loop') onLoopRegionChange?.({ start: cur.s, end: cur.e })
+      else onBouclesPreview?.({ boucles: withCur(), number: region.number })
     }
     const up = () => {
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
       setDrag(null)
       const changed = Math.abs(cur.s - s0) > 1e-4 || Math.abs(cur.e - e0) > 1e-4
-      if (changed && region.kind === 'boucle') {
-        onBouclesChange?.(boucles.map(b => (b.number === region.number ? { ...b, start: cur.s, end: cur.e } : b)))
-      }
+      if (changed && region.kind === 'boucle') onBouclesChange?.(withCur())
+      if (region.kind === 'boucle') onBouclesPreview?.(null)
     }
     setDrag({ key: region.key, s: s0, e: e0 })
     window.addEventListener('pointermove', move)
