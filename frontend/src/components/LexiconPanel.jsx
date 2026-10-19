@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { T, Btn, Icon, ICONS, pressable } from '../ui'
+import { T, Btn, Icon, ICONS, Input, pressable } from '../ui'
 
 const NO_PROVIDER_TIP = 'Aucun fournisseur de traduction configuré — voir Réglages › Auto-traduction'
 
@@ -99,9 +99,9 @@ export default function LexiconPanel({ project = '', translateAvailable = false,
 
   return (
     <div style={{ padding: 12 }}>
-      <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
-        <input ref={termInputRef} value={term} onChange={e => setTerm(e.target.value)} onKeyDown={e => e.key === 'Enter' && add()} placeholder="Terme" style={inp} />
-        <input value={translation} onChange={e => setTranslation(e.target.value)} onKeyDown={e => e.key === 'Enter' && add()} placeholder="Traduction" style={inp} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+        <Input ref={termInputRef} value={term} onChange={e => setTerm(e.target.value)} onKeyDown={e => e.key === 'Enter' && add()} placeholder="Terme" aria-label="Terme" style={{ flex: 1 }} />
+        <Input value={translation} onChange={e => setTranslation(e.target.value)} onKeyDown={e => e.key === 'Enter' && add()} placeholder="Traduction" aria-label="Traduction" style={{ flex: 1 }} />
         <Btn size="sm" variant="primary" icon={ICONS.plus} onClick={add} disabled={busy} title="Ajouter" />
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
@@ -115,7 +115,7 @@ export default function LexiconPanel({ project = '', translateAvailable = false,
       </div>
       {error && <div style={{ fontSize: 11, color: T.danger, marginBottom: 8 }}>{error}</div>}
       {entries.length > 0 && (
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Rechercher un terme…" style={{ ...inp, width: '100%', boxSizing: 'border-box', marginBottom: 8 }} />
+        <Input icon={ICONS.search} value={search} onChange={e => setSearch(e.target.value)} placeholder="Rechercher un terme…" aria-label="Rechercher un terme" style={{ marginBottom: 8 }} />
       )}
       {filtered.length === 0 ? (
         <p style={{ color: T.text3, fontSize: T.fs.xs, padding: 16, textAlign: 'center' }}>
@@ -168,5 +168,3 @@ function LexiconRow({ entry, onRemove, onSavePhonetic }) {
     </div>
   )
 }
-
-const inp = { flex: 1, minWidth: 0, fontSize: 12, padding: '7px 9px', background: T.bg2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: 7, outline: 'none', fontFamily: T.fontUI }

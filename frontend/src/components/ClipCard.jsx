@@ -20,14 +20,11 @@ function hashHue(str) {
   return Math.abs(h) % 360
 }
 
-const NO_HOVER = typeof window !== 'undefined' && window.matchMedia?.('(hover: none)').matches
-
 export default function ClipCard({ clip, onDub, onRecord, onMeme, onDelete, onRename, onStatusChange, onAssignProject }) {
   const toast = useToast()
   const [editingName, setEditingName] = useState(false)
   const [nameInput, setNameInput] = useState(clip.name)
   const [h, setH] = useState(false)
-  const [focusWithin, setFocusWithin] = useState(false)
   const [watching, setWatching] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [mp3Busy, setMp3Busy] = useState(false)
@@ -36,7 +33,6 @@ export default function ClipCard({ clip, onDub, onRecord, onMeme, onDelete, onRe
   const curStatusKey = clip.status || 'todo'
   const st = STATUS[curStatusKey] || STATUS.todo
   const nextStatusKey = STATUS_CYCLE[(STATUS_CYCLE.indexOf(curStatusKey) + 1) % STATUS_CYCLE.length]
-  const showActions = h || focusWithin || NO_HOVER
 
   useEffect(() => {
     if (!watching) return
@@ -127,9 +123,8 @@ export default function ClipCard({ clip, onDub, onRecord, onMeme, onDelete, onRe
     <div
       onMouseEnter={() => setH(true)}
       onMouseLeave={() => { setH(false); setConfirmDelete(false) }}
-      onFocus={() => setFocusWithin(true)}
-      onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget)) setFocusWithin(false) }}
       onClick={() => onDub(clip)}
+      className="clip-card"
       style={{
         background: T.surface, border: `1px solid ${h ? T.border2 : T.border}`, borderRadius: T.r.card,
         overflow: 'hidden', cursor: 'pointer', transition: 'border-color .15s, transform .15s, box-shadow .15s',
@@ -168,9 +163,11 @@ export default function ClipCard({ clip, onDub, onRecord, onMeme, onDelete, onRe
           }}>{st.label}</button>
         {onAssignProject && (
           /* Top-right of the thumbnail so the hover action row never covers it.
-             "+ Projet" only on hover / focus (FIXES_R5 #8); an assigned project always shows. */
+             "+ Projet" only on hover / focus (FIXES_R5 #8, CSS .clip-card-project);
+             an assigned project always shows. */
           <button
             data-rd
+            className={clip.project ? undefined : 'clip-card-project'}
             onClick={e => { e.stopPropagation(); onAssignProject(clip.clip_id) }}
             title={clip.project ? `Projet : ${clip.project} — cliquez pour changer` : 'Assigner à un projet'}
             style={{
@@ -178,7 +175,7 @@ export default function ClipCard({ clip, onDub, onRecord, onMeme, onDelete, onRe
               display: 'inline-flex', alignItems: 'center', gap: 5, overflow: 'hidden',
               fontSize: 11, fontWeight: 600, fontFamily: T.fontUI, cursor: 'pointer',
               background: 'rgba(0,0,0,.6)', color: clip.project ? T.accent : '#fff', backdropFilter: 'blur(6px)',
-              opacity: clip.project || showActions ? 1 : 0, transition: 'opacity .15s',
+              transition: 'opacity .15s',
             }}>
             <Icon d={clip.project ? ICONS.folder : ICONS.plus} size={12} stroke="currentColor" style={{ flexShrink: 0 }} />
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{clip.project || 'Projet'}</span>
@@ -231,17 +228,14 @@ export default function ClipCard({ clip, onDub, onRecord, onMeme, onDelete, onRe
         </div>
       </div>
 
-      {/* Actions — revealed on hover / keyboard focus (FIXES_R8 #7): overlaid on
-          the bottom of the body, sliding up 8px with a fade, so the card height
-          never changes and no empty strip is reserved at rest. Touch screens
-          (no hover) keep the row in flow, always visible. */}
-      <div style={{
-        position: NO_HOVER ? 'static' : 'absolute', left: 0, right: 0, bottom: 0,
+      {/* Actions — revealed on hover / keyboard focus by CSS (.clip-card-actions
+          in index.css, FIXES_R8 #7 + FINAL_REVIEW #2): overlaid on the bottom of
+          the body, sliding up 8px with a fade, so the card height never changes.
+          :focus-within applies before the next Tab, so fast Tab presses reach
+          the row. Touch screens (hover: none) keep it in flow, always visible. */}
+      <div className="clip-card-actions" style={{
         display: 'grid', gridTemplateColumns: '1fr auto auto auto auto', borderTop: `1px solid ${T.border}`, height: 44, flexShrink: 0,
         background: T.surface, overflow: 'hidden',
-        opacity: showActions ? 1 : 0, visibility: showActions ? 'visible' : 'hidden',
-        transform: showActions ? 'none' : 'translateY(8px)',
-        transition: 'opacity .15s, transform .15s, visibility .15s',
       }}>
         <button data-rd className="focus-inset" onClick={e => { e.stopPropagation(); onDub(clip) }} title="Doublage" style={{
           height: 44, padding: '0 14px', background: 'transparent', border: 'none', borderRight: `1px solid ${T.border}`,

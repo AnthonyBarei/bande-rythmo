@@ -1,36 +1,4 @@
 // Canonical timecode formatting — single source of truth.
-// Replaces 5 near-duplicate formatters (DubbingWorkspace, SubtitleEditor,
-// ExportPanel, VideoEditor).
-
-// "MM:SS.s" — transport clocks, hover labels.
-// Values are rounded to the displayed precision BEFORE the minute split, so
-// 59.97 reads 01:00.0 and never 00:60.0.
-export const fmtClock = t => {
-  if (!t && t !== 0) return '00:00.0'
-  const r = Math.round(t * 10) / 10
-  const m = Math.floor(r / 60)
-  const s = (r - m * 60).toFixed(1).padStart(4, '0')
-  return `${String(m).padStart(2, '0')}:${s}`
-}
-
-// "MM:SS.ss" — réplique TC fields (frame-ish precision without fps).
-export const fmtClockPrecise = t => {
-  if (t === null || t === undefined) return '--:--.--'
-  const r = Math.round(t * 100) / 100
-  const m = Math.floor(r / 60)
-  const s = (r - m * 60).toFixed(2).padStart(5, '0')
-  return `${String(m).padStart(2, '0')}:${s}`
-}
-
-// "H:MM:SS.ss" with hours only when needed — long source videos (import).
-export const fmtClockHours = t => {
-  if (t === null || t === undefined) return '--:--.--'
-  const r = Math.round(t * 100) / 100
-  const h = Math.floor(r / 3600)
-  const m = Math.floor((r - h * 3600) / 60)
-  const s = (r - h * 3600 - m * 60).toFixed(2).padStart(5, '0')
-  return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${s}` : `${String(m).padStart(2, '0')}:${s}`
-}
 
 // "HH:MM:SS:FF" — SMPTE at the clip's frame rate (BR pro display, DetX).
 export const fmtSMPTE = (sec, fps = 25) => {

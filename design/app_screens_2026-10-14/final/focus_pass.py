@@ -25,7 +25,9 @@ PROBE = r"""(() => {
   const tmp = document.createElement('span'); tmp.style.color = 'var(--accent)'; document.body.appendChild(tmp);
   const accent = getComputedStyle(tmp).color.replace(/\s/g, ''); tmp.remove();
   // An opacity-0 native input draws its ring on the wrapping label (index.css).
-  const host = parseFloat(getComputedStyle(el).opacity) === 0 && el.parentElement && el.parentElement.tagName === 'LABEL' ? el.parentElement : el;
+  // A text input inside a pill / field wrapper draws its ring on the wrapper (.field-ring:focus-within).
+  const field = el.matches('input, textarea') ? el.closest('.field-ring') : null;
+  const host = field || (parseFloat(getComputedStyle(el).opacity) === 0 && el.parentElement && el.parentElement.tagName === 'LABEL' ? el.parentElement : el);
   const s = getComputedStyle(host), r = host.getBoundingClientRect();
   const ow = parseFloat(s.outlineWidth) || 0;
   const outline = s.outlineStyle !== 'none' && ow > 0;
@@ -54,7 +56,7 @@ PROBE = r"""(() => {
     outline: outline ? s.outlineStyle + ' ' + s.outlineWidth : null, shadow: s.boxShadow.slice(0, 80),
     opacity: Math.round(op * 100) / 100,
     visible: op > 0.2 && r.width > 0 && r.height > 0 && r.bottom > 0 && r.right > 0 && r.top < innerHeight && r.left < innerWidth,
-    inlineShadow: host.style.boxShadow || null, ringHost: host === el ? null : 'label', path: path.join('<'),
+    inlineShadow: host.style.boxShadow || null, ringHost: host === el ? null : (field ? 'field' : 'label'), path: path.join('<'),
   };
 })()"""
 

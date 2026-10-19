@@ -1,18 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { fmtClock, fmtClockPrecise, fmtClockHours, parseTC } from './timecode'
+import { fmtSMPTE, parseTC } from './timecode'
 
-describe('timecode formatters', () => {
-    it('carry the rounding into the minute instead of printing :60', () => {
-        expect(fmtClock(59.97)).toBe('01:00.0')
-        expect(fmtClockPrecise(59.996)).toBe('01:00.00')
-        expect(fmtClockHours(3599.999)).toBe('1:00:00.00')
-    })
-
-    it('format ordinary values unchanged', () => {
-        expect(fmtClock(0)).toBe('00:00.0')
-        expect(fmtClock(75.25)).toBe('01:15.3')
-        expect(fmtClockPrecise(5.5)).toBe('00:05.50')
-        expect(fmtClockHours(3725.5)).toBe('1:02:05.50')
+describe('fmtSMPTE', () => {
+    it('formats HH:MM:SS:FF at the clip frame rate', () => {
+        expect(fmtSMPTE(0)).toBe('00:00:00:00')
+        expect(fmtSMPTE(3725.5, 24)).toBe('01:02:05:12')
+        expect(fmtSMPTE(-1, 25)).toBe('-00:00:01:00')
+        expect(fmtSMPTE(null)).toBe('--:--:--:--')
     })
 })
 

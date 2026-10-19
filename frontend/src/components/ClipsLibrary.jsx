@@ -92,7 +92,7 @@ export default function ClipsLibrary({ clips, onDub, onRecord, onMeme, onDelete,
             {clips.length} clip{clips.length !== 1 ? 's' : ''} · {fmtTotal(totalDur)}
           </span>
           <div style={{ flex: 1 }} />
-          <div style={{
+          <div className="field-ring" style={{
             display: 'flex', alignItems: 'center', gap: 9, padding: '0 14px', height: 42, minWidth: 260,
             background: T.surface, border: `1px solid ${T.border}`, borderRadius: 99,
           }}>

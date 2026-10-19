@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Btn, Icon, ICONS, Segmented, T, alpha } from '../../ui'
+import { Btn, Icon, ICONS, Input, Segmented, T, alpha } from '../../ui'
 import { fmtSMPTE } from '../../utils/timecode'
 import { parseTimecodeInput } from '../../utils/tcInput'
 
@@ -74,13 +74,11 @@ function TimecodeField({ t, duration, fps, onSeek, onEditStart }) {
 
   if (editing) {
     return (
-      <input autoFocus defaultValue={fmtSMPTE(t, fps)} aria-label="Aller au timecode" aria-invalid={invalid}
+      <Input autoFocus defaultValue={fmtSMPTE(t, fps)} aria-label="Aller au timecode" aria-invalid={invalid}
         title={invalid ? 'Timecode invalide — HH:MM:SS:FF ou 12:34' : 'HH:MM:SS:FF ou plus court (12:34) · Entrée pour aller · Échap pour annuler'}
         onFocus={e => e.currentTarget.select()} onBlur={close} onKeyDown={onKeyDown} onChange={() => invalid && setInvalid(false)}
-        style={{
-          width: 112, height: 30, padding: '0 8px', background: T.bg2, border: `1px solid ${invalid ? T.danger : T.accent}`, borderRadius: T.r.chip,
-          color: T.text, fontFamily: T.fontMono, fontSize: 12, outline: 'none', marginLeft: 4,
-        }} />
+        style={{ width: 112, height: 30, padding: '0 8px', marginLeft: 4, flexShrink: 0, borderRadius: T.r.chip, borderColor: invalid ? T.danger : T.accent }}
+        inputStyle={{ fontFamily: T.fontMono, fontSize: 12 }} />
     )
   }
   return (

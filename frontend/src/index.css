@@ -159,6 +159,36 @@ textarea:focus-visible {
 label:has(> input:focus-visible) {
   box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent) !important;
 }
+/* Input primitive (ui.jsx Input) — FINAL_REVIEW #3. */
+.ui-input {
+  display: flex; align-items: center; gap: 8px; min-width: 0; box-sizing: border-box;
+  height: 32px; padding: 0 10px; cursor: text;
+  background: var(--bg2); border: 1px solid var(--border2); border-radius: 9px;
+  transition: border-color .15s;
+}
+.ui-input--sm { height: 28px; padding: 0 8px; gap: 6px; }
+.ui-input--lg { height: 44px; padding: 0 14px; gap: 12px; }
+.ui-input:focus-within { border-color: var(--accent); }
+.ui-input > input {
+  flex: 1; min-width: 0; height: 100%; box-sizing: border-box; padding: 0; margin: 0;
+  background: transparent; border: none; border-radius: 0; outline: none;
+  color: var(--text); font-family: var(--font-ui); font-size: 13px;
+}
+.ui-input--sm > input { font-size: 12px; }
+.ui-input--lg > input { font-size: 16px; }
+.ui-input > input::placeholder { color: var(--text3); opacity: 1; }
+
+/* Text inputs inside a pill / field wrapper (ui.jsx Input, library search,
+   Importer TC field): the ring goes on the rounded wrapper, not as a rectangle
+   inside it (FINAL_REVIEW #6). Text inputs always match :focus-visible, so
+   :focus-within on the wrapper shows the ring exactly when the input would. */
+.field-ring input:focus-visible,
+.field-ring textarea:focus-visible {
+  box-shadow: none !important;
+}
+.field-ring:focus-within {
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent) !important;
+}
 /* Flush controls inside an overflow-clipped strip (library filter tabs, card
    action cells): the outer ring would be cut, so draw it inside the box. */
 .focus-inset:focus-visible {
@@ -188,3 +218,26 @@ video { display: block; }
 /* Réplique rows — actions reveal on hover (clean rows, prototype) */
 .sub-row .row-actions { opacity: 0; transition: opacity 0.12s; pointer-events: none; }
 .sub-row:hover .row-actions, .sub-row:focus-within .row-actions { opacity: 1; pointer-events: auto; }
+
+/* Library card — action row + "+ Projet" chip reveal on hover / keyboard focus
+   (FINAL_REVIEW #2). CSS, not React state: :focus-within matches as soon as
+   focus enters the card, so a fast Tab already finds the row visible. */
+.clip-card .clip-card-actions {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  opacity: 0; visibility: hidden; transform: translateY(8px);
+  transition: opacity .15s, transform .15s, visibility .15s;
+}
+.clip-card .clip-card-project { opacity: 0; }
+.clip-card:hover .clip-card-actions,
+.clip-card:focus-within .clip-card-actions {
+  opacity: 1; visibility: visible; transform: none;
+  /* Visible at once (no visibility transition on reveal): a transition would
+     keep the row hidden until the next frame and a fast Tab would skip it. */
+  transition: opacity .15s, transform .15s, visibility 0s;
+}
+.clip-card:hover .clip-card-project,
+.clip-card:focus-within .clip-card-project { opacity: 1; }
+@media (hover: none) {
+  .clip-card .clip-card-actions { position: static; opacity: 1; visibility: visible; transform: none; }
+  .clip-card .clip-card-project { opacity: 1; }
+}

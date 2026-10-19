@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
-import { T, Icon, ICONS, Kbd } from '../ui'
+import { T, Icon, ICONS, Input, Kbd } from '../ui'
 
 // Command palette (⌘K / Ctrl+K / "/") — port of redesign shell.jsx CommandPalette.
 // Search over navigation, quick actions, and clips. Keyboard: ↑/↓ move, ↵ run, Esc close.
@@ -48,11 +48,10 @@ export default function CommandPalette({ open, onClose, onNavigate, onNewClip, o
   return createPortal(
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.55)', backdropFilter: 'blur(3px)', zIndex: 'var(--z-modal)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: '12vh' }}>
       <div onClick={e => e.stopPropagation()} onKeyDown={onKey} style={{ width: 560, background: T.surface, border: `1px solid ${T.border2}`, borderRadius: T.r.card, boxShadow: T.shadowL, overflow: 'hidden' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '15px 18px', borderBottom: `1px solid ${T.border}` }}>
-          <Icon d={ICONS.search} size={18} stroke={T.text3} />
-          <input ref={inputRef} value={q} onChange={e => { setQ(e.target.value); setSel(0) }} placeholder="Rechercher une commande, un clip…"
-            style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: T.text, fontSize: T.fs.md, fontFamily: T.fontUI, padding: 0, borderRadius: 0, boxShadow: 'none' }} />
-          <Kbd>Esc</Kbd>
+        <div style={{ padding: '10px 12px', borderBottom: `1px solid ${T.border}` }}>
+          <Input ref={inputRef} size="lg" icon={ICONS.search} right={<Kbd>Esc</Kbd>}
+            value={q} onChange={e => { setQ(e.target.value); setSel(0) }}
+            placeholder="Rechercher une commande, un clip…" aria-label="Rechercher une commande ou un clip" />
         </div>
         <div style={{ maxHeight: 360, overflow: 'auto', padding: 8 }}>
           {items.map((c, i) => (

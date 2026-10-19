@@ -303,6 +303,30 @@ export function Select({ value, options, onChange, width = 'auto', size = 'md', 
   )
 }
 
+// ── Input — text field (FINAL_REVIEW #3). The field box is the wrapper span
+// (.ui-input in index.css: bg2, border2, radius 9, accent border on focus);
+// the native input inside is bare. `.field-ring` draws the keyboard focus ring
+// on the wrapper, not inside it (FINAL_REVIEW #6).
+// size: sm 28px / 12px · md 32px / 13px · lg 44px / 16px (command palette).
+// icon: leading ICONS path · right: trailing node (Kbd, hint) · style: wrapper
+// (layout: flex, width, margin) · inputStyle: the input · ref + every other
+// prop go to the <input>.
+export const Input = React.forwardRef(function Input({ size = 'md', icon, right, style, inputStyle, ...props }, ref) {
+  const iconSize = { sm: 13, md: 14, lg: 18 }[size] || 14
+  function focusInput(e) {
+    if (e.target !== e.currentTarget) return
+    e.preventDefault()
+    e.currentTarget.querySelector('input')?.focus()
+  }
+  return (
+    <span className={`ui-input ui-input--${size} field-ring`} onMouseDown={focusInput} style={style}>
+      {icon && <Icon d={icon} size={iconSize} stroke={T.text3} style={{ flexShrink: 0 }} />}
+      <input ref={ref} {...props} style={inputStyle} />
+      {right}
+    </span>
+  )
+})
+
 // ── Splitter — draggable pane divider (row = horizontal line / vertical drag) ──
 export function Splitter({ dir, onDrag, start, onReset, accent, title }) {
   const [h, setH] = useState(false)
@@ -347,18 +371,6 @@ export function ProgressBar({ pct, color, h = 5 }) {
       <div style={{ width: `${pct}%`, height: '100%', background: c, borderRadius: h, transition: 'width .3s' }} />
     </div>
   )
-}
-
-export const fmtTC = (sec, fps = 24) => {
-  const f = Math.floor((sec % 1) * fps)
-  const s = Math.floor(sec) % 60, m = Math.floor(sec / 60) % 60, h = Math.floor(sec / 3600)
-  const p = n => String(n).padStart(2, '0')
-  return `${p(h)}:${p(m)}:${p(s)}:${p(f)}`
-}
-
-export const fmt = sec => {
-  const s = Math.floor(sec) % 60, m = Math.floor(sec / 60)
-  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
 // ── Shared screen header — reference screen-record-export.jsx ScreenHeader ──

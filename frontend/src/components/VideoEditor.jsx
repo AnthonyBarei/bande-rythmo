@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import TimelineBar from './TimelineBar'
 import ImportPlayer from './import/ImportPlayer'
-import { Icon, ICONS, T, alpha } from '../ui'
+import { Icon, ICONS, Input, T, alpha } from '../ui'
 import { useProgress } from '../ProgressContext'
 import { fmtSMPTE } from '../utils/timecode'
 import { MARK_ID, setIn, setOut, markStep, markPhase, isComplete } from '../utils/inOut'
@@ -12,18 +12,6 @@ const NO_MARK = { markIn: null, markOut: null }
 const DEFAULT_FPS = 25
 const isTyping = el => !!el && (['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName) || el.isContentEditable)
 const UNTITLED = 'Nom du clip…'
-
-// FIXES_R7 #5 — pending-row name field: the reference's focused input box
-// (bg2, radius 6, 5px 8px) at rest too, `border` colour instead of the accent;
-// placeholder in text3.
-const NAME_CSS = `
-.br-pending-name { width: 100%; min-width: 0; padding: 5px 8px; border-radius: 6px;
-  background: var(--bg2); border: 1px solid var(--border); outline: none;
-  font: 500 ${T.fs.sm}px var(--font-ui); color: var(--text); font-style: normal; cursor: text; }
-.br-pending-name::placeholder { color: var(--text3); opacity: 1; font-style: normal; }
-.br-pending-name:hover:not(:focus) { border-color: var(--border2); }
-.br-pending-name:focus { border-color: var(--accent); }
-`
 
 // Importer left column — reference screen-import.jsx Preview · ZoomTimeline · PendingList.
 // The header actions (Marquer un clip / Créer N clips) live in ImportSection and
@@ -231,7 +219,6 @@ export default function VideoEditor({ video, onClipsCreated, videoStream, audioS
 
   return (
     <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto', overflowX: 'hidden', paddingRight: 2 }}>
-      <style>{NAME_CSS}</style>
       <ImportPlayer key={video.url} src={video.url} audioSrc={audioSrc} videoRef={videoRef} fps={rate}
         markIn={mark.markIn} markOut={mark.markOut} onSetIn={handleSetIn} onSetOut={handleSetOut}
         onTimeUpdate={setCurrentTime} onDuration={setDuration} />
@@ -298,8 +285,8 @@ export default function VideoEditor({ video, onClipsCreated, videoStream, audioS
   )
 }
 
-// FIXES_R5 #7 — inline, placeholder-style name field. Enter / blur commit,
-// Escape restores the saved name.
+// FIXES_R5 #7 — inline name field (ui Input, FINAL_REVIEW #3). Enter / blur
+// commit, Escape restores the saved name.
 function PendingName({ rowId, name, label, autoFocus, onCommit }) {
   const ref = useRef(null)
 
@@ -314,8 +301,8 @@ function PendingName({ rowId, name, label, autoFocus, onCommit }) {
   }, [name])
 
   return (
-    <input ref={ref} className="br-pending-name" data-pending-name={rowId} defaultValue={name}
-      placeholder={UNTITLED} aria-label={label} spellCheck={false}
+    <Input ref={ref} data-pending-name={rowId} defaultValue={name}
+      placeholder={UNTITLED} aria-label={label} spellCheck={false} inputStyle={{ fontWeight: 500 }}
       onBlur={e => onCommit(e.currentTarget.value.trim())}
       onKeyDown={e => {
         if (e.key === 'Enter') e.currentTarget.blur()

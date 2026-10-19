@@ -1,5 +1,5 @@
 import React from 'react'
-import { T, alpha, Avatar, Btn, Icon, ICONS, SectionLabel, pressable } from '../../ui'
+import { T, alpha, Avatar, Btn, Icon, ICONS, Input, SectionLabel, pressable } from '../../ui'
 import { TRACK_COLORS } from '../../config/tracks'
 
 const hexOf = (charMap, char) => TRACK_COLORS[(charMap[char || ''] ?? 0) % TRACK_COLORS.length].hex
@@ -34,12 +34,12 @@ function FocusCharacter({
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
           <Avatar name={focusChar} color={hex} size={34} ring />
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: T.fs.sm, fontWeight: 600, color: hex }}>{focusChar}</div>
-            <input
+            <div style={{ fontSize: T.fs.sm, fontWeight: 600, color: hex, marginBottom: 5 }}>{focusChar}</div>
+            <Input
               value={comediens[focusChar] || ''}
               onChange={e => onSetComedien(focusChar, e.target.value)}
               placeholder="Comédien·ne — nommer…"
-              style={{ background: 'none', border: 'none', borderBottom: `1px dashed ${T.border2}`, color: T.text2, fontSize: T.fs.micro, fontFamily: T.fontUI, padding: '2px 0', width: '100%', outline: 'none' }}
+              aria-label={`Comédien·ne de ${focusChar}`}
             />
           </div>
           <Btn size="sm" icon={ICONS.rec} danger onClick={onRecord} title="Enregistrer la prise (R)" style={{ background: T.danger, color: '#fff' }} />
