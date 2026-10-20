@@ -450,7 +450,8 @@ export default function StudioScreen({ clip, onBack, onExportDubbed }) {
   }, [])
 
   const n = subtitles.length
-  const sub = [clip.name, n ? `réplique ${(activeIndex ?? 0) + 1} / ${n}` : '0 réplique'].filter(Boolean).join(' · ')
+  const shownLine = session ? session.curI : activeIndex
+  const sub = [clip.name, n ? `réplique ${(shownLine ?? 0) + 1} / ${n}` : '0 réplique'].filter(Boolean).join(' · ')
   const videoUrl = clip.has_proxy ? `/segments/${clip.clip_id}_proxy.mp4` : `/${clip.segment_path}`
   const { volume, muted } = usePlayerVolume()
   useEffect(() => { applyPlayerVolume(videoRef.current) }, [volume, muted, videoUrl])
