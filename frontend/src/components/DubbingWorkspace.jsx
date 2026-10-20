@@ -18,6 +18,7 @@ import { mergeTranslations } from '../utils/mergeTranslations'
 // Character track colors — hex for label/text/border, soft for fills, bg for legacy callers
 import { TRACK_COLORS } from '../config/tracks'
 import { fmtSMPTE } from '../utils/timecode'
+import { usePlayerVolume, applyPlayerVolume, toggleMuted } from '../utils/playerVolume'
 import BandCanvas from './band/BandCanvas'
 import {
   CURSOR_X_RATIO, bandAccent, bandCanvasHeight, buildCharMap, autoFitPxPerSec,
@@ -98,7 +99,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
   const [playing, setPlaying] = useState(false)
-  const [muted, setMuted] = useState(false)
+  const { volume, muted } = usePlayerVolume()
   const [speed, setSpeed] = useState(1)
   const [transcribing, setTranscribing] = useState(false)
   const showExport = !!exportOpen
@@ -250,6 +251,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   const segmentUrl = (useProxy && hasProxy)
     ? `/segments/${clip.clip_id}_proxy.mp4`
     : masterUrl
+  useEffect(() => { applyPlayerVolume(videoRef.current) }, [volume, muted, segmentUrl])
 
   const charMap = useMemo(() => buildCharMap(subtitles), [subtitles])
 
@@ -652,7 +654,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
         case 'Escape': if (loopRegionRef.current) { setLoopRegion(null); e.preventDefault() } break
         case 'j': v.playbackRate = 0.5; setSpeed(0.5); break
         case 'l': v.playbackRate = 1.5; setSpeed(1.5); break
-        case 'm': v.muted = !v.muted; setMuted(v.muted); break
+        case 'm': toggleMuted(); break
         case 'i': case 'I':
           if (activeI >= 0) handleSubtitlesChange(subs.map((s, i) => i === activeI ? { ...s, start: t } : s))
           break
@@ -705,7 +707,6 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   }, [recordRequest])
 
   function togglePlay() { const v = videoRef.current; if (v) v.paused ? v.play() : v.pause() }
-  function toggleMute() { const v = videoRef.current; if (!v) return; v.muted = !v.muted; setMuted(v.muted) }
   function changeSpeed(s) { const v = videoRef.current; if (v) v.playbackRate = +s; setSpeed(+s) }
   function seekVideo(t) { const v = videoRef.current; if (v) v.currentTime = t }
 
@@ -1311,7 +1312,6 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
             duration={duration}
             playing={playing}
             speed={speed}
-            muted={muted}
             onTogglePlay={togglePlay}
             onSeek={seekVideo}
             onSeekEnd={seekToEnd}
@@ -1321,7 +1321,6 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
             loopActive={loopActive}
             onToggleLoopActive={toggleLoopActive}
             onChangeSpeed={changeSpeed}
-            onToggleMute={toggleMute}
             hasTarget={selectedIdx != null || !!activeSubtitle}
             clipFps={clipFps}
             onSetIn={() => setTargetBound('in')}

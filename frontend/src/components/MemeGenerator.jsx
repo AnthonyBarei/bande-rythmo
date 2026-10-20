@@ -7,6 +7,8 @@ import { defaultRange } from '../utils/gifRange'
 import SeekBar from './import/SeekBar'
 import JobError from './JobError'
 import { saveBlob } from '../download'
+import { usePlayerVolume, applyPlayerVolume, toggleMuted } from '../utils/playerVolume'
+import VolumeControl from './VolumeControl'
 
 // F12 — short videos are imported inline as clips of this project.
 const MEME_PROJECT = 'Memes & extraits'
@@ -162,6 +164,7 @@ export default function MemeGenerator({
   // Until the user sets IN / OUT, the range follows the playhead (±3 s).
   const rangeTouchedRef = useRef(false)
   const fps = clip?.fps > 0 ? clip.fps : DEFAULT_FPS
+  const { volume, muted } = usePlayerVolume()
 
   const canvasRef = useRef(null)
   const imgRef = useRef(null)
@@ -505,7 +508,11 @@ export default function MemeGenerator({
     }
   }
 
+  // The <video> remounts with each source / return from the editor: apply on load too.
+  useEffect(() => { applyPlayerVolume(videoRef.current) }, [volume, muted])
+
   function onVideoLoaded(e) {
+    applyPlayerVolume(e.target)
     const dur = e.target.duration
     const { videoWidth: vw, videoHeight: vh } = e.target
     if (vw > 0 && vh > 0) setVideoAr(vw / vh)
@@ -547,6 +554,7 @@ export default function MemeGenerator({
       if (e.key === 'ArrowLeft') { e.preventDefault(); seekRelative(e.shiftKey ? -1 : -0.1) }
       else if (e.key === 'ArrowRight') { e.preventDefault(); seekRelative(e.shiftKey ? 1 : 0.1) }
       else if (e.key === ' ' || e.key === 'k') { e.preventDefault(); togglePlay() }
+      else if (e.key === 'm' || e.key === 'M') { e.preventDefault(); toggleMuted() }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -868,9 +876,9 @@ export default function MemeGenerator({
         </div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontFamily: T.fontMono, fontSize: 11, color: T.text3 }}>
-        <span>{fmtSMPTE(videoTime, fps)}</span>
+        <span>{fmtSMPTE(videoTime, fps)} / {fmtSMPTE(videoDuration, fps)}</span>
         <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>{transport}</div>
-        <span>{fmtSMPTE(videoDuration, fps)}</span>
+        <VolumeControl width={64} />
       </div>
     </div>
   )
@@ -885,6 +893,7 @@ export default function MemeGenerator({
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, color: T.text3 }}>
         {transport}
         <span>{fmtSMPTE(videoTime, fps)} · {gifDuration}s</span>
+        <VolumeControl width={64} />
       </div>
       <Chip soft color={T.accent} onClick={() => dragOut(videoTime)}>OUT {fmtSMPTE(outPoint, fps)} ]</Chip>
     </div>

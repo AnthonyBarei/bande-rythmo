@@ -3,6 +3,7 @@ import { ICONS, Btn, ScreenHeader } from '../ui'
 import { useSettings } from '../SettingsContext'
 import { useToast } from '../ToastContext'
 import { adjacentLine } from '../utils/studio'
+import { usePlayerVolume, applyPlayerVolume, toggleMuted } from '../utils/playerVolume'
 import RecorderPanel from './RecorderPanel'
 import BandCanvas from './band/BandCanvas'
 import {
@@ -111,6 +112,9 @@ export default function StudioScreen({ clip, onBack, onExportDubbed }) {
         rec?.toggle()
       } else if (e.key === 'Tab' && !e.shiftKey) {
         if (rec?.swapAB()) e.preventDefault()
+      } else if (e.key === 'm' || e.key === 'M') {
+        e.preventDefault()
+        toggleMuted()
       } else if (e.key === 'Escape') {
         if (rec?.stopPlayback()) e.preventDefault()
       }
@@ -132,6 +136,8 @@ export default function StudioScreen({ clip, onBack, onExportDubbed }) {
   const n = subtitles.length
   const sub = [clip.name, n ? `réplique ${(activeIndex ?? 0) + 1} / ${n}` : '0 réplique'].filter(Boolean).join(' · ')
   const videoUrl = clip.has_proxy ? `/segments/${clip.clip_id}_proxy.mp4` : `/${clip.segment_path}`
+  const { volume, muted } = usePlayerVolume()
+  useEffect(() => { applyPlayerVolume(videoRef.current) }, [volume, muted, videoUrl])
 
   const stageImage = (
     <video ref={videoRef} src={videoUrl} preload="auto" playsInline

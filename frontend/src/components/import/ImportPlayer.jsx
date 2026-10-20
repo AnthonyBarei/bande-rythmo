@@ -3,6 +3,7 @@ import { Dot, Icon, ICONS, T } from '../../ui'
 import { fmtSMPTE } from '../../utils/timecode'
 import SeekBar from './SeekBar'
 import PlayerControls from './PlayerControls'
+import { usePlayerVolume, applyPlayerVolume, toggleMuted } from '../../utils/playerVolume'
 
 const isTyping = el => !!el && (['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName) || el.isContentEditable)
 
@@ -15,7 +16,7 @@ export default function ImportPlayer({ src, audioSrc, videoRef, fps, markIn, mar
   const [t, setT] = useState(0)
   const [duration, setDuration] = useState(0)
   const [playing, setPlaying] = useState(false)
-  const [muted, setMuted] = useState(false)
+  const { volume, muted } = usePlayerVolume()
   const [speed, setSpeed] = useState(1)
   const [unlocked, setUnlocked] = useState(false)
   const [looping, setLooping] = useState(false)
@@ -49,10 +50,9 @@ export default function ImportPlayer({ src, audioSrc, videoRef, fps, markIn, mar
 
   // An external audio track keeps the video muted — otherwise both tracks play.
   useEffect(() => {
-    const v = videoRef.current
-    if (v) v.muted = !!audioSrc || muted
-    if (audioRef.current) audioRef.current.muted = muted
-  }, [muted, audioSrc, videoRef])
+    applyPlayerVolume(videoRef.current, { mute: !!audioSrc || muted })
+    applyPlayerVolume(audioRef.current)
+  }, [volume, muted, audioSrc, videoRef])
 
   useEffect(() => {
     const v = videoRef.current
@@ -74,7 +74,7 @@ export default function ImportPlayer({ src, audioSrc, videoRef, fps, markIn, mar
     v.addEventListener('seeked', onSeeked)
     v.addEventListener('ratechange', onRate)
     a.playbackRate = v.playbackRate
-    a.muted = muted
+    applyPlayerVolume(a)
     if (!v.paused) onPlay()
     return () => {
       v.removeEventListener('play', onPlay)
@@ -109,7 +109,7 @@ export default function ImportPlayer({ src, audioSrc, videoRef, fps, markIn, mar
 
   const toggleMute = useCallback(() => {
     setUnlocked(true)
-    setMuted(m => !m)
+    toggleMuted()
   }, [])
 
   const skip = useCallback(dt => seek((videoRef.current?.currentTime ?? 0) + dt), [seek, videoRef])
@@ -204,10 +204,10 @@ export default function ImportPlayer({ src, audioSrc, videoRef, fps, markIn, mar
       </div>
       <SeekBar t={t} duration={duration} fps={fps} markIn={markIn} markOut={markOut}
         onScrubStart={scrubStart} onScrub={seek} onScrubEnd={scrubEnd} />
-      <PlayerControls t={t} duration={duration} fps={fps} playing={playing} muted={muted} speed={speed} looping={loopOn}
+      <PlayerControls t={t} duration={duration} fps={fps} playing={playing} speed={speed} looping={loopOn}
         markIn={markIn} markOut={markOut}
         onToggle={togglePlay} onSkip={skip} onFrame={frame} onSeek={seek} onEditStart={pause}
-        onIn={markInHere} onOut={markOutHere} onLoop={toggleLoop} onSpeed={setSpeed} onMute={toggleMute} />
+        onIn={markInHere} onOut={markOutHere} onLoop={toggleLoop} onSpeed={setSpeed} onVolumeUse={() => setUnlocked(true)} />
     </div>
   )
 }

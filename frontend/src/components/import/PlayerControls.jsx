@@ -2,13 +2,14 @@ import React, { useState } from 'react'
 import { Btn, Icon, ICONS, Input, Segmented, T, alpha } from '../../ui'
 import { fmtSMPTE } from '../../utils/timecode'
 import { parseTimecodeInput } from '../../utils/tcInput'
+import VolumeControl from '../VolumeControl'
 
 const SPEEDS = [{ v: 0.5, l: '0.5×' }, { v: 1, l: '1×' }, { v: 2, l: '2×' }]
 
 // Reference screen-import.jsx Preview — control row under the seek bar.
 export default function PlayerControls({
-  t, duration, fps, playing, muted, speed, looping, markIn, markOut,
-  onToggle, onSkip, onFrame, onSeek, onEditStart, onIn, onOut, onLoop, onSpeed, onMute,
+  t, duration, fps, playing, speed, looping, markIn, markOut,
+  onToggle, onSkip, onFrame, onSeek, onEditStart, onIn, onOut, onLoop, onSpeed, onVolumeUse,
 }) {
   return (
     <div style={{ minHeight: 48, flexShrink: 0, padding: '7px 10px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, rowGap: 6, background: T.surface }}>
@@ -45,7 +46,7 @@ export default function PlayerControls({
       </div>
       <div style={{ flex: 1 }} />
       <Segmented size="sm" value={speed} onChange={onSpeed} options={SPEEDS} />
-      <Btn size="sm" icon={muted ? ICONS.mute : ICONS.volume} title={muted ? 'Activer le son (M)' : 'Couper le son (M)'} onClick={onMute} />
+      <span onPointerDown={onVolumeUse} style={{ display: 'inline-flex' }}><VolumeControl /></span>
     </div>
   )
 }
