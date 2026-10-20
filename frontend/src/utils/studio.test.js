@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { adjacentLine, characterProgress, listenVoVolume } from './studio'
+import { adjacentLine, characterProgress, listenVoVolume, nextOpenLine } from './studio'
 
 const SUBS = [
     { character: 'Red', start: 0.2 },
@@ -72,5 +72,27 @@ describe('listenVoVolume', () => {
         expect(listenVoVolume(15)).toBe(0.15)
         expect(listenVoVolume('50')).toBe(0.5)
         expect(listenVoVolume(300)).toBe(1)
+    })
+})
+
+describe('nextOpenLine', () => {
+    const subs = [
+        { start: 0, character: 'LÉA' },
+        { start: 2, character: 'MAX' },
+        { start: 4, character: 'LÉA' },
+        { start: 6, character: 'LÉA' },
+    ]
+    it('skips validated répliques and other characters', () => {
+        expect(nextOpenLine(subs, [{ subtitle_index: 2, best: true }], 0, 'LÉA')).toBe(3)
+    })
+    it('wraps to the first open one', () => {
+        expect(nextOpenLine(subs, [{ subtitle_index: 3, best: true }], 3, 'LÉA')).toBe(0)
+    })
+    it('null when the role is done', () => {
+        const all = [0, 2, 3].map(i => ({ subtitle_index: i, best: true }))
+        expect(nextOpenLine(subs, all, 0, 'LÉA')).toBe(null)
+    })
+    it('ignores non-best takes', () => {
+        expect(nextOpenLine(subs, [{ subtitle_index: 2, best: false }], 0, 'LÉA')).toBe(2)
     })
 })
