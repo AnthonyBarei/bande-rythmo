@@ -18,16 +18,6 @@ function useMeterLevels(analyser, bars) {
   return lvl
 }
 
-export function MeterBars({ analyser, bars, height, live }) {
-  const lvl = useMeterLevels(analyser, bars)
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 2, height }}>
-      {lvl.map((v, i) => (
-        <div key={i} style={{ width: 4, height: `${v * 100}%`, background: live ? (v > 0.8 ? T.danger : T.accent) : T.border3, borderRadius: 2, transition: 'height .08s' }} />
-      ))}
-    </div>
-  )
-}
 
 // Studio control-strip meter — reference: 32 flex bars, accent with red peaks
 // while recording, border3 otherwise.

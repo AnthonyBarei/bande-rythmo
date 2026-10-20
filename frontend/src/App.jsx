@@ -357,6 +357,7 @@ function AppInner() {
                 onBack={() => { setDubExportOpen(false); setSection('clips') }}
                 exportOpen={dubExportOpen}
                 onToggleExport={() => setDubExportOpen(v => !v)}
+                onRecord={() => handleRecord(activeClip)}
                 onHelp={() => setShortcutsOpen(true)}
               />
             </div>

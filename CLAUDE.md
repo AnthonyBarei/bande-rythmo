@@ -77,13 +77,12 @@ frontend/src/
     studio/                # useStudioRecorder (phases prêt→décompte→élan→rec→queue→revue, continu),
                            # useTakePlayer (A/B, écoute sur l'image), StudioStage, RolePicker,
                            # TakesColumn, ContinuousColumn, RangePicker, TakeSettings, StageParts
-    takes/                 # TakeCard + TakeWave, Meter — partagés Éditeur / Studio
+    takes/                 # TakeCard + TakeWave, Meter (Studio)
     ClipsLibrary.jsx       # grille clips + filtres status + chips projet
     ClipCard.jsx           # card: thumbnail, rename, projet, Doubler / ▶ / MP3 / GIF / ✕
     DubbingWorkspace.jsx   # BR pro: SMPTE, détection, boucles, undo/redo, proxy, traduction, scènes, auto-save
     SubtitleEditor.jsx     # tableau timecode+perso+texte+note + import SRT/ASS/VTT/DetX
     LexiconPanel.jsx       # lexique (onglet right pane)
-    RecorderPanel.jsx      # enregistreur de l'inspecteur Éditeur (pré-roll 3 s, prises, A/B)
     ExportPanel.jsx        # exports + quality + GPU + plage perso + historique re-download
     ShortcutsOverlay.jsx   # modal raccourcis (?)
     MemeGenerator.jsx      # memes — player unifié, résultat remplace source
@@ -356,6 +355,9 @@ preuves `design/studio_v2_proofs/` (`shoot_studio_v2.py`, aucune écriture backe
   « continu » `[début − 0,25 ; fin + 0,35]` (`utils/continuous`), pause Espace, résumé
   (valider / revoir / annuler avec undo). `Take.lead` place la prise à début − lead (mix, écoute).
 - Raccourcis Studio mis à jour dans l'overlay `?`.
+- **Éditeur → Studio** : R, ● de l'inspecteur et ● de l'onglet Voix ouvrent le Studio sur la réplique
+  (sélectionnée, sinon sous la tête de lecture ; Voix : 1re réplique du rôle sans prise validée).
+  L'enregistreur intégré à l'inspecteur (RecorderPanel) est supprimé — on enregistre dans le Studio.
 
 ### Reste à faire (non démarré)
 - **Phase 2 (REMAKE_PLAN)** : split DubbingWorkspace (3 650 lignes) en hooks,

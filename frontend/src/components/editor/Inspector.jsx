@@ -20,7 +20,7 @@ const hexOf = (charMap, char) => TRACK_COLORS[(charMap[char || ''] ?? 0) % TRACK
 
 // Active réplique header — reference Inspector › "active réplique header".
 // `target` is null only when the clip has zero répliques (empty state).
-function TargetHeader({ target, subIdx, charMap, charList, clipFps, showRecorder, onToggleRecorder, onSetCharacter, onNewCharacter }) {
+function TargetHeader({ target, subIdx, charMap, charList, clipFps, onRecord, onSetCharacter, onNewCharacter }) {
   const hex = target ? hexOf(charMap, target.character) : T.text4
   return (
     <div style={{ padding: '13px 16px', borderBottom: `1px solid ${T.border}`, background: target ? alpha(hex, '0c') : 'transparent', display: 'flex', alignItems: 'center', gap: 11, flexShrink: 0 }}>
@@ -56,8 +56,8 @@ function TargetHeader({ target, subIdx, charMap, charList, clipFps, showRecorder
           <MenuItem icon={ICONS.plus} onClick={() => { close(); onNewCharacter() }}>Nouveau personnage…</MenuItem>
         </>)}
       </Popover>
-      <Btn size="sm" icon={ICONS.rec} danger disabled={!target} title={showRecorder ? 'Masquer l\'enregistreur' : 'Enregistrer (R)'} onClick={onToggleRecorder}
-        style={{ background: T.danger, color: '#fff', boxShadow: showRecorder ? `0 0 0 3px ${alpha(T.danger, '33')}` : 'none' }} />
+      <Btn size="sm" icon={ICONS.rec} danger disabled={!target} title="Enregistrer dans le Studio (R)" onClick={onRecord}
+        style={{ background: T.danger, color: '#fff' }} />
     </div>
   )
 }
@@ -67,14 +67,14 @@ function TargetHeader({ target, subIdx, charMap, charList, clipFps, showRecorder
 export default function Inspector({
   open = true, width = 392, hint,
   rightTab, setRightTab,
-  target, subIdx, charMap, charList, clipFps, showRecorder, onToggleRecorder,
+  target, subIdx, charMap, charList, clipFps, onRecord,
   onSetTargetCharacter, onNewTargetCharacter,
   repliquesProps, voixProps, detectionProps, bouclesProps, lexiqueProps,
 }) {
   return (
     <div style={{ width, flexShrink: 0, display: open ? 'flex' : 'none', flexDirection: 'column', background: T.surface, overflow: 'hidden' }}>
       <TargetHeader target={target} subIdx={subIdx} charMap={charMap} charList={charList} clipFps={clipFps}
-        showRecorder={showRecorder} onToggleRecorder={onToggleRecorder}
+        onRecord={onRecord}
         onSetCharacter={onSetTargetCharacter} onNewCharacter={onNewTargetCharacter} />
 
       <div style={{ display: 'flex', padding: '0 8px', borderBottom: `1px solid ${T.border}`, height: 40, gap: 2, flexShrink: 0 }}>

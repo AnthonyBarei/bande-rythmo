@@ -2,12 +2,12 @@ import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from
 import { T, alpha, Icon, ICONS, Btn, Chip, pressable } from '../../ui'
 import { METER_FLOOR, takePeaks } from '../../utils/takeAudio'
 
-// Take card + mini waveform — shared by the editor recorder and the Studio.
+// Studio take card + mini waveform.
 
 // Mini waveform decoded from the take file (cached per url). With `progress`
 // (0..1, playing; `clock` = frame time in ms): the played part fills `playedColor`, bars within ±6 % of the
 // playhead bounce, and a 2px glowing playhead runs across.
-export function TakeWave({ url, bars = 56, height = 30, gap = 1.5, barWidth, color, progress = null, clock = 0, playedColor }) {
+function TakeWave({ url, bars = 56, height = 30, gap = 1.5, barWidth, color, progress = null, clock = 0, playedColor }) {
   const [peaks, setPeaks] = useState(null)
   useEffect(() => {
     if (!url) return
@@ -68,7 +68,7 @@ function useDurationFits(rowRef, spacerRef, durRef) {
 
 // `onImage` (Studio only): null = no "écouter sur l'image" button, else whether
 // this take is playing over the image.
-export function TakeCard({ take, label, selected, fresh, isPlaying, progress, clock, onImage = null, onImageDisabled, isSyncing, ab, hasVideo, showAB, onSelect, onPlay, onPlayOnImage, onSync, onAB, onDelete }) {
+export function TakeCard({ take, label, selected, fresh, isPlaying, progress, clock, onImage = null, onImageDisabled, ab, showAB, onSelect, onPlay, onPlayOnImage, onAB, onDelete }) {
   const best = !!take.best
   const dur = take.duration || 0
   const audioOnly = isPlaying && !onImage
@@ -79,8 +79,8 @@ export function TakeCard({ take, label, selected, fresh, isPlaying, progress, cl
   const durFits = useDurationFits(rowRef, spacerRef, durRef)
   return (
     <div onClick={onSelect} {...pressable(onSelect)} className="focus-inset" style={{
-      background: isSyncing ? T.accentDim : T.surface,
-      border: `1px solid ${selected ? T.accent : best ? alpha(T.accent, '55') : ab ? T.border3 : isSyncing ? alpha(T.accent, '44') : T.border}`,
+      background: T.surface,
+      border: `1px solid ${selected ? T.accent : best ? alpha(T.accent, '55') : ab ? T.border3 : T.border}`,
       borderRadius: T.r.ctl, padding: 12, flexShrink: 0, cursor: 'pointer',
       animation: fresh ? 'stIn .35s ease-out' : 'none',
     }}>
@@ -106,9 +106,6 @@ export function TakeCard({ take, label, selected, fresh, isPlaying, progress, cl
         }}>
           {isPlaying ? `${((progress || 0) * dur).toFixed(1)} / ` : ''}{dur.toFixed(1)}s
         </span>
-        {hasVideo && (
-          <Btn size="sm" active={isSyncing} icon={isSyncing ? ICONS.stop : ICONS.film} title="Écouter avec la vidéo" onClick={e => { e?.stopPropagation?.(); onSync() }} />
-        )}
         {showAB && (ab
           ? (
             <Btn size="sm" active onClick={e => { e?.stopPropagation?.(); onAB() }}

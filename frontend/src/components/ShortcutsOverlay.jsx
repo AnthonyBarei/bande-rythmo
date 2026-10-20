@@ -12,7 +12,7 @@ const GROUPS = [
   { title: 'Bande rythmo', rows: [
     { k: ['I'], l: 'Marquer IN' }, { k: ['O'], l: 'Marquer OUT' }, { k: ['S'], l: 'Couper à la tête' },
     { k: ['Entrée'], l: 'Éditer la réplique' }, { k: ['⇧Entrée'], l: 'Nouvelle réplique' },
-    { k: ['Suppr', '⌫'], l: 'Supprimer la réplique' }, { k: ['R'], l: 'Enregistrer / arrêter la prise' },
+    { k: ['Suppr', '⌫'], l: 'Supprimer la réplique' }, { k: ['R'], l: 'Enregistrer dans le Studio' },
     { k: ['Échap'], l: 'Quitter loop / édition' },
   ]},
   { title: 'Studio', rows: [
