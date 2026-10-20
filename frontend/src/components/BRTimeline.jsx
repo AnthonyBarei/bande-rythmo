@@ -3,8 +3,9 @@ import { TRACK_HEXES as TRACK_COLORS } from '../config/tracks'
 
 // Full-clip navigation timeline (reference screen-editor.jsx › TimelineNav look).
 // Shows the WHOLE clip at once (the BR canvas only shows a moving window):
-//   waveform · réplique blocks per track colour · dashed boucle bands ·
-//   scene cuts · the visible-window bracket · the white playhead.
+//   waveform · réplique blocks per track colour · dashed boucle edges ·
+//   scene cuts · the visible-window bracket · the white playhead (`playhead`
+//   false: the parent draws it, e.g. TimelineNav inside its draggable window).
 // Click / drag anywhere to seek. `labelRowH` px at the top are left empty for
 // the overlay labels: everything is drawn from y = labelRowH down.
 
@@ -31,6 +32,7 @@ export default function BRTimeline({
   onSeek,
   height = 56,
   labelRowH = 0,          // px reserved at the top for overlay labels (bracket starts below)
+  playhead = true,
 }) {
   const canvasRef = useRef(null)
   const draggingRef = useRef(false)
@@ -81,14 +83,15 @@ export default function BRTimeline({
       ctx.fillRect(tToX(s.start), h - 10, Math.max(1, tToX(s.end) - tToX(s.start)), 6)
     })
 
-    // boucle bands
+    // boucles — discreet dashed verticals at start / end, like on the band
+    ctx.strokeStyle = withAA(accent, '59'); ctx.lineWidth = 1; ctx.setLineDash([3, 3])
     boucles.forEach(b => {
-      const x0 = tToX(b.start)
-      const bw = tToX(b.end) - x0
-      ctx.fillStyle = withAA(accent, '18'); ctx.fillRect(x0, top, bw, bodyH)
-      ctx.strokeStyle = withAA(accent, '88'); ctx.lineWidth = 1; ctx.setLineDash([3, 3])
-      ctx.strokeRect(x0, top + 0.5, bw, bodyH - 1); ctx.setLineDash([])
+      for (const t of [b.start, b.end]) {
+        const x = Math.round(tToX(t)) + 0.5
+        ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, h); ctx.stroke()
+      }
     })
+    ctx.setLineDash([])
 
     // scene cuts (changements de plan)
     ctx.strokeStyle = 'rgba(126,192,255,0.65)'
@@ -110,11 +113,12 @@ export default function BRTimeline({
       ctx.strokeRect(x0 + 0.5, top + 0.5, (x1 - x0) - 1, h - top - 1)
     }
 
-    // playhead
-    const px = tToX(currentTime)
-    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(px, top); ctx.lineTo(px, h); ctx.stroke()
-    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.moveTo(px - 5, top); ctx.lineTo(px + 5, top); ctx.lineTo(px, top + 6); ctx.fill()
-  }, [duration, currentTime, boucles, waveform, sceneCuts, subtitles, charMap, viewStart, viewEnd, labelRowH])
+    if (playhead) {
+      const px = tToX(currentTime)
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(px, top); ctx.lineTo(px, h); ctx.stroke()
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.moveTo(px - 5, top); ctx.lineTo(px + 5, top); ctx.lineTo(px, top + 6); ctx.fill()
+    }
+  }, [duration, currentTime, boucles, waveform, sceneCuts, subtitles, charMap, viewStart, viewEnd, labelRowH, playhead])
 
   useEffect(() => { draw() }, [draw])
 
