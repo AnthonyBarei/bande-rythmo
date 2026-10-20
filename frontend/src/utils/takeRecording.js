@@ -45,13 +45,14 @@ export async function takeAudio(chunks, mime, trimSec, fallbackDuration) {
   return { blob: out.blob, filename: 'take.wav', duration: out.duration }
 }
 
-export async function postTake({ clipId, character, subIndex, duration, blob, filename, label = '' }) {
+export async function postTake({ clipId, character, subIndex, duration, blob, filename, label = '', lead = 0 }) {
   const form = new FormData()
   form.append('clip_id', clipId)
   form.append('character', character || '')
   if (subIndex != null) form.append('subtitle_index', String(subIndex))
   form.append('duration', Math.max(0, duration).toFixed(2))
   if (label) form.append('label', label)
+  if (lead > 0) form.append('lead', lead.toFixed(3))
   form.append('audio', blob, filename)
   const res = await fetch('/api/takes/', { method: 'POST', body: form })
   if (!res.ok) throw new Error(`HTTP ${res.status}`)

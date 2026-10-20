@@ -73,6 +73,12 @@ function channelsOf(audioBuffer) {
   return Array.from({ length: Math.min(2, audioBuffer.numberOfChannels) }, (_, c) => audioBuffer.getChannelData(c))
 }
 
+// Recorded blob → its (≤ 2) channels, for slicing.
+export async function decodeChannels(blob) {
+  const audio = await decode(await blob.arrayBuffer())
+  return { channels: channelsOf(audio), sampleRate: audio.sampleRate }
+}
+
 // Recorded take blob → WAV without its first `startSec` seconds (pre-roll).
 export async function trimToWav(blob, startSec) {
   const audio = await decode(await blob.arrayBuffer())

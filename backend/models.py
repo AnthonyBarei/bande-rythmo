@@ -109,6 +109,9 @@ class Take(Base):
     created_at = Column(DateTime, default=datetime.now)
     # Validated take of its réplique — at most one per (clip_id, subtitle_index).
     best = Column(Boolean, nullable=False, default=False)
+    # Seconds of audio before the réplique start (Studio « En continu » slices
+    # keep a 0.25 s margin): placed at réplique start − lead.
+    lead = Column(Float, nullable=False, default=0.0)
 
 
 class LexiconEntry(Base):

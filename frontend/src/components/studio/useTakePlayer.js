@@ -119,7 +119,8 @@ export default function useTakePlayer({ videoRef, audioRef, audio2Ref, subtitles
       else if (a.error) a.load()
       await Promise.all([seekMedia(v, sub ? sub.start : 0), whenPlayable(a)])
       if (ctxRef.current !== ctx) return
-      a.currentTime = 0
+      // A take with a lead (En continu) starts that much before its réplique.
+      a.currentTime = take.lead || 0
       const level = listenVoVolume(listenVoLevel)
       const player = getPlayerVolume()
       holdPlayerVolume(v)

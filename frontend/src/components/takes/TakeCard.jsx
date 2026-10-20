@@ -98,6 +98,7 @@ export function TakeCard({ take, label, selected, fresh, isPlaying, progress, cl
         )}
         <span style={{ fontSize: T.fs.sm, fontWeight: 600, color: T.text, minWidth: 0, flexShrink: label.length <= 12 ? 0 : 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>
         {best && <Chip color={T.accent} soft style={{ flexShrink: 0 }}><Icon d={ICONS.check} size={10} stroke={T.accent} /> validée</Chip>}
+        {take.label && <Chip soft color={T.text3} style={{ flexShrink: 0 }}>{take.label}</Chip>}
         <div ref={spacerRef} style={{ flex: 1 }} />
         <span ref={durRef} aria-hidden={!durFits} style={{
           fontSize: 11, color: isPlaying ? T.accent : T.text3, fontFamily: T.fontMono, whiteSpace: 'nowrap', flexShrink: 0,

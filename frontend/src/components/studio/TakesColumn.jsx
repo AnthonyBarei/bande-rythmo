@@ -66,16 +66,23 @@ export default function TakesColumn({
           </div>
         )}
       </div>
-      {role && role.total > 0 && (
-        <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 6, marginTop: 'auto' }}>
-          <span style={{ fontSize: T.fs.xs, fontFamily: T.fontMono, color: role.done === role.total ? T.success : T.text3 }}>
-            {role.label} · {role.done}/{role.total} validées
-          </span>
-          <div style={{ height: 4, background: T.surface2, borderRadius: 2, overflow: 'hidden' }}>
-            <div style={{ height: '100%', width: `${(role.done / role.total) * 100}%`, background: role.done === role.total ? T.success : role.color, transition: 'width .3s' }} />
-          </div>
-        </div>
-      )}
+      <RoleProgress role={role} />
+    </div>
+  )
+}
+
+// `ROLE · d/n validées` + bar, at the bottom of the right column.
+export function RoleProgress({ role }) {
+  if (!role || !role.total) return null
+  const complete = role.done === role.total
+  return (
+    <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 6, marginTop: 'auto' }}>
+      <span style={{ fontSize: T.fs.xs, fontFamily: T.fontMono, color: complete ? T.success : T.text3 }}>
+        {role.label} · {role.done}/{role.total} validées
+      </span>
+      <div style={{ height: 4, background: T.surface2, borderRadius: 2, overflow: 'hidden' }}>
+        <div style={{ height: '100%', width: `${(role.done / role.total) * 100}%`, background: complete ? T.success : role.color, transition: 'width .3s' }} />
+      </div>
     </div>
   )
 }

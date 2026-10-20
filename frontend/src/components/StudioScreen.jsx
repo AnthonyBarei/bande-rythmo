@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { T, ICONS, Btn, Input, ScreenHeader } from '../ui'
+import { T, ICONS, Btn, Input, ScreenHeader, Segmented } from '../ui'
 import { TRACK_HEXES } from '../config/tracks'
 import { useSettings } from '../SettingsContext'
 import { useToast } from '../ToastContext'
 import { adjacentLine, characterProgress, nextOpenLine } from '../utils/studio'
 import { usePlayerVolume, applyPlayerVolume, toggleMuted } from '../utils/playerVolume'
-import { readComediens, writeComediens, readStudioRole, writeStudioRole, readEditorSelection } from '../utils/studioPrefs'
+import { readComediens, writeComediens, readStudioRole, writeStudioRole, readStudioMode, writeStudioMode, readEditorSelection } from '../utils/studioPrefs'
+import { rangeLines } from '../utils/continuous'
 import BandCanvas from './band/BandCanvas'
 import {
   autoFitPxPerSec, bandAccent, buildCharMap, readDetection, readDetectionAuto, readWordByWord,
@@ -16,6 +17,8 @@ import StudioStage from './studio/StudioStage'
 import TakesColumn from './studio/TakesColumn'
 import TakeSettings from './studio/TakeSettings'
 import RolePicker from './studio/RolePicker'
+import RangePicker from './studio/RangePicker'
+import ContinuousColumn from './studio/ContinuousColumn'
 
 const DEFAULT_PX_PER_SEC = 150
 const COMPLETE_TOAST_MS = 8000
@@ -111,6 +114,7 @@ export default function StudioScreen({ clip, onBack, onExportDubbed }) {
   const [selectedId, setSelectedId] = useState(null)
   const [freshId, setFreshId] = useState(null)
   const [flash, setFlash] = useState(null)
+  const [hiddenTakes, setHiddenTakes] = useState(() => new Set())   // « Annuler la session », until the toast commits
   const fetchTakes = useCallback(async () => {
     try {
       const res = await fetch(`/api/takes/${clip.clip_id}`)
@@ -133,10 +137,27 @@ export default function StudioScreen({ clip, onBack, onExportDubbed }) {
     })
   }, [fetchTakes])
 
+  const role = target ? target.character || '' : null
+
+  // ── Mode (STUDIO_V2 §2): Par réplique · En continu, saved per clip.
+  const [mode, setModeState] = useState(() => readStudioMode(clip.clip_id))
+  function setMode(m) {
+    setModeState(m)
+    writeStudioMode(clip.clip_id, m)
+  }
+  const [rangeKind, setRangeKind] = useState('from')
+  const [inout, setInout] = useState(null)
+
   const rec = useStudioRecorder({
-    videoRef, clipId: clip.clip_id, sub: target, subIndex: activeIndex, fps: clipFps, cfg,
-    onTakeCreated: take => { setSelectedId(take.id); setFreshId(take.id); fetchTakes() },
+    videoRef, clipId: clip.clip_id, subtitles, sub: target, subIndex: activeIndex, fps: clipFps, cfg,
+    role: role ?? '', listenVoLevel: settings.listenVoLevel,
+    // null: a continuous session sliced its takes.
+    onTakeCreated: take => {
+      if (take) { setSelectedId(take.id); setFreshId(take.id) }
+      fetchTakes()
+    },
   })
+  const session = rec.session
   const audioRef = useRef(null)
   const audio2Ref = useRef(null)
   const player = useTakePlayer({
@@ -146,8 +167,8 @@ export default function StudioScreen({ clip, onBack, onExportDubbed }) {
 
   // ── Current réplique: its takes (newest first), selection, A/B
   const shown = useMemo(
-    () => takes.filter(t => (t.subtitle_index ?? null) === (activeIndex ?? null)).reverse(),
-    [takes, activeIndex])
+    () => takes.filter(t => (t.subtitle_index ?? null) === (activeIndex ?? null) && !hiddenTakes.has(t.id)).reverse(),
+    [takes, activeIndex, hiddenTakes])
   const labelOf = t => `Prise ${takes.filter(x => (x.subtitle_index ?? null) === (t.subtitle_index ?? null) && x.id <= t.id).length}`
   const selected = shown.find(t => t.id === selectedId) || shown[0] || null
   const [abOpen, setAbOpen] = useState(false)
@@ -157,11 +178,10 @@ export default function StudioScreen({ clip, onBack, onExportDubbed }) {
   const takeB = takes.find(t => t.id === abB)
   const canAB = shown.length >= 2
   const showAB = canAB && (abOpen || !!takeA || !!takeB)
-  const locked = rec.live
+  const locked = rec.live || !!session
 
   // ── Role (STUDIO_V2 §1): the character of the current réplique, chosen
   // explicitly from the picker or 1–9.
-  const role = target ? target.character || '' : null
   const [comediens, setComediens] = useState(() => readComediens(clip.clip_id))
   const [roleOpen, setRoleOpen] = useState(false)
   const roles = useMemo(() => Object.entries(charMap)
@@ -285,9 +305,29 @@ export default function StudioScreen({ clip, onBack, onExportDubbed }) {
     setIndex(i)
   }
 
+  // En continu: the range of the role, and what the inout range defaults to.
+  const inoutRange = inout || (() => {
+    const mine = subtitles.filter(x => (x.character || '') === role)
+    return { in: target ? target.start : 0, out: mine.length ? Math.max(...mine.map(x => x.end)) : 0 }
+  })()
+  const sLines = useMemo(
+    () => (session ? session.lines : role == null ? [] : rangeLines(subtitles, role, rangeKind, activeIndex, inoutRange)),
+    [session, subtitles, role, rangeKind, activeIndex, inoutRange.in, inoutRange.out])
+  const validatedSet = useMemo(() => new Set(takes.filter(t => t.best && t.subtitle_index != null).map(t => t.subtitle_index)), [takes])
+
   // R / mic button: prêt → décompte · revue → prêt (Refaire) · live → cancel.
+  // En continu: prêt → session · pause → reprendre · live → arrêter.
   function primary() {
     if (!target) return
+    if (mode === 'cont' || session) {
+      if (rec.phase === 'summary') return
+      if (rec.phase === 'pause') { rec.resume(); return }
+      if (session) { rec.stopSession(); return }
+      player.stopPlayback()
+      setFlash(null)
+      rec.startSession(sLines)
+      return
+    }
     if (rec.live) { rec.cancel(); return }
     if (rec.phase === 'revue') { rec.redo(); return }
     player.stopPlayback()
@@ -295,11 +335,71 @@ export default function StudioScreen({ clip, onBack, onExportDubbed }) {
     rec.start()
   }
 
+  // ── Session summary
+  const freeCount = session ? session.created.filter(c => !validatedSet.has(c.i)).length : 0
+
+  async function summaryValidate() {
+    const s = session
+    if (!s) return
+    const before = characterProgress(subtitles, takes, role)
+    let n = 0
+    try {
+      for (const { i, take } of s.created) {
+        if (validatedSet.has(i)) continue
+        const res = await fetch(`/api/takes/${take.id}/best`, { method: 'PUT' })
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        n++
+      }
+    } catch (e) {
+      setPanelError('Validation impossible : ' + e.message)
+    }
+    const list = await fetchTakes()
+    rec.endSession()
+    setFlash(`${n} réplique${n > 1 ? 's' : ''} validée${n > 1 ? 's' : ''} · prises déjà validées conservées`)
+    if (list) {
+      const after = characterProgress(subtitles, list, role)
+      if (after.total > 0 && after.done === after.total && before.done < before.total) onCharacterComplete(role)
+    }
+  }
+
+  function summaryReview() {
+    const first = session?.lines[0]
+    rec.endSession()
+    setMode('line')
+    if (first != null) setIndex(first)
+  }
+
+  // Annuler la session: the created takes disappear at once and are deleted
+  // when the toast closes — unless Annuler brings them back.
+  function summaryCancel() {
+    const ids = (session?.created || []).map(c => c.take.id)
+    rec.endSession()
+    if (!ids.length) return
+    setHiddenTakes(prev => new Set([...prev, ...ids]))
+    const unhide = () => setHiddenTakes(prev => new Set([...prev].filter(id => !ids.includes(id))))
+    toast.undo({
+      msg: 'Session annulée · prises supprimées',
+      onUndo: unhide,
+      onCommit: async () => {
+        for (const id of ids) {
+          try {
+            const res = await fetch(`/api/takes/${id}`, { method: 'DELETE' })
+            if (!res.ok) throw new Error(`HTTP ${res.status}`)
+          } catch (e) {
+            setPanelError('Suppression de la prise impossible : ' + e.message)
+          }
+        }
+        await fetchTakes()
+        unhide()
+      },
+    })
+  }
+
   // Keys: R lancer / refaire · Espace attendre (auto) · Entrée valider (revue)
   // · Échap annuler / arrêter l'écoute · ← / → réplique du personnage (Alt :
   // tous) · Tab A ⇄ B · M son.
   const keysRef = useRef(null)
-  useEffect(() => { keysRef.current = { primary, validate, selectIndex, selected, takeA, takeB, showAB, rec, player, activeIndex, subtitles, roles, pickRole, roleOpen, setRoleOpen } })
+  useEffect(() => { keysRef.current = { primary, validate, selectIndex, selected, takeA, takeB, showAB, rec, player, activeIndex, subtitles, roles, pickRole, roleOpen, setRoleOpen, locked } })
   useEffect(() => {
     function onKey(e) {
       if (isTyping(e.target) || e.ctrlKey || e.metaKey) return
@@ -309,7 +409,7 @@ export default function StudioScreen({ clip, onBack, onExportDubbed }) {
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
         if (e.shiftKey) return
         e.preventDefault()   // Alt+← is the browser's "back"
-        if (k.rec.live) return
+        if (k.locked) return
         k.selectIndex(adjacentLine(k.subtitles, k.activeIndex, e.key === 'ArrowRight' ? 1 : -1, !e.altKey))
         return
       }
@@ -320,7 +420,7 @@ export default function StudioScreen({ clip, onBack, onExportDubbed }) {
         return
       }
       if (e.key === 'c' || e.key === 'C') {
-        if (!k.rec.live) { e.preventDefault(); k.setRoleOpen(o => !o) }
+        if (!k.locked) { e.preventDefault(); k.setRoleOpen(o => !o) }
         return
       }
       if (e.key === 'Escape' && k.roleOpen) { e.preventDefault(); k.setRoleOpen(false); return }
@@ -329,12 +429,15 @@ export default function StudioScreen({ clip, onBack, onExportDubbed }) {
         k.primary()
       } else if (e.key === ' ') {
         if (k.rec.phase === 'auto') { e.preventDefault(); k.rec.hold() }
+        else if (k.rec.session && k.rec.phase === 'rec') { e.preventDefault(); k.rec.pause() }
+        else if (k.rec.phase === 'pause') { e.preventDefault(); k.rec.resume() }
       } else if (e.key === 'Enter') {
         if (k.rec.phase === 'revue' && k.selected) { e.preventDefault(); k.validate(k.selected) }
       } else if (e.key === 'Tab' && !e.shiftKey) {
         if (k.showAB && !k.rec.live && k.player.swapAB(k.takeA, k.takeB)) e.preventDefault()
       } else if (e.key === 'Escape') {
-        if (k.rec.live) { e.preventDefault(); k.rec.cancel() }
+        if (k.rec.session) { if (k.rec.phase !== 'summary') { e.preventDefault(); k.rec.stopSession() } }
+        else if (k.rec.live) { e.preventDefault(); k.rec.cancel() }
         else if (k.rec.phase === 'auto') { e.preventDefault(); k.rec.hold() }
         else if (k.player.stopPlayback()) e.preventDefault()
       } else if (e.key === 'm' || e.key === 'M') {
@@ -379,7 +482,7 @@ export default function StudioScreen({ clip, onBack, onExportDubbed }) {
         boucles={clip.boucles || []}
         sceneCuts={clip.scene_cuts || []}
         clipFps={clipFps}
-        loopRegion={null}
+        loopRegion={mode === 'cont' && sLines.length ? { start: subtitles[sLines[0]].start, end: subtitles[sLines[sLines.length - 1]].end } : null}
         charFilter={null}
         focusChar={target ? (target.character || '') : null}
       />
@@ -405,17 +508,36 @@ export default function StudioScreen({ clip, onBack, onExportDubbed }) {
               </label>
             )}
             <div style={{ flex: 1 }} />
-            <TakeSettings cfg={cfg} onCfg={update} disabled={locked} />
+            <span title={locked ? 'Terminer la prise ou la session pour changer de mode' : undefined}
+              style={{ display: 'inline-flex', opacity: locked ? 0.6 : 1, pointerEvents: locked ? 'none' : 'auto' }}>
+              <Segmented size="sm" value={mode} onChange={m => { if (m !== mode) { player.stopPlayback(); setFlash(null); setMode(m) } }} options={[
+                { v: 'line', l: 'Par réplique', desc: 'Une prise par réplique' },
+                { v: 'cont', l: 'En continu', desc: 'Un seul passage, découpé en une prise par réplique' },
+              ]} />
+            </span>
+            {mode === 'cont' && (
+              <RangePicker kind={rangeKind} onKind={setRangeKind} inout={inoutRange} onInout={setInout}
+                count={sLines.length} fps={clipFps} disabled={locked} />
+            )}
+            <TakeSettings cfg={cfg} onCfg={update} disabled={locked} showChain={mode === 'line'} />
           </div>
           <StudioStage
-            subtitles={subtitles} takes={takes} index={activeIndex} fps={clipFps} onSelectIndex={selectIndex} charIndex={charMap}
+            subtitles={subtitles} takes={takes} index={session ? session.curI : activeIndex} fps={clipFps} onSelectIndex={selectIndex} charIndex={charMap}
             rec={rec} cfg={cfg} selectedLabel={selected ? labelOf(selected) : null} flash={flash}
+            mode={mode} sLines={sLines} roleLabel={roleInfo?.label || ''}
+            summary={{ free: freeCount, onValidate: summaryValidate, onReview: summaryReview, onCancel: summaryCancel }}
             stageImage={stageImage} stageBand={stageBand} videoRef={videoRef} onPrimary={primary} />
         </div>
-        <TakesColumn
-          shown={shown} labelOf={labelOf} selected={selected} freshId={freshId} onSelect={setSelectedId}
-          player={player} ab={{ takeA, takeB, showAB, canAB, abA, abB }} onAB={assignAB} onToggleAB={toggleAB}
-          locked={locked} onDelete={removeTake} onValidate={validate} error={panelError} role={roleInfo} />
+        {mode === 'cont' ? (
+          <ContinuousColumn subtitles={subtitles} lines={sLines} captured={session ? session.captured : []}
+            curI={session?.curI} recording={rec.phase === 'rec'} validated={validatedSet}
+            rangeKind={rangeKind} fps={clipFps} role={roleInfo} error={panelError || (session && rec.error) || null} />
+        ) : (
+          <TakesColumn
+            shown={shown} labelOf={labelOf} selected={selected} freshId={freshId} onSelect={setSelectedId}
+            player={player} ab={{ takeA, takeB, showAB, canAB, abA, abB }} onAB={assignAB} onToggleAB={toggleAB}
+            locked={locked} onDelete={removeTake} onValidate={validate} error={panelError} role={roleInfo} />
+        )}
       </div>
     </div>
   )

@@ -367,7 +367,7 @@ const RecorderPanel = forwardRef(function RecorderPanel({
     function onTimeUpdate() {
       if (!triggered && v.currentTime >= startAt) {
         triggered = true
-        a.currentTime = 0
+        a.currentTime = take.lead || 0
         a.play().catch(e => console.warn('take playback failed', e))
       }
     }
