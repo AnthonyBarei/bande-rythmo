@@ -2,6 +2,7 @@ import React, { useRef } from 'react'
 import { T, Icon, ICONS, Btn, Select } from '../../ui'
 import { fmtSMPTE } from '../../utils/timecode'
 import useElementWidth from './useElementWidth'
+import VolumeControl from '../VolumeControl'
 
 const SPEEDS = [{ v: 0.5, l: '0.5×' }, { v: 1, l: '1×' }, { v: 1.5, l: '1.5×' }, { v: 2, l: '2×' }]
 
@@ -17,16 +18,19 @@ const SPEEDS = [{ v: 0.5, l: '0.5×' }, { v: 1, l: '1×' }, { v: 1.5, l: '1.5×'
 //   otherwise    scrub + speed + volume move to a second surface row (top
 //                border, 6px padding) — never a floating bar; row 1 gets the
 //                hidden buttons back while they fit (≥ ROW1_FULL_W).
+// The volume slider sits inline from VOLUME_INLINE_W (and on the second row);
+// narrower, it opens above the mute button on hover.
 const SCRUB_MIN = 160
 const FULL_W = 800
 const NO_FRAME_W = 724
 const COMPACT_W = 632
 const ROW1_FULL_W = 510
+const VOLUME_INLINE_W = 870
 
 export default function Transport({
-  currentTime, duration, playing, speed, muted,
+  currentTime, duration, playing, speed,
   onTogglePlay, onSeek, onSeekEnd, onStepFrame, onPrevSub, onNextSub,
-  loopActive, onToggleLoopActive, onChangeSpeed, onToggleMute,
+  loopActive, onToggleLoopActive, onChangeSpeed,
   hasTarget, onSetIn, onSetOut, clipFps = 25,
 }) {
   const trackRef = useRef(null)
@@ -61,7 +65,7 @@ export default function Transport({
     <span title="Vitesse de lecture" style={{ display: 'inline-flex', flexShrink: 0 }}>
       <Select size="sm" width={64} menuWidth={96} placement="top" value={speed} onChange={onChangeSpeed} options={SPEEDS} />
     </span>
-    <Btn size="sm" icon={muted ? ICONS.mute : ICONS.volume} onClick={onToggleMute} title={muted ? 'Activer le son (M)' : 'Couper le son (M)'} />
+    <VolumeControl width={64} inline={twoRows || barW >= VOLUME_INLINE_W} />
   </>)
   const row = { minHeight: 50, padding: '0 16px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, rowGap: 6, borderTop: `1px solid ${T.border}` }
 

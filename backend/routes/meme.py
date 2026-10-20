@@ -16,6 +16,7 @@ MEMES_DIR = "memes"
 os.makedirs(MEMES_DIR, exist_ok=True)
 
 ALLOWED_EXT = {"png", "jpg", "jpeg", "webp", "gif"}
+MEDIA_TYPES = {"png": "image/png", "jpg": "image/jpeg", "webp": "image/webp", "gif": "image/gif"}
 
 FONT_PATHS = {
     "impact":   ["C:/Windows/Fonts/impact.ttf",   "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"],
@@ -55,17 +56,6 @@ def _wrap_text(draw: ImageDraw.ImageDraw, text: str, font, max_w: int) -> list[s
 def _parse_color(color: str):
     """Return PIL-compatible color. Accepts #rrggbb or named colors."""
     return color
-
-
-def _draw_stroke(draw: ImageDraw.ImageDraw, x: int, y: int, text: str, font,
-                 stroke_w: int, stroke_color: str):
-    for dx in range(-stroke_w, stroke_w + 1):
-        for dy in range(-stroke_w, stroke_w + 1):
-            if dx == 0 and dy == 0:
-                continue
-            if dx * dx + dy * dy > stroke_w * stroke_w + 1:
-                continue
-            draw.text((x + dx, y + dy), text, font=font, fill=stroke_color)
 
 
 def _apply_texts(img: Image.Image, texts_data: list[dict]) -> Image.Image:
@@ -115,9 +105,8 @@ def _apply_texts(img: Image.Image, texts_data: list[dict]) -> Image.Image:
             # Center all lines vertically around anchor_y
             ty = anchor_y - total_h // 2 + i * line_h - bbox[1]
 
-            if scaled_sw > 0:
-                _draw_stroke(draw, tx, ty, line, font, scaled_sw, s_color)
-            draw.text((tx, ty), line, font=font, fill=color)
+            draw.text((tx, ty), line, font=font, fill=color,
+                      stroke_width=scaled_sw, stroke_fill=s_color)
 
     return img
 
@@ -125,10 +114,12 @@ def _apply_texts(img: Image.Image, texts_data: list[dict]) -> Image.Image:
 def _render_image(in_path: str, out_path: str, texts_data: list[dict], out_ext: str):
     with Image.open(in_path) as img:
         out = _apply_texts(img.convert("RGBA"), texts_data)
-    if out_ext == "webp":
+    if out_ext == "jpg":
+        out.convert("RGB").save(out_path, quality=92)
+    elif out_ext == "webp":
         out.save(out_path, quality=92)
     else:
-        out.save(out_path, optimize=True)
+        out.save(out_path)
 
 
 def _render_gif(in_path: str, out_path: str, texts_data: list[dict]):
@@ -167,7 +158,7 @@ async def generate(
     if ext not in ALLOWED_EXT:
         raise HTTPException(400, f"Unsupported format: {ext}. Use {sorted(ALLOWED_EXT)}")
 
-    out_ext = "gif" if ext == "gif" else "png"
+    out_ext = "jpg" if ext == "jpeg" else ext
     uid      = str(uuid.uuid4())
     in_path  = os.path.join(MEMES_DIR, f"in_{uid}.{ext}")
     out_path = os.path.join(MEMES_DIR, f"out_{uid}.{out_ext}")
@@ -178,11 +169,10 @@ async def generate(
     try:
         if ext == "gif":
             await asyncio.to_thread(_render_gif, in_path, out_path, texts_data)
-            media = "image/gif"
         else:
             await asyncio.to_thread(_render_image, in_path, out_path, texts_data, out_ext)
-            media = "image/png"
     except Exception as e:
+        log.exception("meme render failed (%s)", name)
         raise HTTPException(500, f"Render failed: {e}")
     finally:
         try:
@@ -190,4 +180,4 @@ async def generate(
         except OSError:
             log.warning("could not remove meme input %s", in_path, exc_info=True)
 
-    return FileResponse(out_path, filename=f"meme.{out_ext}", media_type=media)
+    return FileResponse(out_path, filename=f"meme.{out_ext}", media_type=MEDIA_TYPES[out_ext])

@@ -4,6 +4,8 @@ import { TRACK_HEXES } from '../config/tracks'
 import { fmtSMPTE } from '../utils/timecode'
 import { METER_FLOOR, levelOf, trimToWav, takePeaks } from '../utils/takeAudio'
 import { adjacentLine, characterProgress, listenVoVolume } from '../utils/studio'
+import { usePlayerVolume, getPlayerVolume, applyPlayerVolume, holdPlayerVolume, releasePlayerVolume } from '../utils/playerVolume'
+import VolumeControl from './VolumeControl'
 
 // Recorder — port of redesign screen-record-export.jsx → Record.
 // variant 'studio'   : the dubbing stage (one black card: line strip · image ·
@@ -107,8 +109,14 @@ const RecorderPanel = forwardRef(function RecorderPanel({
   const playElRef = useRef(null)       // the <audio> currently audible
   const playTokenRef = useRef(0)
   const lastSlotRef = useRef(null)
-  const ctxRef = useRef(null)          // Studio "écouter sur l'image": { take, sub, v, a, volume, muted }
+  const ctxRef = useRef(null)          // Studio "écouter sur l'image": { take, sub, v, a }
   const syncCleanupRef = useRef(null)
+
+  // Takes follow the player volume but not its mute: M silences the VO only.
+  const { volume } = usePlayerVolume()
+  useEffect(() => {
+    for (const el of [audioRef.current, audio2Ref.current]) applyPlayerVolume(el, { mute: false })
+  }, [volume])
 
   useEffect(() => {
     try { localStorage.setItem(PREROLL_KEY, preroll ? '1' : '0') } catch { /* storage unavailable — keep in-memory value */ }
@@ -277,7 +285,7 @@ const RecorderPanel = forwardRef(function RecorderPanel({
     rec.media.pause()
     rec.media.playbackRate = rec.rate
     if (rec.studio) {
-      rec.media.muted = rec.wasMuted
+      releasePlayerVolume(rec.media)
       if (rec.sub) rec.media.currentTime = Math.max(0, rec.sub.start - PREROLL_SEC)
     }
   }
@@ -302,6 +310,7 @@ const RecorderPanel = forwardRef(function RecorderPanel({
     if (rec.studio && rec.media) {
       // Studio: image + band keep rolling under the take; the VO is muted so
       // it does not bleed into the mic.
+      holdPlayerVolume(rec.media)
       rec.media.muted = true
       if (rec.media.paused) rec.media.play().catch(e => console.warn('lecture vidéo impossible', e))
       if (rec.sub) watchAutoStop(rec)
@@ -376,7 +385,7 @@ const RecorderPanel = forwardRef(function RecorderPanel({
       const lead = !preroll ? 0 : drive ? Math.min(PREROLL_SEC, Math.max(0, sub.start)) : PREROLL_SEC
       rec = {
         mr: new MediaRecorder(stream), chunks: [], stream, ownsStream, sub, lead,
-        media: drive, rate: drive?.playbackRate ?? 1, wasMuted: !!drive?.muted, studio,
+        media: drive, rate: drive?.playbackRate ?? 1, studio,
         subIndex: activeIndex, character: activeCharacter, t0: 0, goAt: 0, live: false, raf: 0,
       }
       if (drive) {
@@ -401,7 +410,7 @@ const RecorderPanel = forwardRef(function RecorderPanel({
       else goLive(rec, rec.t0)
     } catch (e) {
       if (ownsStream) stopTracks(stream)
-      if (rec?.media) { rec.media.playbackRate = rec.rate; rec.media.muted = rec.wasMuted }
+      if (rec?.media) { rec.media.playbackRate = rec.rate; releasePlayerVolume(rec.media) }
       if (e?.name === 'NotAllowedError') setMicDenied(true)
       setError(micError(e))
     } finally {
@@ -439,12 +448,12 @@ const RecorderPanel = forwardRef(function RecorderPanel({
       if (rec.mr.state !== 'inactive') rec.mr.stop()
       if (rec.ownsStream) stopTracks(rec.stream)
       rec.cleanupMedia?.()
-      if (rec.media) { rec.media.pause(); rec.media.playbackRate = rec.rate; rec.media.muted = rec.wasMuted }
+      if (rec.media) { rec.media.pause(); rec.media.playbackRate = rec.rate; releasePlayerVolume(rec.media) }
     }
     syncCleanupRef.current?.()
     const ctx = ctxRef.current
     ctxRef.current = null
-    if (ctx) { ctx.a.pause(); ctx.v.pause(); ctx.v.volume = ctx.volume; ctx.v.muted = ctx.muted }
+    if (ctx) { ctx.a.pause(); ctx.v.pause(); releasePlayerVolume(ctx.v) }
     for (const ref of [acRef, bipCtxRef]) {
       const ac = ref.current
       ref.current = null
@@ -484,8 +493,7 @@ const RecorderPanel = forwardRef(function RecorderPanel({
     ctxRef.current = null
     ctx.a.pause()
     ctx.v.pause()
-    ctx.v.volume = ctx.volume
-    ctx.v.muted = ctx.muted
+    releasePlayerVolume(ctx.v)
     if (ctx.sub) ctx.v.currentTime = Math.max(0, ctx.sub.start - PREROLL_SEC)
     if (playElRef.current === ctx.a) playElRef.current = null
     setPlaying(null)
@@ -554,7 +562,7 @@ const RecorderPanel = forwardRef(function RecorderPanel({
     stopContext()
     stopAudio()
     const sub = take.subtitle_index != null ? subtitles[take.subtitle_index] || null : null
-    const ctx = { take, sub, v, a, volume: v.volume, muted: v.muted }
+    const ctx = { take, sub, v, a }
     ctxRef.current = ctx
     playElRef.current = a
     setCtxId(take.id)
@@ -567,8 +575,10 @@ const RecorderPanel = forwardRef(function RecorderPanel({
       if (ctxRef.current !== ctx) return
       a.currentTime = 0
       const level = listenVoVolume(listenVoLevel)
-      v.volume = level
-      v.muted = level === 0
+      const player = getPlayerVolume()
+      holdPlayerVolume(v)
+      v.volume = level * player.volume
+      v.muted = level === 0 || player.muted
       await v.play()
       if (ctxRef.current !== ctx) return
       await a.play()
@@ -620,7 +630,7 @@ const RecorderPanel = forwardRef(function RecorderPanel({
     stopContext()
     stopAudio()
 
-    const wasMuted = v.muted
+    holdPlayerVolume(v)
     v.muted = true
 
     const startAt = sub ? sub.start : 0
@@ -647,7 +657,7 @@ const RecorderPanel = forwardRef(function RecorderPanel({
       done = true
       v.removeEventListener('timeupdate', onTimeUpdate)
       v.removeEventListener('pause', onVideoPause)
-      v.muted = wasMuted
+      releasePlayerVolume(v)
       setSyncPlaying(null)
       if (syncCleanupRef.current === cleanup) syncCleanupRef.current = null
     }
@@ -958,6 +968,7 @@ const RecorderPanel = forwardRef(function RecorderPanel({
             {phase === 'preroll' && <span style={{ color: T.accent }}>Pré-roll · bip {Math.max(1, leadTotal - countdown + 1)}/{leadTotal}</span>}
             {recLive && <span style={{ color: T.danger, display: 'inline-flex', alignItems: 'center', gap: 6 }}><Dot color={T.danger} size={7} />Prise en cours · {elapsed.toFixed(1)}s{target ? ` / ${recDur.toFixed(1)}s` : ''}</span>}
           </div>
+          <VolumeControl />
         </div>
       </div>
       {/* Right: take queue + A/B — Valider sits 12px under the last card (#5), hidden with no take (#6) */}
