@@ -19,6 +19,7 @@ import { mergeTranslations } from '../utils/mergeTranslations'
 import { TRACK_COLORS } from '../config/tracks'
 import { fmtSMPTE } from '../utils/timecode'
 import { usePlayerVolume, applyPlayerVolume, toggleMuted } from '../utils/playerVolume'
+import { readComediens, writeComediens, writeEditorSelection } from '../utils/studioPrefs'
 import BandCanvas from './band/BandCanvas'
 import {
   CURSOR_X_RATIO, bandAccent, bandCanvasHeight, buildCharMap, autoFitPxPerSec,
@@ -283,21 +284,19 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
     return () => v.removeEventListener('timeupdate', check)
   }, [loopActive])
 
-  // Load comédien names (per-clip, local)
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(`br-comediens-${clip.clip_id}`)
-      setComediens(raw ? JSON.parse(raw) : {})
-    } catch { setComediens({}) }
-  }, [clip.clip_id])
+  // Load comédien names (per-clip, local — shared with the Studio)
+  useEffect(() => { setComediens(readComediens(clip.clip_id)) }, [clip.clip_id])
 
   function setComedien(char, name) {
     setComediens(prev => {
       const next = { ...prev, [char]: name }
-      try { localStorage.setItem(`br-comediens-${clip.clip_id}`, JSON.stringify(next)) } catch { /* storage unavailable — name kept for this session */ }
+      writeComediens(clip.clip_id, next)
       return next
     })
   }
+
+  // The Studio opens on the réplique selected here.
+  useEffect(() => { writeEditorSelection(clip.clip_id, selectedIdx) }, [clip.clip_id, selectedIdx])
 
   // Fetch takes (refreshed when right pane tab changes or recorder toggles)
   useEffect(() => {

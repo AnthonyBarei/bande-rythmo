@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ICONS, Btn, ScreenHeader } from '../ui'
+import { T, ICONS, Btn, Input, ScreenHeader } from '../ui'
+import { TRACK_HEXES } from '../config/tracks'
 import { useSettings } from '../SettingsContext'
 import { useToast } from '../ToastContext'
 import { adjacentLine, characterProgress, nextOpenLine } from '../utils/studio'
 import { usePlayerVolume, applyPlayerVolume, toggleMuted } from '../utils/playerVolume'
+import { readComediens, writeComediens, readStudioRole, writeStudioRole, readEditorSelection } from '../utils/studioPrefs'
 import BandCanvas from './band/BandCanvas'
 import {
   autoFitPxPerSec, bandAccent, buildCharMap, readDetection, readDetectionAuto, readWordByWord,
@@ -13,9 +15,19 @@ import useTakePlayer from './studio/useTakePlayer'
 import StudioStage from './studio/StudioStage'
 import TakesColumn from './studio/TakesColumn'
 import TakeSettings from './studio/TakeSettings'
+import RolePicker from './studio/RolePicker'
 
 const DEFAULT_PX_PER_SEC = 150
 const COMPLETE_TOAST_MS = 8000
+
+// First réplique (time order) of a character.
+const firstLineOf = (subtitles, name) => {
+  let best = null
+  subtitles.forEach((s, i) => {
+    if ((s.character || '') === name && (best == null || s.start < subtitles[best].start)) best = i
+  })
+  return best
+}
 
 const isTyping = el => ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName) || el.isContentEditable
 
@@ -56,7 +68,14 @@ function useVideoClock(videoRef) {
 export default function StudioScreen({ clip, onBack, onExportDubbed }) {
   const videoRef = useRef(null)
   const subtitles = useMemo(() => clip.subtitles || [], [clip.subtitles])
-  const [index, setIndex] = useState(subtitles.length ? 0 : null)
+  // Opens on the réplique selected in the Éditeur, else on the last role's
+  // first réplique without a validated take (once the takes are loaded).
+  const [entry] = useState(() => {
+    const sel = readEditorSelection(clip.clip_id)
+    if (sel != null && subtitles[sel]) return { index: sel, role: null }
+    return { index: subtitles.length ? 0 : null, role: readStudioRole(clip.clip_id) }
+  })
+  const [index, setIndex] = useState(entry.index)
   const activeIndex = index != null && subtitles[index] ? index : (subtitles.length ? 0 : null)
   const target = activeIndex != null ? subtitles[activeIndex] : null
   const clipFps = clip.fps || 25
@@ -104,7 +123,15 @@ export default function StudioScreen({ clip, onBack, onExportDubbed }) {
       return null
     }
   }, [clip.clip_id])
-  useEffect(() => { fetchTakes() }, [fetchTakes])
+  const entryRoleRef = useRef(entry.role)
+  useEffect(() => {
+    fetchTakes().then(list => {
+      const role = entryRoleRef.current
+      entryRoleRef.current = null
+      if (role == null || !list || !subtitles.some(s => (s.character || '') === role)) return
+      setIndex(nextOpenLine(subtitles, list, null, role) ?? firstLineOf(subtitles, role))
+    })
+  }, [fetchTakes])
 
   const rec = useStudioRecorder({
     videoRef, clipId: clip.clip_id, sub: target, subIndex: activeIndex, fps: clipFps, cfg,
@@ -131,6 +158,36 @@ export default function StudioScreen({ clip, onBack, onExportDubbed }) {
   const canAB = shown.length >= 2
   const showAB = canAB && (abOpen || !!takeA || !!takeB)
   const locked = rec.live
+
+  // ── Role (STUDIO_V2 §1): the character of the current réplique, chosen
+  // explicitly from the picker or 1–9.
+  const role = target ? target.character || '' : null
+  const [comediens, setComediens] = useState(() => readComediens(clip.clip_id))
+  const [roleOpen, setRoleOpen] = useState(false)
+  const roles = useMemo(() => Object.entries(charMap)
+    .sort((a, b) => a[1] - b[1])
+    .map(([name, i]) => ({
+      name, label: name || 'Sans personnage', color: TRACK_HEXES[i % TRACK_HEXES.length],
+      comedien: comediens[name] || '', ...characterProgress(subtitles, takes, name),
+    })), [charMap, comediens, subtitles, takes])
+  const roleInfo = roles.find(r => r.name === role) || null
+  useEffect(() => { if (role != null) writeStudioRole(clip.clip_id, role) }, [clip.clip_id, role])
+
+  function setComedien(name) {
+    setComediens(prev => {
+      const next = { ...prev, [role]: name }
+      writeComediens(clip.clip_id, next)
+      return next
+    })
+  }
+
+  // Switching role opens its first réplique without a validated take.
+  function pickRole(name) {
+    setRoleOpen(false)
+    if (locked || name === role) return
+    setFlash(null)
+    setIndex(nextOpenLine(subtitles, takes, null, name) ?? firstLineOf(subtitles, name))
+  }
 
   function resetAB() {
     setAbOpen(false)
@@ -242,7 +299,7 @@ export default function StudioScreen({ clip, onBack, onExportDubbed }) {
   // · Échap annuler / arrêter l'écoute · ← / → réplique du personnage (Alt :
   // tous) · Tab A ⇄ B · M son.
   const keysRef = useRef(null)
-  useEffect(() => { keysRef.current = { primary, validate, selectIndex, selected, takeA, takeB, showAB, rec, player, activeIndex, subtitles } })
+  useEffect(() => { keysRef.current = { primary, validate, selectIndex, selected, takeA, takeB, showAB, rec, player, activeIndex, subtitles, roles, pickRole, roleOpen, setRoleOpen } })
   useEffect(() => {
     function onKey(e) {
       if (isTyping(e.target) || e.ctrlKey || e.metaKey) return
@@ -257,6 +314,16 @@ export default function StudioScreen({ clip, onBack, onExportDubbed }) {
         return
       }
       if (e.altKey) return
+      if (/^[1-9]$/.test(e.key)) {
+        const r = k.roles[+e.key - 1]
+        if (r) { e.preventDefault(); k.pickRole(r.name) }
+        return
+      }
+      if (e.key === 'c' || e.key === 'C') {
+        if (!k.rec.live) { e.preventDefault(); k.setRoleOpen(o => !o) }
+        return
+      }
+      if (e.key === 'Escape' && k.roleOpen) { e.preventDefault(); k.setRoleOpen(false); return }
       if (e.key === 'r' || e.key === 'R') {
         e.preventDefault()
         k.primary()
@@ -329,6 +396,14 @@ export default function StudioScreen({ clip, onBack, onExportDubbed }) {
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
           {/* session bar */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', flexShrink: 0 }}>
+            <RolePicker roles={roles} role={role} open={roleOpen} onOpen={setRoleOpen} onPick={pickRole} locked={locked} />
+            {roleInfo && (
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: T.fs.xs, color: T.text3 }}>
+                Comédien
+                <Input size="sm" value={comediens[role] || ''} placeholder="Nom du comédien…" aria-label={`Comédien de ${roleInfo.label}`}
+                  onChange={e => setComedien(e.target.value)} style={{ width: 160 }} />
+              </label>
+            )}
             <div style={{ flex: 1 }} />
             <TakeSettings cfg={cfg} onCfg={update} disabled={locked} />
           </div>
@@ -340,7 +415,7 @@ export default function StudioScreen({ clip, onBack, onExportDubbed }) {
         <TakesColumn
           shown={shown} labelOf={labelOf} selected={selected} freshId={freshId} onSelect={setSelectedId}
           player={player} ab={{ takeA, takeB, showAB, canAB, abA, abB }} onAB={assignAB} onToggleAB={toggleAB}
-          locked={locked} onDelete={removeTake} onValidate={validate} error={panelError} />
+          locked={locked} onDelete={removeTake} onValidate={validate} error={panelError} role={roleInfo} />
       </div>
     </div>
   )

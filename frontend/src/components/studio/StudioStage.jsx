@@ -44,7 +44,8 @@ export default function StudioStage({
       flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', background: '#000',
       border: `1px solid ${recLike ? alpha(T.danger, '88') : T.border}`, borderRadius: T.r.card, overflow: 'hidden', transition: 'border-color .2s',
     }}>
-      <LineStrip subtitles={subtitles} takes={takes} index={index} fps={fps} onSelectIndex={rec.live ? null : onSelectIndex} />
+      <LineStrip subtitles={subtitles} takes={takes} index={index} fps={fps} onSelectIndex={rec.live ? null : onSelectIndex}
+        roleLabel={sub ? sub.character || 'Sans personnage' : ''} />
       <div style={{ flex: 1, minHeight: 80, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
         <div style={{ height: '94%', aspectRatio: '16/9', maxWidth: '96%', background: '#000', borderRadius: 6, position: 'relative', overflow: 'hidden' }}>
           {stageImage}

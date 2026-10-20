@@ -7,7 +7,7 @@ import { AbBar } from './StageParts'
 // A/B comparison, and Valider — Valider sits 12px under the last card.
 export default function TakesColumn({
   shown, labelOf, selected, freshId, onSelect, player, ab, onAB, onToggleAB,
-  locked, onDelete, onValidate, error,
+  locked, onDelete, onValidate, error, role,
 }) {
   const { takeA, takeB, showAB, canAB, abA, abB } = ab
   return (
@@ -66,6 +66,16 @@ export default function TakesColumn({
           </div>
         )}
       </div>
+      {role && role.total > 0 && (
+        <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 6, marginTop: 'auto' }}>
+          <span style={{ fontSize: T.fs.xs, fontFamily: T.fontMono, color: role.done === role.total ? T.success : T.text3 }}>
+            {role.label} · {role.done}/{role.total} validées
+          </span>
+          <div style={{ height: 4, background: T.surface2, borderRadius: 2, overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${(role.done / role.total) * 100}%`, background: role.done === role.total ? T.success : role.color, transition: 'width .3s' }} />
+          </div>
+        </div>
+      )}
     </div>
   )
 }
