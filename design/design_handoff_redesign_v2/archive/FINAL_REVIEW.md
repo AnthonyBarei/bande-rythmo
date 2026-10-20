@@ -24,3 +24,13 @@
 - `shell/02-command-palette.png`: the ring on the pill (#6)
 
 After this, archive `FIXES*.md` and keep only `CHANGELOG_REDESIGN.md` as the record.
+
+## ✅ Proofs received (`final_review_proofs/`): closed
+- **#4 and #5:** at 1100×800 the toolbar and the transport each fit on one row. Resp. and Réact. are icons only, the font control is in Affichage, and ±1 frame is hidden.
+- **#6:** the palette ring is drawn around the pill, not inside the field.
+
+Two optional nits. Neither blocks the merge.
+- The Respirations menu header wraps ("INSÉRER AU / CURSEUR"). Give the popover a `min-width: 260px`, or shorten the header to "RESPIRATIONS · AU CURSEUR".
+- The mic (Studio) button in the toolbar has a second inner border. It reads as toggled while nothing is active. Use the same ghost style as its neighbours.
+
+**The redesign is done.**

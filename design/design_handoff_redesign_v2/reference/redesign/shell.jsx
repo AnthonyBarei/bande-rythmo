@@ -137,6 +137,11 @@
         { k: ['alt glisser'], l: 'Dupliquer' }, { k: ['ctrl molette'], l: 'Zoom px/s' }, { k: ['clic lettre'], l: 'Signe de détection' },
         { k: ['double-clic'], l: 'Éditer le texte' }, { k: ['clic droit'], l: 'Menu contextuel' },
       ]},
+      { title: 'Studio', rows: [
+        { k: ['1–9'], l: 'Choisir le rôle' }, { k: ['C'], l: 'Menu des rôles' }, { k: ['R'], l: 'Lancer / refaire' },
+        { k: ['Entrée'], l: 'Valider la prise' }, { k: ['Espace'], l: 'Pause (continu) / attendre' }, { k: ['Échap'], l: 'Annuler / arrêter' },
+        { k: ['←', '→'], l: 'Réplique du rôle' }, { k: ['alt ←', 'alt →'], l: 'Toutes les répliques' },
+      ]},
       { title: 'Général', rows: [
         { k: ['Ctrl', 'Z'], l: 'Annuler' }, { k: ['Ctrl', 'Y'], l: 'Rétablir' }, { k: ['⌘', 'K'], l: 'Palette de commandes' },
         { k: ['Ctrl', 'S'], l: 'Sauvegarder' }, { k: ['?'], l: 'Cette aide' },
