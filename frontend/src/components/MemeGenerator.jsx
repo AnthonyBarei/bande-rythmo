@@ -6,6 +6,7 @@ import { fmtSMPTE } from '../utils/timecode'
 import { defaultRange } from '../utils/gifRange'
 import SeekBar from './import/SeekBar'
 import JobError from './JobError'
+import { saveBlob } from '../download'
 
 // F12 — short videos are imported inline as clips of this project.
 const MEME_PROJECT = 'Memes & extraits'
@@ -39,6 +40,9 @@ const FONTS = [
   { id: 'arialblk', label: 'Arial B.', css: '"Arial Black", Arial, sans-serif' },
   { id: 'mono',     label: 'Mono',    css: '"Courier New", Courier, monospace' },
 ]
+
+// Alignment anchors the text edge at x: snap x to the matching margin (wrap width = 88%).
+const ALIGN_X = { left: 6, center: 50, right: 94 }
 
 const QUICK_COLORS_TEXT   = ['#ffffff', '#ffff00', '#ff4444', '#44ff88', '#44bbff']
 const QUICK_COLORS_STROKE = ['#000000', '#ffffff', '#880000', '#004488', '#ff8800']
@@ -162,7 +166,7 @@ export default function MemeGenerator({
   const canvasRef = useRef(null)
   const imgRef = useRef(null)
   const fileInputRef = useRef(null)
-  const videoInputRef = useRef(null)
+  const mediaInputRef = useRef(null)
   const stageRef = useRef(null)
   const canvasWrapRef = useRef(null)
   const videoRef = useRef(null)
@@ -716,10 +720,16 @@ export default function MemeGenerator({
     }
   }
 
-  function download() {
+  async function download() {
     if (!resultUrl) return
-    const ext = (imageName || '').toLowerCase().endsWith('.gif') ? 'gif' : 'png'
-    const a = document.createElement('a'); a.href = resultUrl; a.download = `meme.${ext}`; a.click()
+    try {
+      const blob = await (await fetch(resultUrl)).blob()
+      const ext = { 'image/gif': 'gif', 'image/jpeg': 'jpg', 'image/webp': 'webp' }[blob.type] || 'png'
+      const base = (imageName || 'meme').replace(/\.[^.]+$/, '')
+      saveBlob(blob, `${base}_meme.${ext}`)
+    } catch (e) {
+      setError('Téléchargement échoué : ' + e.message)
+    }
   }
 
   function resetMeme() {
@@ -787,9 +797,9 @@ export default function MemeGenerator({
     <Select width={250} value={clip?.clip_id ?? null} onChange={selectClip} options={clipOptions} placeholder="Choisir un clip…" />
   )
   const uploadBtn = (
-    <Btn variant="outline" icon={ICONS.upload} onClick={() => videoInputRef.current?.click()} disabled={importing}
-      title={importing ? 'Import de la vidéo en cours…' : `Importer une vidéo de ${SHORT_VIDEO_MAX_S} s max. comme clip « ${MEME_PROJECT} »`}>
-      {importing ? 'Import…' : 'Vidéo courte…'}
+    <Btn variant="outline" icon={ICONS.upload} onClick={() => mediaInputRef.current?.click()} disabled={importing}
+      title={importing ? 'Import de la vidéo en cours…' : `Image (PNG, JPG, WEBP, GIF) ou vidéo de ${SHORT_VIDEO_MAX_S} s max. (clip « ${MEME_PROJECT} »)`}>
+      {importing ? 'Import…' : 'Image ou vidéo…'}
     </Btn>
   )
   const dropProps = {
@@ -1087,7 +1097,7 @@ export default function MemeGenerator({
                         style={{ width: '100%', color: T.accent, '--pct': `${(sel.strokeWidth / 8) * 100}%` }} />
                     </Field>
                     <Field label="ALIGNEMENT">
-                      <Segmented value={sel.align} onChange={v => updateLayer(selectedId, { align: v })} options={[
+                      <Segmented value={sel.align} onChange={v => updateLayer(selectedId, { align: v, x: ALIGN_X[v] })} options={[
                         { v: 'left', l: 'Gauche' }, { v: 'center', l: 'Centre' }, { v: 'right', l: 'Droite' },
                       ]} />
                     </Field>
@@ -1107,8 +1117,8 @@ export default function MemeGenerator({
 
         <input ref={fileInputRef} type="file" accept=".png,.jpg,.jpeg,.webp,.gif"
           onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; handleFile(f) }} style={{ display: 'none' }} />
-        <input ref={videoInputRef} type="file" accept="video/*"
-          onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) handleVideoFile(f) }} style={{ display: 'none' }} />
+        <input ref={mediaInputRef} type="file" accept=".png,.jpg,.jpeg,.webp,.gif,video/*"
+          onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; handleFile(f) }} style={{ display: 'none' }} />
       </div>
     </div>
   )
