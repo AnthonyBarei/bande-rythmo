@@ -200,7 +200,7 @@ async def export_mp4_dubbed(req: DubMixRequest, db: Session = Depends(get_db)):
             continue
         at = e.at
         if at is None and line:
-            at = line["start"]
+            at = max(0.0, line["start"] - (take.lead or 0.0))
         entries.append({"path": take.audio_path, "at": at or 0.0, "gain_db": e.gain_db})
     if not entries:
         raise HTTPException(400, "Toutes les prises sélectionnées appartiennent à des répliques masquées")

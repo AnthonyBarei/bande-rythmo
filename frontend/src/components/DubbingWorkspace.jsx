@@ -19,6 +19,8 @@ import { mergeTranslations } from '../utils/mergeTranslations'
 import { TRACK_COLORS } from '../config/tracks'
 import { fmtSMPTE } from '../utils/timecode'
 import { usePlayerVolume, applyPlayerVolume, toggleMuted } from '../utils/playerVolume'
+import { readComediens, writeComediens, writeEditorSelection } from '../utils/studioPrefs'
+import { nextOpenLine } from '../utils/studio'
 import BandCanvas from './band/BandCanvas'
 import {
   CURSOR_X_RATIO, bandAccent, bandCanvasHeight, buildCharMap, autoFitPxPerSec,
@@ -81,7 +83,7 @@ function CanvasCoachmark() {
   )
 }
 
-export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus, exportOpen, onToggleExport, initialPanel, onHelp }) {
+export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus, exportOpen, onToggleExport, onRecord, onHelp }) {
   // Subtitle state machine (array, selection, undo/redo, debounced autosave)
   // lives in useSubtitleManager — Phase 2 extraction. Aliases keep the
   // historical call-site names.
@@ -188,13 +190,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
     })
   }
   function clearCharFilter() { setCharFilter(new Set()) }
-  const [showRecorder, setShowRecorder] = useState(initialPanel === 'record')
   const [rightTab, setRightTab] = useState('repliques')
-  useEffect(() => {
-    if (initialPanel !== 'record') return
-    setShowRecorder(true)
-    setRightTab('repliques')
-  }, [initialPanel])
   const [takes, setTakes] = useState([])
   const [comediens, setComediens] = useState({})
   const loopRegionRef = useRef(null)
@@ -223,8 +219,6 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   const selectedIdxRef = useRef(selectedIdx)
   const lastSelectedIdxRef = useRef(selectedIdx)
   const onToggleExportRef = useRef(onToggleExport)
-  const recorderRef = useRef(null)
-  const [recordRequest, setRecordRequest] = useState(0)
   subtitlesRef.current = subtitles
   selectedIdxRef.current = selectedIdx
   if (selectedIdx != null) lastSelectedIdxRef.current = selectedIdx
@@ -283,29 +277,27 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
     return () => v.removeEventListener('timeupdate', check)
   }, [loopActive])
 
-  // Load comédien names (per-clip, local)
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(`br-comediens-${clip.clip_id}`)
-      setComediens(raw ? JSON.parse(raw) : {})
-    } catch { setComediens({}) }
-  }, [clip.clip_id])
+  // Load comédien names (per-clip, local — shared with the Studio)
+  useEffect(() => { setComediens(readComediens(clip.clip_id)) }, [clip.clip_id])
 
   function setComedien(char, name) {
     setComediens(prev => {
       const next = { ...prev, [char]: name }
-      try { localStorage.setItem(`br-comediens-${clip.clip_id}`, JSON.stringify(next)) } catch { /* storage unavailable — name kept for this session */ }
+      writeComediens(clip.clip_id, next)
       return next
     })
   }
 
-  // Fetch takes (refreshed when right pane tab changes or recorder toggles)
+  // The Studio opens on the réplique selected here.
+  useEffect(() => { writeEditorSelection(clip.clip_id, selectedIdx) }, [clip.clip_id, selectedIdx])
+
+  // Fetch takes (refreshed when the right pane tab changes)
   useEffect(() => {
     fetch(`/api/takes/${clip.clip_id}`)
       .then(r => r.ok ? r.json() : [])
       .then(data => Array.isArray(data) && setTakes(data))
       .catch(() => {})
-  }, [clip.clip_id, rightTab, showRecorder])
+  }, [clip.clip_id, rightTab])
 
   // Report save status up to the App top bar
   useEffect(() => { onSaveStatus?.(saveStatus) }, [saveStatus, onSaveStatus])
@@ -671,7 +663,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
           break
         case 'r': case 'R':
           e.preventDefault()
-          requestRecordToggle()
+          recordInStudio()
           break
         case 'e': case 'E':
           e.preventDefault()
@@ -684,25 +676,26 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  // R — start/stop a take for the selected (else active) réplique, through
-  // the RecorderPanel (same path as its record button: mic permission, errors).
-  // Opens the panel first when closed; the toggle fires once it is mounted
-  // with the réplique selected.
-  function requestRecordToggle() {
-    if (recorderRef.current?.isRecording()) { recorderRef.current.toggle(); return }
+  // Recording happens in the Studio: save pending edits, hand it the réplique
+  // to open on (its role follows), then switch screens.
+  function openStudio(idx) {
+    saveNow()
+    writeEditorSelection(clip.clip_id, idx != null && idx >= 0 ? idx : null)
+    onRecord?.()
+  }
+  // R / inspector ● — the selected réplique, else the one under the playhead.
+  function recordInStudio() {
     const subs = subtitlesRef.current
     const sel = selectedIdxRef.current
-    const idx = sel != null && subs[sel] ? sel : activeIndexAt(subs, getBandTime())
-    if (idx < 0) return
-    setSelectedIdx(idx)
-    setInspOpen(true)
-    setRightTab('repliques')
-    setShowRecorder(true)
-    setRecordRequest(n => n + 1)
+    openStudio(sel != null && subs[sel] ? sel : activeIndexAt(subs, getBandTime()))
   }
-  useEffect(() => {
-    if (recordRequest) recorderRef.current?.toggle()
-  }, [recordRequest])
+  // Voix ● — the role's first réplique without a validated take.
+  function recordRoleInStudio(character) {
+    const subs = subtitlesRef.current
+    let first = null
+    subs.forEach((s, i) => { if ((s.character || '') === character && (first == null || s.start < subs[first].start)) first = i })
+    openStudio(nextOpenLine(subs, takes, null, character) ?? first)
+  }
 
   function togglePlay() { const v = videoRef.current; if (v) v.paused ? v.play() : v.pause() }
   function changeSpeed(s) { const v = videoRef.current; if (v) v.playbackRate = +s; setSpeed(+s) }
@@ -1528,20 +1521,18 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
           charMap={charMap}
           charList={charList}
           clipFps={clipFps}
-          showRecorder={showRecorder}
-          onToggleRecorder={() => setShowRecorder(s => !s)}
+          onRecord={recordInStudio}
           onSetTargetCharacter={setTargetCharacter}
           onNewTargetCharacter={newTargetCharacter}
           repliquesProps={{
             subtitles, transcribing, onTranscribe: transcribe,
             onSubtitlesChange: handleSubtitlesChange, onDelete: deleteReplicaWithUndo,
-            bandNow, onSeek: seekBand, selectedIdx, setSelectedIdx, charFilter, charMap, clipId: clip.clip_id,
-            showRecorder, recorderRef, activeSubtitle, videoRef,
+            bandNow, onSeek: seekBand, selectedIdx, setSelectedIdx, charFilter, charMap,
           }}
           voixProps={{
             charList, charMap, subtitles, activeSubtitle, selectedIdx, setSelectedIdx,
             takes, bandNow, comediens, onSetComedien: setComedien,
-            onRecord: () => { setInspOpen(true); setShowRecorder(true); setRightTab('repliques') },
+            onRecord: recordRoleInStudio,
             onSeek: seekBand, clipDuration: clip.end - clip.start, onAddCharacter: addCharacter,
           }}
           detectionProps={{ detection, setDetection, detectionAuto, setDetectionAuto, wordByWord, setWordByWord }}

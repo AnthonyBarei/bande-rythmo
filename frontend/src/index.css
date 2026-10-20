@@ -241,3 +241,12 @@ video { display: block; }
   .clip-card .clip-card-actions { position: static; opacity: 1; visibility: visible; transform: none; }
   .clip-card .clip-card-project { opacity: 1; }
 }
+
+/* Recorder / Studio — take card entrance, countdown number, REC blink, line strip slide */
+@keyframes stIn { from { transform: translateY(-6px); opacity: 0 } to { transform: none; opacity: 1 } }
+@keyframes stCount { 0% { transform: scale(1.4); opacity: 0 } 20% { opacity: 1 } 100% { transform: scale(.92); opacity: .55 } }
+@keyframes stBlink { 50% { opacity: 0 } }
+@keyframes stOutL { to { transform: translateX(-48px); opacity: 0 } }
+@keyframes stOutR { to { transform: translateX(48px); opacity: 0 } }
+@keyframes stFromL { from { transform: translateX(-48px); opacity: 0 } }
+@keyframes stFromR { from { transform: translateX(48px); opacity: 0 } }

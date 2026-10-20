@@ -1,13 +1,11 @@
 import React from 'react'
 import SubtitleEditor from '../SubtitleEditor'
-import RecorderPanel from '../RecorderPanel'
 import { T, Btn, ICONS } from '../../ui'
 
-// Répliques tab — reference Inspector › ReplList (+ the docked recorder).
+// Répliques tab — reference Inspector › ReplList (recording happens in the Studio).
 export default function InspectorRepliques({
   subtitles, transcribing, onTranscribe, onSubtitlesChange, onDelete,
-  bandNow, onSeek, selectedIdx, setSelectedIdx, charFilter, charMap,
-  showRecorder, recorderRef, activeSubtitle, videoRef, clipId, clipFps,
+  bandNow, onSeek, selectedIdx, setSelectedIdx, charFilter, charMap, clipFps,
 }) {
   return (
     <>
@@ -22,18 +20,6 @@ export default function InspectorRepliques({
             selectedIdx={selectedIdx} setSelectedIdx={setSelectedIdx} compact={true} charFilter={charFilter} charMap={charMap} fps={clipFps} />
         )}
       </div>
-      {showRecorder && (
-        <div style={{ flexShrink: 0, borderTop: `1px solid ${T.border}`, maxHeight: 300, overflow: 'auto' }}>
-          <RecorderPanel
-            ref={recorderRef}
-            clipId={clipId}
-            subtitles={subtitles}
-            activeCharacter={(selectedIdx != null ? subtitles[selectedIdx]?.character : activeSubtitle?.character) || ''}
-            activeIndex={selectedIdx}
-            videoRef={videoRef}
-          />
-        </div>
-      )}
     </>
   )
 }

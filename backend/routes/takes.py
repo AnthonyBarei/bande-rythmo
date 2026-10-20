@@ -19,6 +19,7 @@ async def upload_take(
     subtitle_index: int | None = Form(None),
     duration: float = Form(0.0),
     label: str = Form(""),
+    lead: float = Form(0.0),
     audio: UploadFile = File(...),
     db: Session = Depends(get_db),
 ):
@@ -29,7 +30,7 @@ async def upload_take(
     audio_path = f"takes/{take_id}{ext}"
     with open(audio_path, "wb") as dst:
         shutil.copyfileobj(audio.file, dst)
-    return create_take(db, clip_id, character, subtitle_index, audio_path, duration, label)
+    return create_take(db, clip_id, character, subtitle_index, audio_path, duration, label, lead)
 
 
 @router.get("/{clip_id}")

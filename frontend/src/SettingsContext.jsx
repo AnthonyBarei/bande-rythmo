@@ -16,6 +16,12 @@ const DEFAULTS = {
   exportDetectionBurn: false,
   // Studio « Écouter sur l'image » — VO volume (0..1) under the take: 0 / .15 / .5.
   listenVoLevel: 0.15,
+  // Studio take: countdown on a frozen image (0 / 3 / 5 s), image played before
+  // the réplique (élan, 0–3 s), bips, and what happens after Valider.
+  studioCount: 3,
+  studioLead: 1,
+  studioBeeps: true,
+  studioChain: 'manuel',
 }
 
 const DENSITY_FONT = { compact: 13, normal: 14, comfortable: 15 }

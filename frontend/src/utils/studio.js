@@ -44,3 +44,17 @@ export function listenVoVolume(level) {
     if (level == null || level === '' || !Number.isFinite(n)) return DEFAULT_LISTEN_VO_VOLUME
     return Math.min(1, Math.max(0, n > 1 ? n / 100 : n))
 }
+
+// After Valider: the next réplique of `character` (time order) with no
+// validated take, after `index` first, then from the top. null when all are done.
+export function nextOpenLine(subtitles, takes, index, character) {
+    const validated = new Set(takes.filter(t => t.best && t.subtitle_index != null).map(t => t.subtitle_index))
+    const order = subtitles
+        .map((s, i) => ({ i, start: Number(s?.start) || 0, c: charOf(s) }))
+        .filter(x => x.c === character && !validated.has(x.i))
+        .sort((a, b) => a.start - b.start || a.i - b.i)
+    if (!order.length) return null
+    const cur = index != null ? Number(subtitles[index]?.start) || 0 : -Infinity
+    const after = order.find(x => x.start > cur || (x.start === cur && x.i > index))
+    return (after || order[0]).i
+}

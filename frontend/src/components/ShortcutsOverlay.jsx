@@ -12,15 +12,18 @@ const GROUPS = [
   { title: 'Bande rythmo', rows: [
     { k: ['I'], l: 'Marquer IN' }, { k: ['O'], l: 'Marquer OUT' }, { k: ['S'], l: 'Couper à la tête' },
     { k: ['Entrée'], l: 'Éditer la réplique' }, { k: ['⇧Entrée'], l: 'Nouvelle réplique' },
-    { k: ['Suppr', '⌫'], l: 'Supprimer la réplique' }, { k: ['R'], l: 'Enregistrer / arrêter la prise' },
+    { k: ['Suppr', '⌫'], l: 'Supprimer la réplique' }, { k: ['R'], l: 'Enregistrer dans le Studio' },
     { k: ['Échap'], l: 'Quitter loop / édition' },
   ]},
   { title: 'Studio', rows: [
-    { k: ['R'], l: 'Enregistrer / arrêter' },
-    { k: ['←', '→'], l: 'Réplique précédente / suivante (même personnage)' },
-    { k: ['Alt+←', 'Alt+→'], l: 'Toute réplique' },
+    { k: ['1–9'], l: 'Rôle' },
+    { k: ['C'], l: 'Choisir le rôle' },
+    { k: ['R'], l: 'Lancer / refaire' },
+    { k: ['Espace'], l: 'Pause (continu) / attendre (auto)' },
+    { k: ['Entrée'], l: 'Valider la prise' },
+    { k: ['Échap'], l: 'Annuler / arrêter' },
+    { k: ['←', '→'], l: 'Réplique du rôle (Alt : toutes)' },
     { k: ['Tab'], l: 'Basculer A/B' },
-    { k: ['Échap'], l: "Arrêter l'écoute" },
   ]},
   { title: 'Canvas — gestes', rows: [
     { k: ['maintenir'], l: 'Déplacer le curseur' }, { k: ['glisser'], l: 'Créer une réplique' }, { k: ['⇧ glisser'], l: 'Région de boucle' },

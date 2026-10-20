@@ -11,7 +11,9 @@ This time the design source is included. **`reference/` is the spec.** It is pla
 
 ## What's in this folder
 
-- `FINAL_REVIEW.md`: **start here.** The redesign is accepted. This file lists the last cleanup and polish items at 1100px.
+- `STUDIO_V2.md`: **start here.** Studio rework: role picker, Par réplique / En continu modes, countdown on a frozen image, and a held "prêt" state between répliques.
+- `CLOSED.md`: **the redesign is closed.** It lists the backlog items to carry over.
+- `FINAL_REVIEW.md`: the final review. It's done.
 - `FIXES_R8.md`: **round 8.** It's done, and so is the final acceptance pass.
 - `FIXES_R7.md`: **round 7.** It's done.
 - `FIXES_R6.md`: **round 6.** It's done.

@@ -42,7 +42,7 @@ function FocusCharacter({
               aria-label={`Comédien·ne de ${focusChar}`}
             />
           </div>
-          <Btn size="sm" icon={ICONS.rec} danger onClick={onRecord} title="Enregistrer la prise (R)" style={{ background: T.danger, color: '#fff' }} />
+          <Btn size="sm" icon={ICONS.rec} danger onClick={() => onRecord(focusChar)} title={`Enregistrer ${focusChar} dans le Studio`} style={{ background: T.danger, color: '#fff' }} />
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
           {stats.map(([k, v]) => (

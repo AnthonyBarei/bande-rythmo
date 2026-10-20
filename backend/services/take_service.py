@@ -13,12 +13,13 @@ def _to_dict(take: Take) -> dict:
         "audio_url": f"/{take.audio_path}",
         "duration": take.duration,
         "label": take.label,
+        "lead": float(take.lead or 0.0),
         "best": bool(take.best),
         "created_at": take.created_at.isoformat() if take.created_at else None,
     }
 
 
-def create_take(db: Session, clip_id, character, subtitle_index, audio_path, duration, label=""):
+def create_take(db: Session, clip_id, character, subtitle_index, audio_path, duration, label="", lead=0.0):
     take = Take(
         clip_id=clip_id,
         character=character or "",
@@ -26,6 +27,7 @@ def create_take(db: Session, clip_id, character, subtitle_index, audio_path, dur
         audio_path=audio_path,
         duration=float(duration or 0.0),
         label=label or "",
+        lead=max(0.0, float(lead or 0.0)),
         created_at=datetime.now(),
     )
     db.add(take)

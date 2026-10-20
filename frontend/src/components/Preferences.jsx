@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useSettings } from '../SettingsContext'
 import { Btn, Segmented, Select, Toggle, Chip, Dot, ScreenHeader, Icon, ICONS, T } from '../ui'
+import { STUDIO_COUNTS, STUDIO_LEADS, STUDIO_CHAINS } from '../config/studio'
 import { fetchUploadedFonts, fontOptions } from '../config/fonts'
 
 // Réglages — reference screen-misc.jsx Settings (Section max 720 + Field rows).
@@ -153,6 +154,18 @@ export default function Preferences() {
         <Section title="Studio" desc="Enregistrement et écoute des prises.">
           <Field label="VO pendant l'écoute">
             <Segmented value={settings.listenVoLevel} onChange={v => update({ listenVoLevel: v })} options={LISTEN_VO_LEVELS} />
+          </Field>
+          <Field label="Décompte">
+            <Segmented value={settings.studioCount} onChange={v => update({ studioCount: v })} options={STUDIO_COUNTS} />
+          </Field>
+          <Field label="Élan avant réplique">
+            <Segmented value={settings.studioLead} onChange={v => update({ studioLead: v })} options={STUDIO_LEADS} />
+          </Field>
+          <Field label="Bips">
+            <Toggle on={!!settings.studioBeeps} onClick={() => update({ studioBeeps: !settings.studioBeeps })} label="Bips" />
+          </Field>
+          <Field label="Enchaînement">
+            <Segmented value={settings.studioChain} onChange={v => update({ studioChain: v })} options={STUDIO_CHAINS} />
           </Field>
         </Section>
 
