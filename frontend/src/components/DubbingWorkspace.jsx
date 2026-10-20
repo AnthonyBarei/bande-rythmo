@@ -91,9 +91,6 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
     undo, redo, canUndo, canRedo, undoRedoRef,
   } = useSubtitleManager({ clipId: clip.clip_id, initialSubtitles: clip.subtitles || [], onSaved: onUpdate })
   const [boucles, setBoucles] = useState(clip.boucles || [])
-  // Live boucles while a TimelineNav drag trims/moves one (null otherwise).
-  const [bouclesPreview, setBouclesPreview] = useState(null)
-  const shownBoucles = bouclesPreview?.boucles || boucles
   const clipFps = clip.fps || 25
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
@@ -209,6 +206,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   const subtitlesRef = useRef(subtitles)
   const brOffsetRef = useRef(0)
   const pxPerSecRef = useRef(180)
+  const scrubResumeRef = useRef(false)
   const onsetsRef = useRef(null)
   const dragRef = useRef(null)
   const hoverRef = useRef(null)
@@ -708,6 +706,16 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   function toggleMute() { const v = videoRef.current; if (!v) return; v.muted = !v.muted; setMuted(v.muted) }
   function changeSpeed(s) { const v = videoRef.current; if (v) v.playbackRate = +s; setSpeed(+s) }
   function seekVideo(t) { const v = videoRef.current; if (v) v.currentTime = t }
+  // Nav-bar scrub: pause while dragging, resume after if it was playing.
+  function pauseForScrub() {
+    const v = videoRef.current
+    scrubResumeRef.current = !!v && !v.paused
+    v?.pause()
+  }
+  function resumeAfterScrub() {
+    if (scrubResumeRef.current) videoRef.current?.play().catch(e => console.warn('lecture refusée', e))
+    scrubResumeRef.current = false
+  }
 
   function gotoPrevSub() {
     if (!videoRef.current) return
@@ -1332,10 +1340,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
             bandNow={bandNow}
             clipFps={clipFps}
             boucles={boucles}
-            onBouclesChange={saveBoucles}
-            onBouclesPreview={setBouclesPreview}
             loopRegion={loopRegion}
-            onLoopRegionChange={setLoopRegion}
             duration={duration}
             waveform={waveformData}
             sceneCuts={sceneCuts}
@@ -1343,7 +1348,11 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
             charMap={charMap}
             viewStart={viewStart}
             viewEnd={viewStart + viewSpan}
+            pxPerSec={pxPerSec}
             onSeek={seekBand}
+            onZoom={setPxPerSec}
+            onScrubStart={pauseForScrub}
+            onScrubEnd={resumeAfterScrub}
           />
 
           <BandToolbar
@@ -1400,7 +1409,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
               detection={detection}
               detectionAuto={detectionAuto}
               waveform={waveformData}
-              boucles={shownBoucles}
+              boucles={boucles}
               sceneCuts={sceneCuts}
               clipFps={clipFps}
               loopRegion={loopRegion}
@@ -1537,7 +1546,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
             onSeek: seekBand, clipDuration: clip.end - clip.start, onAddCharacter: addCharacter,
           }}
           detectionProps={{ detection, setDetection, detectionAuto, setDetectionAuto, wordByWord, setWordByWord }}
-          bouclesProps={{ boucles: shownBoucles, liveNumber: bouclesPreview?.number ?? null, subtitles, onAdd: addBoucleAtCursor, onRemove: removeBoucle, onSeek: seekBand, clipFps }}
+          bouclesProps={{ boucles, subtitles, onAdd: addBoucleAtCursor, onRemove: removeBoucle, onSeek: seekBand, clipFps }}
           lexiqueProps={{ project: clip.project, translateAvailable: !!translateProvider?.available, translateTarget }}
         />
       </div>
