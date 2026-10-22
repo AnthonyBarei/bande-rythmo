@@ -20,7 +20,7 @@ const BANNER = { fontSize: T.fs.xs, padding: '8px 12px', borderRadius: T.r.ctl, 
 // then { connected: false, configured, url } — configured = saved but unreachable.
 // Nothing saved yet: the form is usable at once and nothing is contacted until
 // « Connecter » (or « Détecter »).
-function ConnectCard({ provider, status, onConnected, switcher }) {
+function ConnectCard({ provider, status, onConnected, onForgotten, switcher }) {
   const [urlInput, setUrlInput] = useState(null)
   const [token, setToken] = useState('')
   const [loading, setLoading] = useState(false)
@@ -40,7 +40,28 @@ function ConnectCard({ provider, status, onConnected, switcher }) {
     }
   }
 
-  const configured = status ? status.configured : readLibraryConfigured(provider.id)
+  async function forget() {
+    setLoading(true)
+    setErr(null)
+    try {
+      const res = await fetch(`${provider.api}/config`, { method: 'DELETE' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`)
+      writeLibraryConfigured(provider.id, false)
+      setUrlInput(null)
+      setDetected(undefined)
+      onForgotten(data)
+    } catch (e) {
+      setErr(`Impossible d'oublier le serveur : ${e.message}`)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Read once: the Importer's own status fetch may update it later, and the
+  // card must not flip from a usable form to « Vérification… ».
+  const [configuredAtOpen] = useState(() => readLibraryConfigured(provider.id))
+  const configured = status ? status.configured : configuredAtOpen
   const checking = !status && configured
   const unreachable = status?.configured && !status.connected
   const busy = checking || loading
@@ -84,7 +105,8 @@ function ConnectCard({ provider, status, onConnected, switcher }) {
         ) : unreachable ? (
           <div style={{ ...BANNER, color: T.danger, background: 'rgba(232,89,93,.05)', border: `1px solid ${alpha(T.danger, '44')}` }}>
             <Icon d={ICONS.warn} size={13} stroke={T.danger} />
-            <span>Serveur enregistré injoignable — <span style={{ fontFamily: T.fontMono }}>{savedHost}</span>. Démarrez-le ou reconnectez-vous.</span>
+            <span style={{ flex: 1 }}>Serveur enregistré injoignable — <span style={{ fontFamily: T.fontMono }}>{savedHost}</span>. Démarrez-le ou reconnectez-vous.</span>
+            <Btn size="xs" variant="ghost" onClick={forget} disabled={loading} title="Efface l'URL et le jeton enregistrés">Oublier ce serveur</Btn>
           </div>
         ) : detected ? (
           <div style={{ ...BANNER, color: T.success, background: 'rgba(94,194,124,.08)', border: `1px solid ${alpha(T.success, '44')}` }}>
@@ -514,7 +536,8 @@ function ProviderBrowser({ provider, initialStatus, onSourceSelected, onStatus, 
   }
 
   if (!status?.connected) {
-    return <ConnectCard provider={provider} status={status} onConnected={checkStatus} switcher={switcher} />
+    return <ConnectCard provider={provider} status={status} onConnected={checkStatus} switcher={switcher}
+      onForgotten={data => { setStatus(data); onStatus?.(data) }} />
   }
 
   const activeLib = libraries.find(l => l.id === activeSectionId)

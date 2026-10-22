@@ -3,7 +3,7 @@ import { useSettings } from '../SettingsContext'
 import { Btn, Segmented, Select, Toggle, Chip, Dot, ScreenHeader, Icon, ICONS, T } from '../ui'
 import { STUDIO_COUNTS, STUDIO_LEADS, STUDIO_CHAINS } from '../config/studio'
 import { fetchUploadedFonts, fontOptions } from '../config/fonts'
-import { LIBRARY_PROVIDERS } from '../config/libraryProviders'
+import { LIBRARY_PROVIDERS, writeLibraryConfigured } from '../config/libraryProviders'
 
 // Réglages — reference screen-misc.jsx Settings (Section max 720 + Field rows).
 
@@ -278,6 +278,23 @@ function LibrarySection({ provider }) {
     }
   }
 
+  async function forget() {
+    setBusy(true); setErr(null)
+    try {
+      const r = await fetch(`${provider.api}/config`, { method: 'DELETE' })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(d.detail || `HTTP ${r.status}`)
+      writeLibraryConfigured(provider.id, false)
+      setStatus(d)
+      setUrl(d.url || '')
+      setForm(false)
+    } catch (e) {
+      setErr(`Impossible d'oublier le serveur : ${e.message}`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const connected = status?.connected
   const host = (status?.url || '').replace(/^https?:\/\//, '')
   return (
@@ -290,7 +307,13 @@ function LibrarySection({ provider }) {
       )}
       {!form ? (
         <Field label="">
-          <Btn variant="outline" icon={ICONS.plug} onClick={() => setForm(true)}>{connected ? 'Reconfigurer' : 'Connecter'}</Btn>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <Btn variant="outline" icon={ICONS.plug} onClick={() => setForm(true)}>{connected ? 'Reconfigurer' : 'Connecter'}</Btn>
+            {status?.configured && (
+              <Btn variant="ghost" onClick={forget} disabled={busy} title="Efface l'URL et le jeton enregistrés">Oublier ce serveur</Btn>
+            )}
+            {err && <span style={{ fontSize: T.fs.xs, color: T.danger }}>{err}</span>}
+          </div>
         </Field>
       ) : (
         <>
