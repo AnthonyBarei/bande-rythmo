@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Btn, Dot, Icon, ICONS, Input, SectionLabel, Segmented, Spinner, T, alpha } from '../ui'
-import { LIBRARY_PROVIDERS, providerById, readLibraryProvider, writeLibraryProvider } from '../config/libraryProviders'
+import { LIBRARY_PROVIDERS, providerById, readLibraryProvider, writeLibraryProvider, readLibraryConfigured, writeLibraryConfigured } from '../config/libraryProviders'
 
 // Reference screen-import.jsx PlexBrowse — libraries card (200px) + search pill
 // + poster grid minmax(150px,1fr). The connect card has no reference screen.
@@ -18,26 +18,30 @@ const BANNER = { fontSize: T.fs.xs, padding: '8px 12px', borderRadius: T.r.ctl, 
 
 // status: null while the saved server is being checked (form shown disabled),
 // then { connected: false, configured, url } — configured = saved but unreachable.
+// Nothing saved yet: the form is usable at once and nothing is contacted until
+// « Connecter » (or « Détecter »).
 function ConnectCard({ provider, status, onConnected, switcher }) {
   const [urlInput, setUrlInput] = useState(null)
   const [token, setToken] = useState('')
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState(null)
-  const [detected, setDetected] = useState(null)  // null=probing, false=none, string=found url
+  const [detected, setDetected] = useState(undefined)  // undefined=not tried, null=probing, false=none, string=found url
 
-  useEffect(() => {
-    let cancelled = false
-    fetch(`${provider.api}/probe`)
-      .then(r => r.json())
-      .then(data => { if (!cancelled) setDetected(data.found ? data.url : false) })
-      .catch(e => {
-        console.warn(`Détection ${provider.label} impossible`, e)
-        if (!cancelled) setDetected(false)
-      })
-    return () => { cancelled = true }
-  }, [provider])
+  async function detect() {
+    setDetected(null)
+    try {
+      const res = await fetch(`${provider.api}/probe`)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+      setDetected(data.found ? data.url : false)
+    } catch (e) {
+      console.warn(`Détection ${provider.label} impossible`, e)
+      setDetected(false)
+    }
+  }
 
-  const checking = !status
+  const configured = status ? status.configured : readLibraryConfigured(provider.id)
+  const checking = !status && configured
   const unreachable = status?.configured && !status.connected
   const busy = checking || loading
   const url = urlInput ?? (detected || status?.url || provider.defaultUrl)
@@ -95,7 +99,14 @@ function ConnectCard({ provider, status, onConnected, switcher }) {
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div>
-            <SectionLabel>URL SERVEUR</SectionLabel>
+            <div style={{ display: 'flex', alignItems: 'center' }}>
+              <SectionLabel>URL SERVEUR</SectionLabel>
+              <span style={{ flex: 1 }} />
+              <Btn size="xs" variant="ghost" icon={detected === null ? undefined : ICONS.search} onClick={detect} disabled={busy || detected === null}
+                title={`Chercher un serveur ${provider.label} sur cette machine`}>
+                {detected === null ? <><Spinner size={10} color={T.text3} /> Détection…</> : 'Détecter'}
+              </Btn>
+            </div>
             <Input value={url} onChange={e => setUrlInput(e.target.value)} placeholder={provider.defaultUrl} disabled={busy}
               aria-label="URL serveur" style={{ height: 36, marginTop: 6, opacity: busy ? 0.55 : 1 }} inputStyle={{ fontFamily: T.fontMono }} />
           </div>
@@ -434,6 +445,7 @@ function ProviderBrowser({ provider, initialStatus, onSourceSelected, onStatus, 
       const res = await fetch(`${provider.api}/status`)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
+      writeLibraryConfigured(provider.id, data.configured)
       setStatus(data)
       onStatus?.(data)
       if (data.connected) loadLibraries()

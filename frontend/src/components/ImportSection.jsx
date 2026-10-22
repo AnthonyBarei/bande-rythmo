@@ -7,7 +7,7 @@ import { fmtSMPTE } from '../utils/timecode'
 import { sourceTitle, urlFilename } from '../utils/sourceTitle'
 import { streamLabel } from '../utils/streamLabel'
 import { autoAudioStream } from '../utils/audioCodec'
-import { LIBRARY_PROVIDERS } from '../config/libraryProviders'
+import { LIBRARY_PROVIDERS, writeLibraryConfigured } from '../config/libraryProviders'
 
 const TAB = { LOCAL: 'local', LIBRARY: 'library', URL: 'url' }
 
@@ -51,7 +51,7 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
     for (const p of LIBRARY_PROVIDERS) {
       fetch(`${p.api}/status`)
         .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() })
-        .then(d => { if (alive) setProviderStatus(p.id, d) })
+        .then(d => { writeLibraryConfigured(p.id, d.configured); if (alive) setProviderStatus(p.id, d) })
         .catch(e => console.warn(`Statut ${p.label} indisponible`, e))
     }
     return () => { alive = false }
