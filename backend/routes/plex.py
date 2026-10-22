@@ -25,12 +25,12 @@ async def probe():
 async def status():
     cfg = load_config()
     if not cfg["token"]:
-        return {"connected": False, "url": cfg["url"]}
+        return {"connected": False, "configured": False, "url": cfg["url"]}
     try:
         name = await test_connection(cfg["url"], cfg["token"])
-        return {"connected": True, "server": name, "url": cfg["url"]}
+        return {"connected": True, "configured": True, "server": name, "url": cfg["url"]}
     except Exception:
-        return {"connected": False, "url": cfg["url"]}
+        return {"connected": False, "configured": True, "url": cfg["url"]}
 
 
 @router.post("/connect")

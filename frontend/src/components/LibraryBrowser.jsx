@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Btn, Dot, Icon, ICONS, SectionLabel, T, alpha } from '../ui'
+import { Btn, Dot, Icon, ICONS, Input, SectionLabel, Segmented, Spinner, T, alpha } from '../ui'
+import { LIBRARY_PROVIDERS, providerById, readLibraryProvider, writeLibraryProvider } from '../config/libraryProviders'
 
 // Reference screen-import.jsx PlexBrowse — libraries card (200px) + search pill
 // + poster grid minmax(150px,1fr). The connect card has no reference screen.
+// Provider-agnostic: Plex and Jellyfin routes share one API shape.
 
 const TYPE_LABEL = { movie: 'Film', show: 'Série', episode: 'Épisode' }
 
@@ -12,8 +14,12 @@ function fmtDur(ms) {
   return min >= 60 ? `${Math.floor(min / 60)}h${String(min % 60).padStart(2, '0')}` : `${min} min`
 }
 
-function PlexConnect({ initialUrl, onConnected }) {
-  const [url, setUrl] = useState(initialUrl || 'http://localhost:32400')
+const BANNER = { fontSize: T.fs.xs, padding: '8px 12px', borderRadius: T.r.ctl, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }
+
+// status: null while the saved server is being checked (form shown disabled),
+// then { connected: false, configured, url } — configured = saved but unreachable.
+function ConnectCard({ provider, status, onConnected, switcher }) {
+  const [urlInput, setUrlInput] = useState(null)
   const [token, setToken] = useState('')
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState(null)
@@ -21,29 +27,34 @@ function PlexConnect({ initialUrl, onConnected }) {
 
   useEffect(() => {
     let cancelled = false
-    fetch('/api/plex/probe')
+    fetch(`${provider.api}/probe`)
       .then(r => r.json())
-      .then(data => {
-        if (cancelled) return
-        if (data.found) { setDetected(data.url); setUrl(data.url) }
-        else setDetected(false)
+      .then(data => { if (!cancelled) setDetected(data.found ? data.url : false) })
+      .catch(e => {
+        console.warn(`Détection ${provider.label} impossible`, e)
+        if (!cancelled) setDetected(false)
       })
-      .catch(() => { if (!cancelled) setDetected(false) })
     return () => { cancelled = true }
-  }, [])
+  }, [provider])
+
+  const checking = !status
+  const unreachable = status?.configured && !status.connected
+  const busy = checking || loading
+  const url = urlInput ?? (detected || status?.url || provider.defaultUrl)
+  const savedHost = (status?.url || '').replace(/^https?:\/\//, '')
 
   async function handleConnect() {
     setLoading(true)
     setErr(null)
     try {
-      const res = await fetch('/api/plex/connect', {
+      const res = await fetch(`${provider.api}/connect`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url, token }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`)
-      onConnected(data.server)
+      await onConnected(data.server)  // busy until the parent swaps to the library
     } catch (e) {
       setErr(e.message)
     } finally {
@@ -56,36 +67,48 @@ function PlexConnect({ initialUrl, onConnected }) {
       <div style={{ width: 460, maxWidth: '100%', background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.r.card, padding: '24px 24px 20px', boxShadow: T.shadow }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
           <Icon d={ICONS.film} size={18} stroke={T.accent} />
-          <span style={{ fontSize: T.fs.md, fontWeight: 600 }}>Connecter Plex</span>
-          <span style={{ fontSize: T.fs.xs, color: T.text3 }}>serveur local</span>
+          <span style={{ fontSize: T.fs.md, fontWeight: 600 }}>Connecter {provider.label}</span>
+          <span style={{ fontSize: T.fs.xs, color: T.text3, flex: 1 }}>serveur local</span>
+          {switcher}
         </div>
 
-        {detected && (
-          <div style={{ fontSize: T.fs.xs, color: T.success, padding: '8px 12px', background: 'rgba(94,194,124,.08)', border: `1px solid ${alpha(T.success, '44')}`, borderRadius: T.r.ctl, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Dot color={T.success} size={6} />
-            <span>Serveur Plex détecté — <span style={{ fontFamily: T.fontMono }}>{detected}</span></span>
+        {checking ? (
+          <div style={{ ...BANNER, color: T.text3, background: T.bg2, border: `1px solid ${T.border}` }}>
+            <Spinner size={10} color={T.text3} />
+            <span>Vérification de la connexion {provider.label}…</span>
           </div>
-        )}
-        {detected === false && (
-          <div style={{ fontSize: T.fs.xs, color: T.text3, padding: '8px 12px', background: T.bg2, border: `1px solid ${T.border}`, borderRadius: T.r.ctl, marginBottom: 14 }}>
+        ) : unreachable ? (
+          <div style={{ ...BANNER, color: T.danger, background: 'rgba(232,89,93,.05)', border: `1px solid ${alpha(T.danger, '44')}` }}>
+            <Icon d={ICONS.warn} size={13} stroke={T.danger} />
+            <span>Serveur enregistré injoignable — <span style={{ fontFamily: T.fontMono }}>{savedHost}</span>. Démarrez-le ou reconnectez-vous.</span>
+          </div>
+        ) : detected ? (
+          <div style={{ ...BANNER, color: T.success, background: 'rgba(94,194,124,.08)', border: `1px solid ${alpha(T.success, '44')}` }}>
+            <Dot color={T.success} size={6} />
+            <span>Serveur {provider.label} détecté — <span style={{ fontFamily: T.fontMono }}>{detected}</span></span>
+          </div>
+        ) : detected === false && (
+          <div style={{ ...BANNER, color: T.text3, background: T.bg2, border: `1px solid ${T.border}` }}>
             Aucun serveur local détecté — saisissez l&apos;URL manuellement.
           </div>
         )}
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <label>
+          <div>
             <SectionLabel>URL SERVEUR</SectionLabel>
-            <input value={url} onChange={e => setUrl(e.target.value)} placeholder="http://localhost:32400"
-              style={{ width: '100%', height: 36, marginTop: 6, padding: '0 12px', fontSize: T.fs.sm, background: T.bg2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: T.r.ctl, fontFamily: T.fontMono }} />
-          </label>
-          <label>
-            <SectionLabel>TOKEN PLEX</SectionLabel>
-            <input value={token} onChange={e => setToken(e.target.value)} type="password" placeholder="X-Plex-Token"
-              style={{ width: '100%', height: 36, marginTop: 6, padding: '0 12px', fontSize: T.fs.sm, background: T.bg2, color: T.text, border: `1px solid ${T.border2}`, borderRadius: T.r.ctl }} />
+            <Input value={url} onChange={e => setUrlInput(e.target.value)} placeholder={provider.defaultUrl} disabled={busy}
+              aria-label="URL serveur" style={{ height: 36, marginTop: 6, opacity: busy ? 0.55 : 1 }} inputStyle={{ fontFamily: T.fontMono }} />
+          </div>
+          <div>
+            <SectionLabel>{provider.tokenLabel}</SectionLabel>
+            <Input value={token} onChange={e => setToken(e.target.value)} type="password" placeholder={provider.tokenPlaceholder} disabled={busy}
+              aria-label={provider.tokenPlaceholder} style={{ height: 36, marginTop: 6, opacity: busy ? 0.55 : 1 }}
+              onKeyDown={e => { if (e.key === 'Enter' && token && !busy) handleConnect() }} />
             <span style={{ display: 'block', marginTop: 6, fontSize: T.fs.micro, color: T.text3 }}>
-              Plex Web → Paramètres → XML → attribut <span style={{ color: T.accent, fontFamily: T.fontMono }}>X-Plex-Token</span>
+              {provider.tokenHint}
+              {provider.tokenHintCode && <> <span style={{ color: T.accent, fontFamily: T.fontMono }}>{provider.tokenHintCode}</span></>}
             </span>
-          </label>
+          </div>
 
           {err && (
             <div style={{ fontSize: T.fs.xs, color: T.danger, padding: '8px 12px', background: 'rgba(232,89,93,.05)', border: `1px solid ${alpha(T.danger, '44')}`, borderRadius: T.r.ctl }}>
@@ -93,13 +116,15 @@ function PlexConnect({ initialUrl, onConnected }) {
             </div>
           )}
 
-          <Btn variant="primary" full icon={ICONS.plug} onClick={handleConnect} disabled={loading || !token} style={{ marginTop: 4 }}
-            title={loading ? 'Connexion en cours…' : !token ? 'Renseignez le token Plex' : undefined}>
-            {loading ? 'Connexion…' : 'Connecter'}
+          <Btn variant="primary" full icon={busy ? undefined : ICONS.plug} onClick={handleConnect} disabled={busy || !token} style={{ marginTop: 4 }}
+            title={checking ? 'Vérification en cours…' : loading ? 'Connexion en cours…' : !token ? `Renseignez : ${provider.tokenPlaceholder}` : undefined}>
+            {busy
+              ? <><Spinner size={12} color={T.text3} /> {loading ? 'Connexion…' : 'Vérification…'}</>
+              : 'Connecter'}
           </Btn>
 
           <div style={{ fontSize: T.fs.micro, color: T.text3, textAlign: 'center' }}>
-            La connexion reste locale — token stocké uniquement sur votre machine.
+            La connexion reste locale — clé stockée uniquement sur votre machine.
           </div>
         </div>
       </div>
@@ -107,7 +132,7 @@ function PlexConnect({ initialUrl, onConnected }) {
   )
 }
 
-function LibraryGrid({ sectionId, sectionTitle, onSelect, selectedKey, toolbar }) {
+function LibraryGrid({ api, sectionId, sectionTitle, onSelect, selectedKey, toolbar }) {
   const [items, setItems] = useState([])
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(false)
@@ -121,7 +146,7 @@ function LibraryGrid({ sectionId, sectionTitle, onSelect, selectedKey, toolbar }
     setLoading(true)
     setLoadErr(null)
     try {
-      const url = `/api/plex/library/${sectionId}?limit=60${q ? `&search=${encodeURIComponent(q)}` : ''}`
+      const url = `${api}/library/${sectionId}?limit=60${q ? `&search=${encodeURIComponent(q)}` : ''}`
       const res = await fetch(url)
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`)
@@ -137,7 +162,7 @@ function LibraryGrid({ sectionId, sectionTitle, onSelect, selectedKey, toolbar }
     clearTimeout(debounceRef.current)
     load(search)
     return () => clearTimeout(debounceRef.current)
-  }, [sectionId])
+  }, [api, sectionId])
 
   function handleSearch(e) {
     const q = e.target.value
@@ -158,7 +183,7 @@ function LibraryGrid({ sectionId, sectionTitle, onSelect, selectedKey, toolbar }
         {toolbar}
       </div>
 
-      <div style={{ flex: 1, overflow: 'auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(150px,1fr))', gap: 12, alignContent: 'flex-start' }}>
+      <div style={{ flex: 1, overflow: 'auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(150px,1fr))', gridAutoRows: 'max-content', gap: 12, alignContent: 'flex-start' }}>
         {items.map(item => {
           const mine = selectedKey === item.rating_key
           const seed = (item.title || '??').charCodeAt(0) + ((item.title || '??').charCodeAt(1) || 0)
@@ -190,8 +215,9 @@ function LibraryGrid({ sectionId, sectionTitle, onSelect, selectedKey, toolbar }
   )
 }
 
-export default function PlexBrowser({ onSourceSelected, onStatus }) {
-  const [status, setStatus] = useState(null)   // null=loading, {connected, server?, url}
+function ProviderBrowser({ provider, initialStatus, onSourceSelected, onStatus, switcher }) {
+  // Seeded from the Importer's own status fetch — no blank wait on tab open.
+  const [status, setStatus] = useState(initialStatus ?? null)   // null=loading, {connected, configured, server?, url}
   const [libraries, setLibraries] = useState([])
   const [activeSectionId, setActiveSectionId] = useState(null)
   const [loadingItem, setLoadingItem] = useState(false)
@@ -201,20 +227,20 @@ export default function PlexBrowser({ onSourceSelected, onStatus }) {
   async function checkStatus() {
     setErr(null)
     try {
-      const res = await fetch('/api/plex/status')
+      const res = await fetch(`${provider.api}/status`)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
       setStatus(data)
       onStatus?.(data)
       if (data.connected) loadLibraries()
     } catch (e) {
-      setErr('Statut Plex indisponible : ' + e.message)
+      setErr(`Statut ${provider.label} indisponible : ` + e.message)
     }
   }
 
   async function loadLibraries() {
     try {
-      const res = await fetch('/api/plex/libraries')
+      const res = await fetch(`${provider.api}/libraries`)
       const data = await res.json().catch(() => null)
       if (!res.ok || !Array.isArray(data)) throw new Error(data?.detail || `HTTP ${res.status}`)
       setLibraries(data)
@@ -232,7 +258,7 @@ export default function PlexBrowser({ onSourceSelected, onStatus }) {
     setErr(null)
     setSelectedKey(ratingKey)
     try {
-      const res = await fetch(`/api/plex/item/${ratingKey}`)
+      const res = await fetch(`${provider.api}/item/${encodeURIComponent(ratingKey)}`)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const item = await res.json()
 
@@ -250,8 +276,9 @@ export default function PlexBrowser({ onSourceSelected, onStatus }) {
         url: part.stream_url,
         video_streams: part.video_streams,
         audio_streams: part.audio_streams,
-        plexTitle: item.title,
-        plexYear: item.year,
+        libraryName: provider.label,
+        libraryTitle: item.title,
+        libraryYear: item.year,
       })
     } catch (e) {
       setErr(e.message)
@@ -260,18 +287,18 @@ export default function PlexBrowser({ onSourceSelected, onStatus }) {
     }
   }
 
-  if (!status) {
+  if (!status && err) {
     return (
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, fontSize: T.fs.sm }}>
-        {err
-          ? <><span style={{ color: T.danger }}>{err}</span><Btn variant="outline" size="sm" icon={ICONS.loop2} onClick={checkStatus}>Réessayer</Btn></>
-          : <span style={{ color: T.text3 }}>Vérification Plex…</span>}
+        {switcher}
+        <span style={{ color: T.danger }}>{err}</span>
+        <Btn variant="outline" size="sm" icon={ICONS.loop2} onClick={checkStatus}>Réessayer</Btn>
       </div>
     )
   }
 
-  if (!status.connected) {
-    return <PlexConnect initialUrl={status.url} onConnected={() => checkStatus()} />
+  if (!status?.connected) {
+    return <ConnectCard provider={provider} status={status} onConnected={checkStatus} switcher={switcher} />
   }
 
   const activeLib = libraries.find(l => l.id === activeSectionId)
@@ -279,6 +306,7 @@ export default function PlexBrowser({ onSourceSelected, onStatus }) {
   return (
     <div style={{ flex: 1, display: 'flex', gap: 16, minHeight: 0 }}>
       <div style={{ width: 200, flexShrink: 0, background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.r.card, padding: 8, overflow: 'auto' }}>
+        <div style={{ padding: '4px 2px 4px' }}>{switcher}</div>
         <div style={{ fontSize: T.fs.micro, color: T.text3, letterSpacing: 1.4, fontWeight: 700, padding: '8px 10px' }}>BIBLIOTHÈQUES</div>
         {libraries.map(lib => {
           const on = activeSectionId === lib.id
@@ -299,22 +327,23 @@ export default function PlexBrowser({ onSourceSelected, onStatus }) {
 
       {activeSectionId ? (
         <LibraryGrid
+          api={provider.api}
           sectionId={activeSectionId}
           sectionTitle={activeLib?.title}
           onSelect={handleSelect}
           selectedKey={selectedKey}
-          toolbar={<PlexToolbar status={status} loadingItem={loadingItem} err={err} onReload={() => { setStatus(null); checkStatus() }} />}
+          toolbar={<ServerToolbar status={status} loadingItem={loadingItem} err={err} onReload={checkStatus} />}
         />
       ) : (
         <div style={{ flex: 1, display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end' }}>
-          <PlexToolbar status={status} loadingItem={loadingItem} err={err} onReload={() => { setStatus(null); checkStatus() }} />
+          <ServerToolbar status={status} loadingItem={loadingItem} err={err} onReload={checkStatus} />
         </div>
       )}
     </div>
   )
 }
 
-function PlexToolbar({ status, loadingItem, err, onReload }) {
+function ServerToolbar({ status, loadingItem, err, onReload }) {
   return (
     <>
       {loadingItem && <span style={{ fontSize: T.fs.micro, color: T.accent, whiteSpace: 'nowrap' }}>Chargement…</span>}
@@ -324,5 +353,29 @@ function PlexToolbar({ status, loadingItem, err, onReload }) {
       </span>
       <Btn variant="outline" size="sm" icon={ICONS.loop2} onClick={onReload} title="Recharger">Recharger</Btn>
     </>
+  )
+}
+
+const PROVIDER_OPTIONS = LIBRARY_PROVIDERS.map(p => ({ v: p.id, l: p.label }))
+
+export default function LibraryBrowser({ statuses, onSourceSelected, onStatus }) {
+  const [providerId, setProviderId] = useState(readLibraryProvider)
+  const provider = providerById(providerId)
+
+  function choose(id) {
+    setProviderId(id)
+    writeLibraryProvider(id)
+  }
+
+  const switcher = <Segmented size="sm" options={PROVIDER_OPTIONS} value={providerId} onChange={choose} />
+  return (
+    <ProviderBrowser
+      key={provider.id}
+      provider={provider}
+      initialStatus={statuses?.[provider.id]}
+      onSourceSelected={onSourceSelected}
+      onStatus={data => onStatus?.(provider.id, data)}
+      switcher={switcher}
+    />
   )
 }

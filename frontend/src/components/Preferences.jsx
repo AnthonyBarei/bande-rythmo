@@ -3,6 +3,7 @@ import { useSettings } from '../SettingsContext'
 import { Btn, Segmented, Select, Toggle, Chip, Dot, ScreenHeader, Icon, ICONS, T } from '../ui'
 import { STUDIO_COUNTS, STUDIO_LEADS, STUDIO_CHAINS } from '../config/studio'
 import { fetchUploadedFonts, fontOptions } from '../config/fonts'
+import { LIBRARY_PROVIDERS } from '../config/libraryProviders'
 
 // Réglages — reference screen-misc.jsx Settings (Section max 720 + Field rows).
 
@@ -141,8 +142,8 @@ export default function Preferences() {
           </Field>
         </Section>
 
-        <Section title="Connexion Plex" desc="Bibliothèque locale comme source.">
-          <PlexSection />
+        <Section title="Médiathèques" desc="Serveur Plex ou Jellyfin comme source d'import.">
+          {LIBRARY_PROVIDERS.map(p => <LibrarySection key={p.id} provider={p} />)}
         </Section>
 
         <Section title="Export" desc="Valeurs par défaut.">
@@ -234,8 +235,8 @@ function FontUpload({ onUploaded }) {
   )
 }
 
-// Plex — reference Field rows (Statut chip / Token / Reconfigurer), real connect.
-function PlexSection() {
+// Plex / Jellyfin — reference Field rows (Statut chip / Token / Reconfigurer), real connect.
+function LibrarySection({ provider }) {
   const [status, setStatus] = useState(null)    // { connected, server, url }
   const [url, setUrl]       = useState('')
   const [token, setToken]   = useState('')
@@ -245,21 +246,21 @@ function PlexSection() {
 
   useEffect(() => {
     let alive = true
-    fetch('/api/plex/status')
+    fetch(`${provider.api}/status`)
       .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() })
       .then(d => {
         if (!alive) return
         setStatus(d)
         if (d.url) setUrl(d.url)
       })
-      .catch(e => console.warn('Statut Plex indisponible', e))
+      .catch(e => console.warn(`Statut ${provider.label} indisponible`, e))
     return () => { alive = false }
   }, [])
 
   async function connect() {
     setBusy(true); setErr(null)
     try {
-      const r = await fetch('/api/plex/connect', {
+      const r = await fetch(`${provider.api}/connect`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: url.trim(), token: token.trim() }),
       })
@@ -281,8 +282,8 @@ function PlexSection() {
   const host = (status?.url || '').replace(/^https?:\/\//, '')
   return (
     <>
-      <Field label="Statut">
-        <StatusChip ok={connected}>{connected ? `Connecté · ${host || status.server}` : 'Non connecté'}</StatusChip>
+      <Field label={provider.label}>
+        <StatusChip ok={connected}>{connected ? `Connecté · ${host || status.server}` : status?.configured ? `Injoignable · ${host}` : 'Non connecté'}</StatusChip>
       </Field>
       {connected && !form && (
         <Field label="Token"><span style={{ fontFamily: T.fontMono, fontSize: T.fs.sm, color: T.text2 }}>••••••••••••••••</span></Field>
@@ -294,17 +295,17 @@ function PlexSection() {
       ) : (
         <>
           <Field label="URL serveur">
-            <input placeholder="http://localhost:32400" value={url} onChange={e => setUrl(e.target.value)}
+            <input placeholder={provider.defaultUrl} value={url} onChange={e => setUrl(e.target.value)}
               style={{ width: '100%', maxWidth: 320, height: 36, padding: '0 12px', fontSize: T.fs.sm, fontFamily: T.fontMono, background: T.surface, color: T.text, border: `1px solid ${T.border2}`, borderRadius: T.r.ctl }} />
           </Field>
           <Field label="Token">
-            <input type="password" placeholder="Token Plex" value={token} onChange={e => setToken(e.target.value)}
+            <input type="password" placeholder={provider.tokenPlaceholder} value={token} onChange={e => setToken(e.target.value)}
               style={{ width: '100%', maxWidth: 320, height: 36, padding: '0 12px', fontSize: T.fs.sm, background: T.surface, color: T.text, border: `1px solid ${T.border2}`, borderRadius: T.r.ctl }} />
           </Field>
           <Field label="">
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <Btn variant="primary" onClick={connect} disabled={busy || !url || !token}
-                title={busy ? 'Connexion en cours…' : (!url || !token) ? "Renseignez l'URL et le token Plex" : undefined}>{busy ? 'Connexion…' : 'Connecter'}</Btn>
+                title={busy ? 'Connexion en cours…' : (!url || !token) ? `Renseignez l'URL et : ${provider.tokenPlaceholder}` : undefined}>{busy ? 'Connexion…' : 'Connecter'}</Btn>
               <Btn variant="outline" onClick={() => { setForm(false); setErr(null) }}>Annuler</Btn>
               {err && <span style={{ fontSize: T.fs.xs, color: T.danger }}>{err}</span>}
             </div>

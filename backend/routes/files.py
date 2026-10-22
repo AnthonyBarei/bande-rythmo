@@ -158,7 +158,7 @@ async def start_remux(
     os.makedirs("sources", exist_ok=True)
     remux_path = f"sources/{source_id}_a{audio}.m4a"
     _remux_status[status_key] = "pending"
-    job = create_job("plex-remux", title="Préparation audio Plex")
+    job = create_job("plex-remux", title="Préparation audio")
     _remux_jobs[status_key] = job.id
     asyncio.create_task(_remux_task(job, path, remux_path, cache_key, status_key))
     return {"status": "pending", "job_id": job.id}
@@ -183,7 +183,7 @@ async def get_remux_status(
 
 @router.post("/register")
 async def register_url_source(source_id: str, stream_url: str, filename: str):
-    """Register an external URL source (e.g. Plex) without local file."""
+    """Register an external URL source (Plex, Jellyfin) without local file."""
     _sources[source_id] = {
         "path": stream_url,       # ffmpeg reads HTTP directly
         "stream_url": stream_url, # browser also uses directly

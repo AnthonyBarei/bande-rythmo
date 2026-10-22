@@ -34,6 +34,7 @@ backend/
     meme.py                # génération memes (image/GIF)
     files.py               # upload vidéos source
     plex.py                # intégration Plex
+    jellyfin.py            # intégration Jellyfin (même forme de réponses que plex.py)
     takes.py               # prises d'enregistrement (recording) — Take.lead = marge avant la réplique (continu)
     jobs.py                # statut/cancel/result/ws des jobs (fire-and-poll)
     fonts.py               # upload TTF/OTF + registry + resolve_font_path
@@ -48,6 +49,7 @@ backend/
     br_renderer.py         # rendu bande rythmo + _draw_signs (burn détection) + polices uploadées
     detection.py           # classify_char() (miroir detection.js)
     plex_service.py        # client Plex
+    jellyfin_service.py    # client Jellyfin (header Authorization MediaBrowser, stream ?ApiKey=)
     take_service.py        # store prises
     export_service.py      # record_export/list/get/delete (historique)
     translate_service.py   # provider_status + translate (DeepL/LibreTranslate, env)
@@ -66,7 +68,7 @@ frontend/src/
   detection.js             # classifyChar() + SIGN_KINDS + DEFAULT_SIGN_TOGGLES (miroir detection.py)
   components/
     Sidebar.jsx            # nav rail: Importer / Mes Clips / Memes / Réglages
-    ImportSection.jsx      # upload + timeline drag-to-create + Plex tab
+    ImportSection.jsx      # upload + timeline drag-to-create + onglet Médiathèque (Plex/Jellyfin)
     VideoEditor.jsx        # éditeur clip (job-mode batch)
     TimelineBar.jsx        # timeline zoom + minimap (import)
     BRTimeline.jsx         # nav plein-clip sous canvas BR (waveform/boucles/scenes/playhead)
@@ -86,8 +88,8 @@ frontend/src/
     ExportPanel.jsx        # exports + quality + GPU + plage perso + historique re-download
     ShortcutsOverlay.jsx   # modal raccourcis (?)
     MemeGenerator.jsx      # memes — player unifié, résultat remplace source
-    Preferences.jsx        # réglages (accent, BR style, densité, Whisper, Plex)
-    PlexBrowser.jsx        # connexion + navigation bibliothèque Plex (restylé)
+    Preferences.jsx        # réglages (accent, BR style, densité, Whisper, Médiathèques Plex/Jellyfin)
+    LibraryBrowser.jsx     # connexion + navigation médiathèque, switch Plex/Jellyfin (config/libraryProviders.js)
 ```
 
 ## Bugs connus / résolus
@@ -358,6 +360,15 @@ preuves `design/studio_v2_proofs/` (`shoot_studio_v2.py`, aucune écriture backe
 - **Éditeur → Studio** : R, ● de l'inspecteur et ● de l'onglet Voix ouvrent le Studio sur la réplique
   (sélectionnée, sinon sous la tête de lecture ; Voix : 1re réplique du rôle sans prise validée).
   L'enregistreur intégré à l'inspecteur (RecorderPanel) est supprimé — on enregistre dans le Studio.
+
+### Fait — Jellyfin (2026-10-22, branche `feat/jellyfin`)
+- Onglet Importer « Plex » → **Médiathèque** : switch Plex / Jellyfin (dernier choix en `localStorage`
+  `br-library-provider`), `LibraryBrowser` agnostique — fournisseurs dans `config/libraryProviders.js`.
+- `/api/jellyfin/{probe,status,connect,libraries,library/{id},item/{id}}` — mêmes formes que `/api/plex`.
+  Clé API (Tableau de bord → Clés API) dans `backend/jellyfin_config.json` (gitignored).
+- Auth : header `Authorization: MediaBrowser …, Token="…"` (X-Emby-Token / api_key désactivés par défaut
+  dès Jellyfin 10.12) ; URL de flux `?ApiKey=` (redigée par `_redact_token`). Séries → épisodes listés.
+- Source : `libraryName/libraryTitle/libraryYear` (ex-`plexTitle/plexYear`).
 
 ### Reste à faire (non démarré)
 - **Phase 2 (REMAKE_PLAN)** : split DubbingWorkspace (3 650 lignes) en hooks,

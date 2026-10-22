@@ -327,6 +327,10 @@ export const Input = React.forwardRef(function Input({ size = 'md', icon, right,
   )
 })
 
+export function Spinner({ size = 11, color = T.accent }) {
+  return <span style={{ width: size, height: size, borderRadius: '50%', border: `2px solid ${color}`, borderTopColor: 'transparent', animation: 'brspin 0.7s linear infinite', display: 'inline-block', flexShrink: 0 }} />
+}
+
 // ── Splitter — draggable pane divider (row = horizontal line / vertical drag) ──
 export function Splitter({ dir, onDrag, start, onReset, accent, title }) {
   const [h, setH] = useState(false)
