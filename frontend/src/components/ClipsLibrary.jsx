@@ -120,7 +120,7 @@ export default function ClipsLibrary({ clips, onDub, onRecord, onMeme, onDelete,
               const active = filter === t.id
               return (
                 <button data-rd key={t.id} className="focus-inset" onClick={() => setFilter(t.id)} style={{
-                  height: 42, padding: '0 14px', background: 'transparent', border: 'none', cursor: 'pointer',
+                  height: 42, padding: '0 14px', background: 'transparent', border: 'none', borderRadius: 0, cursor: 'pointer',
                   color: active ? T.text : T.text2, fontSize: T.fs.sm, fontWeight: active ? 600 : 500,
                   borderBottom: `2px solid ${active ? T.accent : 'transparent'}`, marginBottom: -1,
                   display: 'flex', alignItems: 'center', gap: 7, fontFamily: T.fontUI, whiteSpace: 'nowrap', flexShrink: 0,

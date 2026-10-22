@@ -82,7 +82,7 @@ export default function Inspector({
           const on = rightTab === tb.id
           return (
             <button key={tb.id} onClick={() => setRightTab(tb.id)} style={{
-              flex: 1, padding: '0 4px', background: 'transparent', border: 'none', cursor: 'pointer',
+              flex: 1, padding: '0 4px', background: 'transparent', border: 'none', borderRadius: 0, cursor: 'pointer',
               color: on ? T.accent : T.text2, fontSize: T.fs.xs, fontWeight: on ? 600 : 500, fontFamily: T.fontUI,
               borderBottom: `2px solid ${on ? T.accent : 'transparent'}`, marginBottom: -1,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
