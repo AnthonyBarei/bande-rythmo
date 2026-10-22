@@ -30,8 +30,8 @@ h1 em{font:700 1.12em var(--hand);letter-spacing:0;color:var(--accent);font-styl
 /* band */
 .band{position:relative;border-top:1px solid var(--border);border-bottom:1px solid var(--border);background:#0e0e11}
 .band canvas{display:block;width:100%;height:228px}
-.band-meta{position:absolute;top:12px;right:32px;display:flex;gap:8px;font:600 11px var(--mono);color:var(--text3)}
-.band-meta span{padding:4px 9px;border:1px solid var(--border2);border-radius:6px;background:rgba(11,11,13,.8)}
+.band-meta{position:absolute;bottom:2px;right:32px;display:flex;gap:6px;font:600 11px/1 var(--mono);color:var(--text3)}
+.band-meta span{padding:3px 8px;border:1px solid var(--border2);border-radius:6px;background:var(--bg)}
 .band-tc{color:var(--text)!important}
 /* product shot */
 .shot{margin:72px auto 0;border:1px solid var(--border2);border-radius:16px;overflow:hidden;background:var(--surface);box-shadow:0 30px 80px rgba(0,0,0,.55)}
@@ -87,4 +87,19 @@ footer{border-top:1px solid var(--border);padding:28px 0 48px;font:12px var(--mo
 .legal h3{font-size:18px;font-weight:600;margin:36px 0 8px}
 .legal p{color:var(--text2);margin-top:10px;text-wrap:pretty}
 .legal code{font:600 13px var(--mono);color:var(--text)}
-@media(max-width:520px){.wrap{padding:0 16px}.hero{padding:48px 16px 36px}.nav{gap:12px}.logo-text{display:none}.band-meta{right:16px}}
+@media(max-width:520px){.wrap{padding:0 16px}.hero{padding:48px 16px 36px}.nav{gap:12px}.logo-text{display:none}.band-meta{right:16px}.band-meta span:not(.band-tc){display:none}}
+.legal-draft{display:inline-block;margin-bottom:24px;padding:6px 12px;border:1px solid rgba(245,197,24,.4);border-radius:8px;background:rgba(245,197,24,.08);font:600 12px var(--mono);color:var(--accent)}
+.legal ul{margin:10px 0 0 20px;color:var(--text2)}
+/* download (FIXES_ACCOUNT_HOME_R2 #9) — cards stay « Bientôt disponible » until a build exists */
+.dl{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:36px}
+@media(max-width:900px){.dl{grid-template-columns:1fr}}
+.dl-card{display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:22px;border:1px solid var(--border);border-radius:14px;background:var(--bg2)}
+.dl-card--you{border-color:var(--accent);box-shadow:0 0 0 3px rgba(245,197,24,.13)}
+.dl-os{display:flex;align-items:center;gap:10px;font-size:20px;font-weight:600}
+.dl-you{font:700 10.5px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:#0b0b0d;background:var(--accent);padding:3px 7px;border-radius:5px}
+.dl-meta{font-size:13px;color:var(--text3)}
+.dl-soon{font:600 12px var(--mono);color:var(--text2);margin:10px 0 12px}
+.dl-card .btn[disabled]{opacity:.5;cursor:not-allowed}
+.dl-req{font-size:13px;color:var(--text3);margin-top:18px}
+.credit{font-size:12px;color:var(--text4);margin-top:6px}
+.credit a{color:var(--text3)}

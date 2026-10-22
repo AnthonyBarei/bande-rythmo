@@ -29,6 +29,7 @@ router = APIRouter()
 COOKIE = "br_session"
 _COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 _PREFS_MAX = 20_000
+PREFS_VERSION = 1
 
 
 def _client_ip(request: Request) -> str:
@@ -44,12 +45,21 @@ def _set_cookie(response: Response, token: str, remember: bool) -> None:
     )
 
 
-def _user_dict(u: User) -> dict:
+def _read_prefs(u: User) -> Optional[dict]:
+    """Settings dict out of the stored blob {"v": PREFS_VERSION, "settings": {...}}.
+    Blobs written before versioning are the bare settings dict (= v1)."""
     try:
-        prefs = json.loads(u.prefs) if u.prefs else None
+        blob = json.loads(u.prefs) if u.prefs else None
     except ValueError:
         log.warning("prefs illisibles pour %s — ignorées", u.id)
-        prefs = None
+        return None
+    if isinstance(blob, dict) and "v" in blob and "settings" in blob:
+        return blob["settings"]
+    return blob
+
+
+def _user_dict(u: User) -> dict:
+    prefs = _read_prefs(u)
     return {
         "id": u.id,
         "name": u.name,
@@ -258,7 +268,8 @@ async def update_profile(body: ProfileIn, cur: Current = Depends(current), db: S
 
 
 def _store_prefs(user: User, prefs: dict) -> None:
-    raw = json.dumps(prefs)
+    # Versioned so a later hosted account can migrate the blob (FIXES_ACCOUNT_HOME_R2 #10).
+    raw = json.dumps({"v": PREFS_VERSION, "settings": prefs})
     if len(raw) > _PREFS_MAX:
         raise HTTPException(413, "Préférences trop volumineuses.")
     user.prefs = raw

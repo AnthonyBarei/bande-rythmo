@@ -103,9 +103,11 @@ export default function AuthScreen({ initialMode = 'login', resetToken, onDone, 
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 28 }}>
           <div style={{ fontSize: 44, fontWeight: 800, lineHeight: 1.05, letterSpacing: -1, maxWidth: 520, textWrap: 'balance' }}>Votre atelier de doublage vous attend.</div>
           <div aria-hidden="true" style={{ position: 'relative', height: 110, margin: '0 -40px', background: '#121217', borderTop: `1px solid ${T.border}`, borderBottom: `1px solid ${T.border}`, overflow: 'hidden' }}>
-            <div className="auth-band" style={{ position: 'absolute', top: 0, bottom: 0, left: 0, display: 'flex', alignItems: 'center', whiteSpace: 'pre' }}>
-              {[0, 1].map(k => <span key={k} style={{ fontFamily: "'Caveat', cursive", fontSize: 54, color: T.text, paddingRight: 40 }}>{BAND}</span>)}
+            {/* Three copies scrolled from −⅓ to −⅔: the text starts at the playhead and loops seamlessly. */}
+            <div className="auth-band" style={{ position: 'absolute', top: 0, bottom: 0, left: '30%', display: 'flex', alignItems: 'center', whiteSpace: 'pre' }}>
+              {[0, 1, 2].map(k => <span key={k} style={{ fontFamily: "'Caveat', cursive", fontSize: 54, color: T.text, paddingRight: 40 }}>{BAND}</span>)}
             </div>
+            <div style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: '30%', background: 'rgba(18,18,23,.55)' }} />
             <div style={{ position: 'absolute', top: 0, bottom: 0, left: '30%', width: 2, background: accent, boxShadow: `0 0 12px ${accent}` }} />
             <div style={{ position: 'absolute', top: 0, left: 'calc(30% - 6px)', width: 0, height: 0, borderLeft: '7px solid transparent', borderRight: '7px solid transparent', borderTop: `9px solid ${accent}` }} />
           </div>
@@ -115,8 +117,8 @@ export default function AuthScreen({ initialMode = 'login', resetToken, onDone, 
       </div>
 
       {/* form side */}
-      <div className="auth-side" style={{ overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
-        <a href="/" style={{ alignSelf: 'flex-end', display: 'flex', alignItems: 'center', gap: 6, fontSize: T.fs.xs, color: T.text3, textDecoration: 'none' }}><Icon d={ICONS.chevronL} size={13} stroke={T.text3} />Retour à l'accueil</a>
+      <div className="auth-side" style={{ position: 'relative', overflow: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+        <a href="/" className="auth-back" style={{ position: 'absolute', display: 'flex', alignItems: 'center', gap: 6, fontSize: T.fs.xs, color: T.text3, textDecoration: 'none' }}><Icon d={ICONS.chevronL} size={13} stroke={T.text3} />Retour à l'accueil</a>
         <form onSubmit={submit} noValidate key={mode} className="auth-form" style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 18, maxWidth: 400, width: '100%', margin: '0 auto' }}>
           {(mode === 'login' || mode === 'register') && (
             <div style={{ alignSelf: 'flex-start' }}><Segmented value={mode} onChange={switchMode} options={[{ v: 'login', l: 'Connexion' }, { v: 'register', l: 'Créer un compte' }]} /></div>
@@ -169,7 +171,7 @@ export default function AuthScreen({ initialMode = 'login', resetToken, onDone, 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: T.fs.xs, color: T.text2, lineHeight: 1.5, cursor: 'pointer' }}>
                     <input type="checkbox" checked={f.cgu} onChange={e => set('cgu')(e.target.checked)} style={{ marginTop: 2, accentColor: accent, width: 15, height: 15 }} />
-                    <span>J'accepte les conditions d'utilisation et la <a href="/confidentialite.html" target="_blank" rel="noreferrer" style={{ color: accent }}>politique de confidentialité</a>.</span>
+                    <span>J'accepte les <a href="/conditions.html" target="_blank" rel="noreferrer" style={{ color: accent }}>conditions d'utilisation</a> et la <a href="/confidentialite.html" target="_blank" rel="noreferrer" style={{ color: accent }}>politique de confidentialité</a>.</span>
                   </label>
                   {E('cgu') && <span role="alert" style={{ fontSize: 12, color: T.danger }}>{E('cgu')}</span>}
                 </div>

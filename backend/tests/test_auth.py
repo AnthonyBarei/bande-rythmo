@@ -2,6 +2,7 @@
 
 Run from backend/:  venv\\Scripts\\python.exe -m unittest discover tests
 """
+import json
 import os
 import re
 import sys
@@ -77,6 +78,15 @@ class AuthRoutesTest(unittest.TestCase):
         self.assertEqual(me["prefs"], {"accent": "#5aa9f0"})
         self.assertFalse(me["email_verified"])
         self.assertNotIn("password_hash", me)
+
+    def test_prefs_are_stored_versioned_and_legacy_blobs_still_read(self):
+        self.register(prefs={"accent": "#5aa9f0"})
+        with self.engine.connect() as conn:
+            raw = conn.exec_driver_sql("SELECT prefs FROM users").scalar()
+            self.assertEqual(json.loads(raw), {"v": auth_routes.PREFS_VERSION, "settings": {"accent": "#5aa9f0"}})
+            conn.exec_driver_sql("UPDATE users SET prefs = ?", (json.dumps({"accent": "#f06aa0"}),))
+            conn.commit()
+        self.assertEqual(self.client.get("/api/auth/me").json()["user"]["prefs"], {"accent": "#f06aa0"})
 
     def test_register_validates_fields(self):
         r = self.client.post("/api/auth/register", json={"name": " ", "email": "x@", "password": "court", "accept": False})

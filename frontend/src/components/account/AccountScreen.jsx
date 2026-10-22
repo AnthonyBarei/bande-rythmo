@@ -22,10 +22,11 @@ function Section({ title, desc, children, danger }) {
   )
 }
 
-function Field({ label, sub, children }) {
+// top: the right column is taller than one control — the label sits at the top.
+function Field({ label, sub, top, children }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '13px 0', borderBottom: `1px solid ${T.surface2}` }}>
-      <div style={{ width: 200, flexShrink: 0 }}>
+    <div style={{ display: 'flex', alignItems: top ? 'flex-start' : 'center', gap: 16, padding: '13px 0', borderBottom: `1px solid ${T.surface2}` }}>
+      <div style={{ width: 200, flexShrink: 0, paddingTop: top ? 6 : 0 }}>
         <div style={{ fontSize: T.fs.sm, color: T.text2 }}>{label}</div>
         {sub && <div style={{ fontSize: 11.5, color: T.text3, marginTop: 2 }}>{sub}</div>}
       </div>
@@ -76,8 +77,10 @@ function SignedIn({ user, onSignedOut }) {
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      <ScreenHeader kicker="COMPTE" title="Mon compte" sub={user.email}
-        right={<Btn variant="outline" onClick={logout}>Se déconnecter</Btn>} />
+      <div style={{ maxWidth: 784 }}>
+        <ScreenHeader kicker="COMPTE" title="Mon compte" sub={user.email}
+          right={<Btn variant="outline" icon={ICONS.logout} onClick={logout}>Se déconnecter</Btn>} />
+      </div>
       <div style={{ flex: 1, overflow: 'auto', padding: '6px 32px 40px' }}>
         <ProfileSection user={user} accent={accent} />
         <Section title="Sécurité">
@@ -160,13 +163,17 @@ function ProfileSection({ user, accent }) {
           style={{ maxWidth: 320 }} />
       </Field>
       <EmailField user={user} />
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingTop: 14 }}>
-        <Btn variant={dirty ? 'primary' : 'outline'} onClick={save} disabled={!dirty || !!nameErr || busy}
-          title={!dirty ? 'Aucune modification' : undefined}>{busy ? 'Un instant…' : 'Enregistrer'}</Btn>
-        {dirty && <Btn variant="ghost" onClick={() => { setDraft(fromUser()); setError(null) }}>Annuler</Btn>}
-        {saved && <span role="status" style={{ fontSize: T.fs.xs, color: OK, display: 'flex', alignItems: 'center', gap: 6 }}><Icon d={ICONS.check} size={12} stroke={OK} />Profil enregistré</span>}
-        {error && <span role="alert" style={{ fontSize: T.fs.xs, color: T.danger }}>{error}</span>}
-      </div>
+      {/* Hidden until something changed; « Profil enregistré » stays as the confirmation. */}
+      {(dirty || saved) && (
+        <div className="slide-in" style={{ display: 'flex', alignItems: 'center', gap: 12, paddingTop: 14 }}>
+          {dirty && <>
+            <Btn variant="primary" onClick={save} disabled={!!nameErr || busy}>{busy ? 'Un instant…' : 'Enregistrer'}</Btn>
+            <Btn variant="ghost" onClick={() => { setDraft(fromUser()); setError(null) }}>Annuler</Btn>
+          </>}
+          {saved && !dirty && <span role="status" style={{ fontSize: T.fs.xs, color: OK, display: 'flex', alignItems: 'center', gap: 6 }}><Icon d={ICONS.check} size={12} stroke={OK} />Profil enregistré</span>}
+          {error && <span role="alert" style={{ fontSize: T.fs.xs, color: T.danger }}>{error}</span>}
+        </div>
+      )}
     </Section>
   )
 }
@@ -203,7 +210,7 @@ function EmailField({ user }) {
   }
 
   return (
-    <Field label="E-mail">
+    <Field label="E-mail" top={open}>
       {!open ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <span style={{ fontSize: T.fs.sm, color: T.text }}>{user.email}</span>
@@ -255,7 +262,7 @@ function PasswordField({ user }) {
 
   const changed = user.password_changed_at ? `Modifié ${relTime(user.password_changed_at)}` : null
   return (
-    <Field label="Mot de passe" sub={changed}>
+    <Field label="Mot de passe" sub={changed} top={open}>
       {!open ? <Btn size="sm" variant="outline" icon={ICONS.lock} onClick={() => setOpen(true)}>Changer le mot de passe</Btn> : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 320 }}>
           <Input size="form-sm" type="password" value={pw.cur} onChange={e => setPw(p => ({ ...p, cur: e.target.value }))} placeholder="Mot de passe actuel"
@@ -309,7 +316,7 @@ function SessionsField() {
 
   const list = sessions || []
   return (
-    <Field label="Appareils connectés" sub={sessions ? `${list.length} session${list.length > 1 ? 's' : ''}` : 'Chargement…'}>
+    <Field label="Appareils connectés" top={list.length > 1} sub={sessions ? `${list.length} session${list.length > 1 ? 's' : ''}` : 'Chargement…'}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {list.map(s => (
           <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.r.ctl }}>
@@ -351,7 +358,7 @@ function DeleteSection({ user, onDeleted }) {
 
   return (
     <Section title="Zone sensible" danger>
-      <Field label="Supprimer le compte" sub="Le compte et le profil sont supprimés. Les fichiers locaux restent.">
+      <Field label="Supprimer le compte" top={open} sub="Le compte et le profil sont supprimés. Les fichiers locaux restent.">
         {!open ? <Btn size="sm" danger icon={ICONS.trash} onClick={() => setOpen(true)}>Supprimer le compte…</Btn> : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 360, padding: 14, border: '1px solid color-mix(in srgb, var(--danger) 33%, transparent)', background: 'color-mix(in srgb, var(--danger) 6%, transparent)', borderRadius: T.r.ctl }}>
             <div style={{ fontSize: T.fs.xs, color: T.text2, lineHeight: 1.5 }}>Tapez <b style={{ color: T.text, fontFamily: T.fontMono }}>{user.email}</b> pour confirmer.</div>

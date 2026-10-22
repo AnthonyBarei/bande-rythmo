@@ -1,6 +1,7 @@
 // Landing page — port of design/design_handoff_redesign_v2/reference/home.html
 // (flow tabs + demo bande rythmo canvas). A signed-in visitor goes straight to
 // the atelier.
+import { detectOs } from './os'
 
 async function redirectIfSignedIn() {
   try {
@@ -20,11 +21,25 @@ function initFlowTabs() {
     step.addEventListener('click', () => {
       for (const s of steps) s.setAttribute('aria-selected', String(s === step))
       img.src = step.dataset.img
+      img.alt = step.dataset.alt
       img.style.animation = 'none'
       void img.offsetHeight
       img.style.animation = ''
     })
   }
+}
+
+// The visitor's OS card goes first, outlined in the accent colour.
+function initDownloads() {
+  const os = detectOs()
+  const card = os && document.querySelector(`.dl-card[data-os="${os}"]`)
+  if (!card) return
+  card.classList.add('dl-card--you')
+  const badge = document.createElement('span')
+  badge.className = 'dl-you'
+  badge.textContent = 'Votre système'
+  card.querySelector('.dl-os').append(badge)
+  card.parentElement.prepend(card)
 }
 
 const LINES = [
@@ -125,4 +140,5 @@ function initBand() {
 
 redirectIfSignedIn()
 initFlowTabs()
+initDownloads()
 initBand()

@@ -25,11 +25,12 @@ export default defineConfig({
   plugins: [react(), appTrailingSlash],
   build: {
     rollupOptions: {
-      // / = landing page, /app/ = the atelier, /confidentialite.html = privacy.
+      // / = landing page, /app/ = the atelier, /confidentialite.html + /conditions.html = legal.
       input: {
         home: resolve(__dirname, 'index.html'),
         app: resolve(__dirname, 'app/index.html'),
         privacy: resolve(__dirname, 'confidentialite.html'),
+        terms: resolve(__dirname, 'conditions.html'),
       },
     },
   },

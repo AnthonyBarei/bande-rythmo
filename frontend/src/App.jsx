@@ -106,7 +106,7 @@ function AccountButton({ user, accent, onNavigate, onLogin, onLogout }) {
         <MenuItem icon={ICONS.user} onClick={() => { close(); onNavigate('account') }}>Mon compte</MenuItem>
         <MenuItem icon={ICONS.settings} onClick={() => { close(); onNavigate('settings') }}>Réglages</MenuItem>
         <MenuSep />
-        <MenuItem icon={ICONS.chevronL} onClick={() => { close(); onLogout() }}>Se déconnecter</MenuItem>
+        <MenuItem icon={ICONS.logout} onClick={() => { close(); onLogout() }}>Se déconnecter</MenuItem>
       </>}
     </Popover>
   )

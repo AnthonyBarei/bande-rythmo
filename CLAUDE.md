@@ -397,7 +397,13 @@ preuves `design/studio_v2_proofs/` (`shoot_studio_v2.py`, aucune écriture backe
 ### Fait — Accueil + comptes (2026-10-22, branche `feat/accounts-home`)
 Briefs `design/design_handoff_redesign_v2/HOME.md` + `ACCOUNT.md`, refs `reference/home.html` + `redesign/screen-account.jsx`.
 - **Accueil** `/` (statique, `frontend/index.html`) : bande rythmo canvas, flux en onglets, formats.
-  Visiteur connecté → `/app/`. Captures `public/home/*.png` = **placeholders** (à remplacer avant publication).
+  Visiteur connecté → `/app/`. CTA « Télécharger » → section `#telecharger` (Windows/macOS/Linux « Bientôt
+  disponible », OS du visiteur en premier ; « Me prévenir » désactivé tant qu'il n'y a pas de serveur).
+  Servie en local : pas de sonde `/api/health`. Méta + OG (`public/og.png`) + favicon (`public/favicon.svg`).
+  Captures `public/home/*.png` sur *Tears of Steel* (CC BY 3.0, crédit sous la capture + pied de page) —
+  `design/accounts_home_proofs/shoot_home_stills.py <clip_id> <source.mov>` (clip « Tears of Steel — le pont »).
+- **Pages légales** : `/confidentialite.html` ; `/conditions.html` rend `frontend/docs/conditions.md`
+  (provisoire, à rédiger par l'utilisateur — `src/home/markdown.js`).
 - **Comptes locaux** (base SQLite de l'atelier, pas de serveur distant) : `User`, `UserSession`, `AuthToken`.
   Le compte ne porte que l'identité + les préférences ; clips/répliques/prises restent partagés sur la machine.
   Cookie httpOnly `br_session` (SameSite=Lax), 30 j si « Rester connecté », sinon 12 h + cookie de session.
@@ -406,13 +412,15 @@ Briefs `design/design_handoff_redesign_v2/HOME.md` + `ACCOUNT.md`, refs `referen
 - **Mon compte** : profil (avatar 6 couleurs, nom, nom de comédien), e-mail (modifier + vérification),
   mot de passe (déconnecte les autres appareils), appareils connectés, archive JSON, suppression (tape l'e-mail).
 - **Préférences** suivent le compte : celles du compte gagnent à la connexion, puis chaque changement est poussé.
+  Stockées versionnées `{"v": 1, "settings": {…}}` (migration vers un compte hébergé).
 - **Comédien** : rôle sans comédien → nom de comédien du compte affiché (Studio + onglet Voix), stocké seulement si édité.
 
 ### Reste à faire (non démarré)
 - **Phase 2 (REMAKE_PLAN)** : split DubbingWorkspace (3 650 lignes) en hooks,
   export côté serveur (DB source of truth), Vitest
-- **Comptes — suite** : texte des conditions d'utilisation (case à cocher sans page), compte hébergé
-  (multi-appareils, gamification), contenu par utilisateur
+- **Comptes — suite** : texte des conditions (`frontend/docs/conditions.md`), compte hébergé
+  (multi-appareils, gamification, « Me prévenir »), contenu par utilisateur
+- **Installateurs** (Windows / macOS / Linux) — la section Télécharger de l'accueil les attend
 - **Intégrations tierces** : Stremio (lecture vidéo), qBittorrent (download → import auto)
 - `.rythmo.txt` import (DetX XML déjà couvert)
 

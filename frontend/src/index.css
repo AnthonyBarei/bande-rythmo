@@ -353,18 +353,26 @@ video { display: block; }
 /* ── Auth screen (ACCOUNT.md §1) — brand panel hidden below 900px ── */
 .auth-screen { display: grid; grid-template-columns: minmax(0,1fr) minmax(380px,520px); }
 .auth-brand { display: flex; }
-.auth-side { padding: 28px 48px; }
+.auth-side { padding: 56px 48px; }
+.auth-back { top: 24px; right: 48px; }
 .auth-band { animation: authBand 26s linear infinite; }
 .auth-form { animation: authIn .25s ease-out; }
-@keyframes authBand { from { transform: translateX(0) } to { transform: translateX(-50%) } }
+@keyframes authBand { from { transform: translateX(-33.333%) } to { transform: translateX(-66.667%) } }
 @keyframes authIn { from { opacity: 0; transform: translateY(6px) } to { opacity: 1; transform: none } }
 @media (max-width: 900px) {
   .auth-screen { grid-template-columns: minmax(0,1fr); }
   .auth-brand { display: none; }
 }
 @media (max-width: 520px) {
-  .auth-side { padding: 20px 16px; }
+  .auth-side { padding: 52px 16px 20px; }
+  .auth-back { top: 18px; right: 16px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .auth-band, .auth-form { animation: none; }
+  .auth-band { transform: translateX(-33.333%); }
 }
+
+/* Row that appears on change (Mon compte « Enregistrer ») — FIXES_ACCOUNT_HOME_R2 #6 */
+.slide-in { animation: slideIn4 .15s ease-out; }
+@keyframes slideIn4 { from { opacity: 0; transform: translateY(4px) } to { opacity: 1; transform: none } }
+@media (prefers-reduced-motion: reduce) { .slide-in { animation: none; } }

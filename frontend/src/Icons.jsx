@@ -48,6 +48,7 @@ const REFERENCE = {
   wave:     <><line x1="3" y1="12" x2="3" y2="12"/><path d="M5 8v8M8 5v14M11 9v6M14 4v16M17 8v8M20 10v4"/></>,
   film:     <><rect x="2.5" y="3" width="19" height="18" rx="2.5"/><line x1="7.5" y1="3" x2="7.5" y2="21"/><line x1="16.5" y1="3" x2="16.5" y2="21"/><line x1="2.5" y1="12" x2="21.5" y2="12"/></>,
   user:     <><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a8 8 0 0116 0v1"/></>,
+  logout:   <><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></>,
   users:    <><circle cx="9" cy="8" r="3.5"/><path d="M2 21v-1a7 7 0 0114 0v1"/><path d="M16 5.5a3.5 3.5 0 010 6.5M22 21v-1a7 7 0 00-5-6.7"/></>,
   note:     <><path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9z"/><polyline points="14 3 14 9 20 9"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></>,
   command:  <><path d="M9 6a3 3 0 10-3 3h12a3 3 0 10-3-3v12a3 3 0 103-3H6a3 3 0 10 3 3z"/></>,
