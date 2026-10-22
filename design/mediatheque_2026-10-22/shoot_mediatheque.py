@@ -36,6 +36,7 @@ PLEX_URL = "http://192.168.1.5:32400"
 NOT_CONFIGURED = {"connected": False, "configured": False, "url": "http://localhost:8096"}
 UNREACHABLE = {"connected": False, "configured": True, "url": PLEX_URL}
 HOLD = object()
+LIBRARY_HOLD = {}   # {"offset": "96"} holds that /library page open
 PASS_THROUGH = {"/api/files/register"}
 
 # path -> body (GET 200), HOLD (never answered until release), or (status, body)
@@ -111,6 +112,9 @@ async def install_mocks(cdp):
         rid, req = p["requestId"], p["request"]
         method, path = req["method"], urllib.parse.urlparse(req["url"]).path
         mock = MOCKS.get(path)
+        query = urllib.parse.parse_qs(urllib.parse.urlparse(req["url"]).query)
+        if "/library/" in path and LIBRARY_HOLD.get("offset") in query.get("offset", []):
+            mock = HOLD
         if mock is HOLD:
             HELD.append(rid)
         elif isinstance(mock, tuple):
@@ -264,13 +268,88 @@ async def shoot_library(cdp):
 
     await click(cdp, "Ouvrir Arcane", wait=2.0)
     await click(cdp, "Ouvrir Saison 1", wait=2.5)
-    await cdp.js("[...document.querySelectorAll('button[title]')].find(b => b.title.startsWith('E01')).click(); 1")
+    await cdp.js("[...document.querySelectorAll('button[title]')].find(b => b.title.startsWith('Importer E01')).click(); 1")
     await asyncio.sleep(2.0)
     await cdp.js(WAIT_VIDEO)
     await cdp.js("const v = document.querySelector('video'); v.currentTime = 600; 1")
     await asyncio.sleep(2.0)
     await settle(cdp, 0.5)
     await cdp.shot("import/16-episode-loaded.png")
+
+
+HOVER = """(async () => {
+  const el = document.querySelector(%s);
+  if (!el) return null;
+  el.scrollIntoView({ block: 'center' });
+  await new Promise(r => setTimeout(r, 300));
+  const r = el.getBoundingClientRect();
+  return [Math.round(r.x + r.width / 2), Math.round(r.y + r.height / 3)];
+})()"""
+
+
+async def hover(cdp, selector, wait=0.7):
+    xy = await cdp.js(HOVER % json.dumps(selector))
+    if not xy:
+        print("  ! hover target not found:", selector)
+        return
+    await cdp.call("Input.dispatchMouseEvent", type="mouseMoved", x=xy[0], y=xy[1])
+    await asyncio.sleep(wait)
+
+
+async def click_lib(cdp, name, wait=2.0):
+    await cdp.js(f"[...document.querySelectorAll('.lib-item')].find(b => b.innerText.startsWith({json.dumps(name)})).click(); 1")
+    await asyncio.sleep(wait)
+
+
+async def scroll_grid_bottom(cdp):
+    await cdp.js("(() => { let s = document.querySelector('.lib-card'); while (s && s.scrollHeight <= s.clientHeight + 1) s = s.parentElement; if (s) s.scrollTop = s.scrollHeight; return 1 })()")
+    await asyncio.sleep(0.5)
+
+
+async def shoot_motion(cdp):
+    """MEDIATHEQUE.md proofs: hover states, pagination, skeleton."""
+    await open_mediatheque(cdp, "jellyfin", wait=2.5)
+    await settle(cdp, 1.5)
+    await hover(cdp, ".lib-card:nth-child(2)")
+    await cdp.shot("import/20-card-hover.png")
+
+    await click_lib(cdp, "Séries")
+    await settle(cdp)
+    await hover(cdp, '.lib-card[title="Ouvrir Arcane"]')
+    await cdp.shot("import/21-folder-hover.png")
+
+    await click(cdp, "Ouvrir Arcane", wait=2.0)
+    await click(cdp, "Ouvrir Saison 1", wait=2.5)
+    await settle(cdp, 1.5)
+    await hover(cdp, ".lib-card:nth-child(3)")
+    await cdp.shot("import/22-episode-hover.png")
+
+    await click_lib(cdp, "Films")
+    await cdp.js("[...document.querySelectorAll('.lib-pg')].find(b => b.textContent === '1')?.click(); 1")
+    await asyncio.sleep(2.0)
+    await settle(cdp)
+    await scroll_grid_bottom(cdp)
+    await settle(cdp, 0.5)
+    await cdp.shot("import/23-pagination-p1.png")
+
+    await cdp.js("[...document.querySelectorAll('.lib-pg')].find(b => b.textContent === '2').click(); 1")
+    await asyncio.sleep(2.0)
+    await cdp.js("[...document.querySelectorAll('.lib-pg')].find(b => b.textContent === '3').click(); 1")
+    await asyncio.sleep(2.0)
+    await settle(cdp)
+    await scroll_grid_bottom(cdp)
+    await settle(cdp, 0.5)
+    await cdp.shot("import/24-pagination-p3.png")
+
+    # Page 5 held open: the skeleton stays up.
+    LIBRARY_HOLD["offset"] = "96"
+    await cdp.js("[...document.querySelectorAll('.lib-pg')].find(b => b.textContent === '4').click(); 1")
+    await asyncio.sleep(2.0)
+    await cdp.js("[...document.querySelectorAll('.lib-pg')].find(b => b.textContent === '5').click(); 1")
+    await asyncio.sleep(0.8)
+    await cdp.shot("import/25-skeleton.png")
+    LIBRARY_HOLD.pop("offset", None)
+    await release(cdp)
 
 
 async def shoot_settings(cdp):
@@ -302,6 +381,7 @@ async def run():
 
         await shoot_connect(cdp)
         await shoot_library(cdp)
+        await shoot_motion(cdp)
         await shoot_settings(cdp)
         await release(cdp)
         print("done")

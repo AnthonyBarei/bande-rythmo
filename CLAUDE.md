@@ -373,6 +373,12 @@ preuves `design/studio_v2_proofs/` (`shoot_studio_v2.py`, aucune écriture backe
   série à saison unique ouverte directement). Jellyfin : `/Shows/{id}/Seasons|Episodes` (sans dossiers
   de saison sur disque, une saison n'a pas d'enfants via `ParentId`). Recherche → séries + épisodes.
 - Captures Claude Design : `design/mediatheque_2026-10-22/` (`shoot_mediatheque.py`, README = pistes UI).
+- Hover + pagination (`design_handoff_redesign_v2/MEDIATHEQUE.md`) : cartes `.lib-card` (index.css —
+  lift, zoom/assombrissement, synopsis `overview` + Importer/Ouvrir, `prefers-reduced-motion`), 24 / page
+  (bibliothèque + recherche paginées serveur, enfants d'un dossier paginés client), squelette, page mémorisée
+  par vue, PgSuiv/PgPréc + Retour arrière, préchargement page suivante, compteurs par bibliothèque.
+- Lecture sans son (AC3/EAC3/DTS dans Chrome) : remux AAC automatique de la piste par défaut
+  (`utils/audioCodec.js`, `canPlayType`) ; `_extract_audio` ne copie que l'AAC/MP3.
 
 ### Reste à faire (non démarré)
 - **Phase 2 (REMAKE_PLAN)** : split DubbingWorkspace (3 650 lignes) en hooks,

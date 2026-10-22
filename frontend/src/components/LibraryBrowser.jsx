@@ -133,6 +133,7 @@ function ConnectCard({ provider, status, onConnected, switcher }) {
 }
 
 const FOLDER_TYPES = new Set(['show', 'season'])
+const PAGE_SIZE = 24
 
 // Servers name seasons in their metadata language — show them in French.
 function displayTitle(item) {
@@ -142,44 +143,151 @@ function displayTitle(item) {
   return item.title
 }
 
-async function fetchItems(url) {
+async function fetchJson(url) {
   const res = await fetch(url)
   const data = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`)
-  return data.items || []
+  return data
+}
+
+function isTyping(el) {
+  return el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))
+}
+
+function LibraryCard({ item, index, selected, onOpen }) {
+  const title = displayTitle(item)
+  const folder = FOLDER_TYPES.has(item.type)
+  const episode = item.type === 'episode'
+  const seed = (title || '??').charCodeAt(0) + ((title || '??').charCodeAt(1) || 0)
+  const meta = [item.year, fmtDur(item.duration)].filter(Boolean).join(' · ')
+  return (
+    <button className="lib-card lib-in" data-on={selected ? '1' : '0'} onClick={() => onOpen(item)}
+      title={`${folder ? 'Ouvrir' : 'Importer'} ${title}`} style={{ animationDelay: `${Math.min(index, 12) * 25}ms` }}>
+      <div className="lib-box">
+        <div className="lib-art" style={{ aspectRatio: episode ? '16/9' : '2/3', background: `linear-gradient(135deg,hsl(${seed * 7 % 360},18%,22%),hsl(${seed * 13 % 360},16%,13%))` }}>
+          {item.thumb && <img className="lib-img" src={item.thumb} alt="" loading="lazy" />}
+          {meta && <span className="lib-meta">{meta}</span>}
+          {selected && <span className="lib-badge">SÉLECTIONNÉ</span>}
+          <div className="lib-ov">
+            {!episode && item.overview && <div className="lib-desc">{item.overview}</div>}
+            <span className={`lib-cta${folder ? ' ghost' : ''}`}>
+              <Icon d={folder ? ICONS.chevronR : ICONS.import} size={13} stroke={folder ? '#fff' : '#0b0b0d'} />
+              {folder ? 'Ouvrir' : 'Importer'}
+            </span>
+          </div>
+        </div>
+        <div className="lib-foot">
+          <div className="lib-title">{title}</div>
+          {folder && <span className="lib-chev"><Icon d={ICONS.chevronR} size={14} stroke="currentColor" /></span>}
+        </div>
+        <div className="lib-sub">{TYPE_LABEL[item.type] || item.type || ''}</div>
+      </div>
+    </button>
+  )
+}
+
+// 1 … 4 5 6 … 12 — first, last, and the current page's neighbours.
+function pageNumbers(page, pages) {
+  const nums = []
+  for (let p = 1; p <= pages; p++) {
+    if (p === 1 || p === pages || Math.abs(p - page) <= 1) nums.push(p)
+    else if (nums[nums.length - 1] !== '…') nums.push('…')
+  }
+  return nums
+}
+
+function Pager({ page, total, onPage, onPrefetchNext }) {
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  if (pages <= 1) {
+    return <div style={{ textAlign: 'center', fontSize: 12, color: T.text4, fontFamily: T.fontMono, marginTop: 22 }}>{total} élément{total > 1 ? 's' : ''}</div>
+  }
+  const from = (page - 1) * PAGE_SIZE + 1
+  const to = Math.min(total, page * PAGE_SIZE)
+  return (
+    <nav aria-label="Pages" style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'center', marginTop: 24, flexWrap: 'wrap' }}>
+      <span style={{ fontSize: 12, color: T.text3, fontFamily: T.fontMono, marginRight: 12 }}>{from}–{to} sur {total}</span>
+      <button className="lib-pg" disabled={page === 1} onClick={() => onPage(page - 1)} title="Page précédente (PgPréc)" aria-label="Page précédente">
+        <Icon d={ICONS.chevronL} size={14} stroke="currentColor" />
+      </button>
+      {pageNumbers(page, pages).map((p, k) => p === '…'
+        ? <span key={`e${k}`} style={{ width: 24, textAlign: 'center', color: T.text4 }}>…</span>
+        : <button key={p} className="lib-pg" data-on={p === page ? '1' : '0'} aria-current={p === page ? 'page' : undefined} onClick={() => onPage(p)}>{p}</button>)}
+      <button className="lib-pg" disabled={page === pages} onClick={() => onPage(page + 1)} onMouseEnter={onPrefetchNext}
+        title="Page suivante (PgSuiv)" aria-label="Page suivante">
+        <Icon d={ICONS.chevronR} size={14} stroke="currentColor" />
+      </button>
+    </nav>
+  )
 }
 
 // Show libraries browse as folders: série → saisons → épisodes (breadcrumb).
-// A série with a single saison opens straight on its épisodes.
-function LibraryGrid({ api, sectionId, sectionTitle, onSelect, selectedKey, toolbar }) {
-  const [items, setItems] = useState([])
-  const [path, setPath] = useState([])   // [{ key, title }] — open folders
+// A série with a single saison opens straight on its épisodes. 24 items per
+// page: library pages and searches come from the server, a folder's children
+// are fetched once and paged here. Each view remembers its page (pages, a Map
+// owned by the parent so it survives switching library).
+function LibraryGrid({ api, sectionId, sectionTitle, onSelect, selectedKey, toolbar, onReload, pages }) {
+  const [view, setView] = useState({ path: [], query: '', page: 1, items: [], total: 0 })
   const [search, setSearch] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [skelWide, setSkelWide] = useState(false)
   const [loadErr, setLoadErr] = useState(null)
   const debounceRef = useRef(null)
   const reqRef = useRef(0)
+  const cacheRef = useRef(new Map())   // url → Promise<json>
+  const scrollRef = useRef(null)
+
+  const viewKey = (path, query) => `${sectionId}|${path.map(c => c.key).join('/')}|${query}`
+
+  function cached(url) {
+    if (!cacheRef.current.has(url)) {
+      const p = fetchJson(url)
+      p.catch(() => cacheRef.current.delete(url))   // a failed page is fetched again next time
+      cacheRef.current.set(url, p)
+    }
+    return cacheRef.current.get(url)
+  }
+
+  const libraryUrl = (query, page) =>
+    `${api}/library/${sectionId}?limit=${PAGE_SIZE}&offset=${(page - 1) * PAGE_SIZE}${query ? `&search=${encodeURIComponent(query)}` : ''}`
+  const childrenUrl = key => `${api}/children/${encodeURIComponent(key)}`
+
+  async function fetchPage(path, query, page) {
+    if (path.length === 0) {
+      const data = await cached(libraryUrl(query, page))
+      return { items: data.items || [], total: data.total ?? (data.items || []).length }
+    }
+    const all = (await cached(childrenUrl(path[path.length - 1].key))).items || []
+    const q = query.toLowerCase()
+    const matching = q ? all.filter(i => displayTitle(i).toLowerCase().includes(q)) : all
+    return { items: matching.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), total: matching.length }
+  }
 
   // Latest request wins — a slow earlier load must not overwrite newer results.
-  async function load(trail, q = '', autoOpen = false) {
+  async function load(path, { query = '', page, autoOpen = false, wide = skelWide } = {}) {
     const req = ++reqRef.current
     setLoading(true)
+    setSkelWide(wide)
     setLoadErr(null)
+    if (scrollRef.current) scrollRef.current.scrollTop = 0
     try {
-      let next = trail
-      let found
-      if (trail.length === 0) {
-        found = await fetchItems(`${api}/library/${sectionId}?limit=60${q ? `&search=${encodeURIComponent(q)}` : ''}`)
-      } else {
-        found = await fetchItems(`${api}/children/${encodeURIComponent(trail[trail.length - 1].key)}`)
-        if (autoOpen && found.length === 1 && found[0].type === 'season') {
-          next = [...trail, { key: found[0].rating_key, title: displayTitle(found[0]), auto: true }]
-          found = await fetchItems(`${api}/children/${encodeURIComponent(found[0].rating_key)}`)
+      let trail = path
+      if (autoOpen) {
+        const kids = (await cached(childrenUrl(path[path.length - 1].key))).items || []
+        if (kids.length === 1 && kids[0].type === 'season') {
+          trail = [...path, { key: kids[0].rating_key, title: displayTitle(kids[0]), auto: true }]
         }
       }
-      if (req === reqRef.current) { setItems(found); setPath(next) }
+      const key = viewKey(trail, query)
+      const target = page ?? pages.get(key) ?? 1
+      const { items, total } = await fetchPage(trail, query, target)
+      if (req !== reqRef.current) return
+      pages.set(key, target)
+      setView({ path: trail, query, page: target, items, total })
     } catch (e) {
-      if (req === reqRef.current) { setItems([]); setLoadErr('Bibliothèque inaccessible : ' + e.message) }
+      if (req === reqRef.current) {
+        setView(v => ({ ...v, items: [], total: 0 }))
+        setLoadErr('Bibliothèque inaccessible : ' + e.message)
+      }
     } finally {
       if (req === reqRef.current) setLoading(false)
     }
@@ -190,47 +298,86 @@ function LibraryGrid({ api, sectionId, sectionTitle, onSelect, selectedKey, tool
     return () => clearTimeout(debounceRef.current)
   }, [api, sectionId])
 
+  const { path, query, page, items, total } = view
+  const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE))
+
+  function reload() {
+    onReload()
+    cacheRef.current.clear()
+    load(path, { query, page })
+  }
+
+  function goPage(p) {
+    const next = Math.min(lastPage, Math.max(1, p))
+    if (next !== page) load(path, { query, page: next })
+  }
+
+  function prefetchNext() {
+    if (path.length === 0 && page < lastPage) cached(libraryUrl(query, page + 1)).catch(() => {})
+  }
+
   function handleSearch(e) {
     const q = e.target.value
     setSearch(q)
     clearTimeout(debounceRef.current)
-    if (path.length === 0) debounceRef.current = setTimeout(() => load([], q), 400)
+    // A new query starts on page 1 (cleared: back to the view's own page);
+    // inside a folder it filters what is already loaded.
+    const query = q.trim()
+    debounceRef.current = setTimeout(() => load(path, { query, page: query ? 1 : undefined }), path.length ? 0 : 400)
   }
 
   function openItem(item) {
     if (!FOLDER_TYPES.has(item.type)) { onSelect(item.rating_key); return }
     setSearch('')
-    load([...path, { key: item.rating_key, title: displayTitle(item) }], '', true)
+    load([...path, { key: item.rating_key, title: displayTitle(item) }], { autoOpen: true, wide: item.type === 'season' })
   }
 
   function goTo(depth) {
     setSearch('')
-    load(path.slice(0, depth))
+    load(path.slice(0, depth), { wide: false })
   }
 
-  // Inside a folder the search filters what is already loaded.
+  const goUp = () => goTo(path.length - (path[path.length - 1].auto ? 2 : 1))
+
+  useEffect(() => {
+    function onKey(e) {
+      if (isTyping(e.target) || e.ctrlKey || e.metaKey || e.altKey) return
+      if (e.key === 'PageDown') { e.preventDefault(); goPage(page + 1) }
+      else if (e.key === 'PageUp') { e.preventDefault(); goPage(page - 1) }
+      else if (e.key === 'Backspace' && path.length) { e.preventDefault(); goUp() }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
+
+  function handleScroll(e) {
+    const el = e.currentTarget
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 240) prefetchNext()
+  }
+
   const inFolder = path.length > 0
-  const shown = inFolder && search
-    ? items.filter(i => displayTitle(i).toLowerCase().includes(search.toLowerCase()))
-    : items
-  const wide = shown.length > 0 && shown.every(i => i.type === 'episode')
+  const wide = loading ? skelWide : items.length > 0 && items.every(i => i.type === 'episode')
   const here = inFolder ? path[path.length - 1].title : sectionTitle
+  const grid = {
+    display: 'grid', gridTemplateColumns: `repeat(auto-fill,minmax(${wide ? 230 : 150}px,1fr))`,
+    gridAutoRows: 'max-content', gap: 14, alignContent: 'start',
+  }
 
   return (
-    <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12, minHeight: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <div className="field-ring" style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 9, padding: '8px 14px', background: T.surface, border: `1px solid ${T.border}`, borderRadius: 99 }}>
           <Icon d={ICONS.search} size={14} stroke={T.text3} />
           <input value={search} onChange={handleSearch} placeholder={`${inFolder ? 'Filtrer' : 'Rechercher dans'} ${here || 'la bibliothèque'}…`}
             style={{ flex: 1, minWidth: 0, padding: 0, background: 'transparent', border: 'none', fontSize: T.fs.sm, color: T.text, boxShadow: 'none' }} />
-          {loading && <span style={{ fontSize: T.fs.micro, color: T.text3 }}>Chargement…</span>}
         </div>
         {toolbar}
+        <Btn variant="outline" size="sm" icon={ICONS.loop2} onClick={reload} title="Recharger">Recharger</Btn>
       </div>
 
       {inFolder && (
         <nav aria-label="Dossiers" style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, fontSize: T.fs.sm }}>
-          <Btn variant="outline" size="sm" icon={ICONS.back} onClick={() => goTo(path.length - (path[path.length - 1].auto ? 2 : 1))} title="Dossier parent">Retour</Btn>
+          <Btn variant="outline" size="sm" icon={ICONS.back} onClick={goUp} title="Dossier parent (Retour arrière)">Retour</Btn>
           {[{ title: sectionTitle || 'Bibliothèque' }, ...path].map((crumb, depth) => {
             const last = depth === path.length
             return (
@@ -245,37 +392,26 @@ function LibraryGrid({ api, sectionId, sectionTitle, onSelect, selectedKey, tool
         </nav>
       )}
 
-      <div style={{ flex: 1, overflow: 'auto', display: 'grid', gridTemplateColumns: `repeat(auto-fill,minmax(${wide ? 220 : 150}px,1fr))`, gridAutoRows: 'max-content', gap: 12, alignContent: 'flex-start' }}>
-        {shown.map(item => {
-          const title = displayTitle(item)
-          const folder = FOLDER_TYPES.has(item.type)
-          const mine = selectedKey === item.rating_key
-          const seed = (title || '??').charCodeAt(0) + ((title || '??').charCodeAt(1) || 0)
-          const sub = [item.year, fmtDur(item.duration)].filter(Boolean).join(' · ')
-          return (
-            <button key={item.rating_key} data-rd onClick={() => openItem(item)} title={folder ? `Ouvrir ${title}` : title} style={{
-              background: T.surface, border: `1px solid ${mine ? T.accent : T.border}`, borderRadius: T.r.ctl, overflow: 'hidden', cursor: 'pointer',
-              boxShadow: mine ? `0 0 0 2px ${alpha(T.accent, '33')}` : 'none', padding: 0, textAlign: 'left', color: T.text, display: 'block', width: '100%',
-            }}>
-              <div style={{ aspectRatio: item.type === 'episode' ? '16/9' : '2/3', position: 'relative', background: `linear-gradient(135deg,hsl(${seed * 7 % 360},18%,22%),hsl(${seed * 13 % 360},16%,13%))` }}>
-                {item.thumb && <img src={item.thumb} alt="" loading="lazy" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />}
-                {mine && <div style={{ position: 'absolute', top: 6, left: 6, padding: '2px 6px', background: T.accent, color: '#0b0b0d', fontSize: 8.5, fontWeight: 800, borderRadius: 3 }}>SÉLECTIONNÉ</div>}
-                {sub && <div style={{ position: 'absolute', left: 8, bottom: 8, fontFamily: T.fontMono, fontSize: 9, color: 'rgba(255,255,255,.5)', textShadow: '0 1px 2px rgba(0,0,0,.8)' }}>{sub}</div>}
-              </div>
-              <div style={{ padding: '8px 10px', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: T.fs.xs, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</div>
-                  <div style={{ fontSize: 10.5, color: T.text3 }}>{TYPE_LABEL[item.type] || item.type || ''}</div>
-                </div>
-                {folder && <Icon d={ICONS.chevronR} size={14} stroke={T.text3} />}
-              </div>
-            </button>
-          )
-        })}
-        {!loading && shown.length === 0 && (
-          <div style={{ gridColumn: '1/-1', color: loadErr ? T.danger : T.text3, fontSize: T.fs.sm, padding: 24, textAlign: 'center' }}>
-            {loadErr || 'Aucun résultat'}
+      <div ref={scrollRef} onScroll={handleScroll} style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', padding: '6px 4px 20px' }}>
+        {loading ? (
+          <div style={grid} aria-busy="true" aria-label="Chargement">
+            {Array.from({ length: wide ? 8 : 12 }, (_, i) => (
+              <div key={i} className="lib-skel" style={{ aspectRatio: wide ? '16/13' : '2/3.55', animationDelay: `${i * 50}ms` }} />
+            ))}
           </div>
+        ) : items.length === 0 ? (
+          <div style={{ padding: '60px 0', textAlign: 'center', color: loadErr ? T.danger : T.text3, fontSize: 13 }}>
+            {loadErr || (query ? `Aucun résultat pour « ${query} » dans ${here || 'la bibliothèque'}.` : 'Aucun élément')}
+          </div>
+        ) : (
+          <>
+            <div key={`${viewKey(path, query)}#${page}`} style={grid}>
+              {items.map((item, i) => (
+                <LibraryCard key={item.rating_key} item={item} index={i} selected={selectedKey === item.rating_key} onOpen={openItem} />
+              ))}
+            </div>
+            <Pager page={page} total={total} onPage={goPage} onPrefetchNext={prefetchNext} />
+          </>
         )}
       </div>
     </div>
@@ -290,6 +426,7 @@ function ProviderBrowser({ provider, initialStatus, onSourceSelected, onStatus, 
   const [loadingItem, setLoadingItem] = useState(false)
   const [selectedKey, setSelectedKey] = useState(null)
   const [err, setErr] = useState(null)
+  const [pages] = useState(() => new Map())   // view → page, kept across library switches
 
   async function checkStatus() {
     setErr(null)
@@ -375,20 +512,15 @@ function ProviderBrowser({ provider, initialStatus, onSourceSelected, onStatus, 
       <div style={{ width: 200, flexShrink: 0, background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.r.card, padding: 8, overflow: 'auto' }}>
         <div style={{ padding: '4px 2px 4px' }}>{switcher}</div>
         <div style={{ fontSize: T.fs.micro, color: T.text3, letterSpacing: 1.4, fontWeight: 700, padding: '8px 10px' }}>BIBLIOTHÈQUES</div>
-        {libraries.map(lib => {
-          const on = activeSectionId === lib.id
-          return (
-            <div key={lib.id} role="button" tabIndex={0} onClick={() => setActiveSectionId(lib.id)}
-              onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setActiveSectionId(lib.id) } }}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 9, padding: '8px 10px', borderRadius: T.r.ctl, cursor: 'pointer',
-                background: on ? alpha(T.accent, '11') : 'transparent', color: on ? T.accent : T.text2, border: on ? `1px solid ${alpha(T.accent, '33')}` : '1px solid transparent', fontSize: T.fs.sm, fontWeight: on ? 600 : 500,
-              }}>
-              <Icon d={ICONS.folder} size={14} /><span style={{ flex: 1 }}>{lib.title}</span>
-              {typeof lib.count === 'number' && <span style={{ fontSize: 10, color: T.text3, fontFamily: T.fontMono }}>{lib.count}</span>}
-            </div>
-          )
-        })}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {libraries.map(lib => (
+            <button key={lib.id} className="lib-item" data-on={activeSectionId === lib.id ? '1' : '0'} onClick={() => setActiveSectionId(lib.id)}>
+              <Icon d={ICONS.folder} size={15} stroke="currentColor" />
+              <span style={{ flex: 1, textAlign: 'left' }}>{lib.title}</span>
+              {typeof lib.count === 'number' && <span style={{ fontFamily: T.fontMono, fontSize: 11, opacity: 0.6 }}>{lib.count}</span>}
+            </button>
+          ))}
+        </div>
         {libraries.length === 0 && !err && <div style={{ padding: '8px 10px', fontSize: T.fs.xs, color: T.text3 }}>Aucune bibliothèque</div>}
       </div>
 
@@ -400,18 +532,21 @@ function ProviderBrowser({ provider, initialStatus, onSourceSelected, onStatus, 
           sectionTitle={activeLib?.title}
           onSelect={handleSelect}
           selectedKey={selectedKey}
-          toolbar={<ServerToolbar status={status} loadingItem={loadingItem} err={err} onReload={checkStatus} />}
+          pages={pages}
+          toolbar={<ServerToolbar status={status} loadingItem={loadingItem} err={err} />}
+          onReload={checkStatus}
         />
       ) : (
-        <div style={{ flex: 1, display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end' }}>
-          <ServerToolbar status={status} loadingItem={loadingItem} err={err} onReload={checkStatus} />
+        <div style={{ flex: 1, display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end', gap: 10 }}>
+          <ServerToolbar status={status} loadingItem={loadingItem} err={err} />
+          <Btn variant="outline" size="sm" icon={ICONS.loop2} onClick={checkStatus} title="Recharger">Recharger</Btn>
         </div>
       )}
     </div>
   )
 }
 
-function ServerToolbar({ status, loadingItem, err, onReload }) {
+function ServerToolbar({ status, loadingItem, err }) {
   return (
     <>
       {loadingItem && <span style={{ fontSize: T.fs.micro, color: T.accent, whiteSpace: 'nowrap' }}>Chargement…</span>}
@@ -419,7 +554,6 @@ function ServerToolbar({ status, loadingItem, err, onReload }) {
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: T.fs.xs, color: T.text2, whiteSpace: 'nowrap' }}>
         <Dot color={T.success} size={6} />{status.server}
       </span>
-      <Btn variant="outline" size="sm" icon={ICONS.loop2} onClick={onReload} title="Recharger">Recharger</Btn>
     </>
   )
 }

@@ -23,6 +23,12 @@ only. This round is to give them a proper design.
 | import/14-single-season-auto-open.png | série with one saison opens straight on its épisodes |
 | import/15-search.png | search in Séries: séries + épisodes mixed |
 | import/16-episode-loaded.png | épisode picked → Importer player, "depuis Jellyfin · …" |
+| import/20-card-hover.png | film card hover — lift, zoom + darken, synopsis + **Importer** (MEDIATHEQUE.md) |
+| import/21-folder-hover.png | série card hover — **Ouvrir**, chevron nudged, title accent |
+| import/22-episode-hover.png | épisode card hover (16:9, no synopsis) |
+| import/23-pagination-p1.png | Films, page 1 — pager under the grid |
+| import/24-pagination-p3.png | Films, page 3 — `1 2 3 4 … 12` |
+| import/25-skeleton.png | page loading — shimmer skeleton |
 | settings/01-mediatheques.png | Réglages › Médiathèques (Plex injoignable, Jellyfin connecté) |
 | settings/02-mediatheques-form.png | Réglages › Plex reconnect form |
 
@@ -50,6 +56,9 @@ only. This round is to give them a proper design.
    Plex/Jellyfin blocks have no visual separation.
 8. **Sidebar card (10–14)** — tall empty card with two entries; could be slimmer
    or become tabs above the grid.
+
+Round 2 (hover + pagination) implemented from `design_handoff_redesign_v2/MEDIATHEQUE.md`;
+captures 10–16 now show the new cards.
 
 Regenerate (app + backend running, Jellyfin configured):
 `backend/venv/Scripts/python.exe design/mediatheque_2026-10-22/shoot_mediatheque.py design/mediatheque_2026-10-22 [--app http://localhost:5173/]`

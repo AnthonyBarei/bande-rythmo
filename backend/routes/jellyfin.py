@@ -1,3 +1,5 @@
+import asyncio
+import logging
 from typing import Annotated
 from urllib.parse import quote
 
@@ -14,12 +16,14 @@ from services.jellyfin_service import (
 # provider-agnostic (items keyed by `rating_key`, parts with stream info).
 # Show libraries browse as folders: series → seasons → episodes (/children).
 
+log = logging.getLogger("br.jellyfin")
+
 router = APIRouter()
 
 JellyfinId = Annotated[str, Path(pattern=r"^[A-Za-z0-9-]{1,64}$")]
 
 _TYPE = {"Movie": "movie", "Episode": "episode", "Series": "show", "Season": "season"}
-_ITEM_FIELDS = "ProductionYear,RunTimeTicks,ImageTags,SeriesPrimaryImageTag"
+_ITEM_FIELDS = "ProductionYear,RunTimeTicks,ImageTags,SeriesPrimaryImageTag,Overview"
 
 
 class ConnectRequest(BaseModel):
@@ -52,6 +56,7 @@ def _card(item: dict, in_season: bool = False) -> dict:
         "thumb": thumb_url(item),
         # A series' RunTimeTicks is one episode's — meaningless on a folder.
         "duration": None if item.get("Type") in ("Series", "Season") else _duration_ms(item),
+        "overview": item.get("Overview") or None,
     }
 
 
@@ -90,13 +95,27 @@ async def connect(req: ConnectRequest):
 async def libraries():
     try:
         data = await jellyfin_get("/Library/MediaFolders")
+        folders = [f for f in data.get("Items", []) if f.get("CollectionType") in ("movies", "tvshows")]
+        counts = await asyncio.gather(*(_library_count(f["Id"]) for f in folders))
         return [
-            {"id": f["Id"], "title": f["Name"], "type": "movie" if f.get("CollectionType") == "movies" else "show"}
-            for f in data.get("Items", [])
-            if f.get("CollectionType") in ("movies", "tvshows")
+            {"id": f["Id"], "title": f["Name"], "type": "movie" if f.get("CollectionType") == "movies" else "show", "count": n}
+            for f, n in zip(folders, counts)
         ]
     except Exception as e:
         raise HTTPException(502, str(e))
+
+
+async def _library_count(folder_id: str) -> int | None:
+    """Films or séries in a library — the same items its root grid lists."""
+    try:
+        data = await jellyfin_get("/Items", {
+            "ParentId": folder_id, "Recursive": "true", "IncludeItemTypes": "Movie,Series",
+            "CollapseBoxSetItems": "false", "Limit": 0, "EnableTotalRecordCount": "true",
+        })
+        return data.get("TotalRecordCount")
+    except Exception:
+        log.warning("Jellyfin: library count failed for %s", folder_id, exc_info=True)
+        return None
 
 
 @router.get("/library/{section_id}")
@@ -108,6 +127,8 @@ async def library_items(section_id: JellyfinId, search: str = "", offset: int = 
             # Shows list as series folders; a search also reaches episodes directly.
             "IncludeItemTypes": "Movie,Series,Episode" if search else "Movie,Series",
             "SortBy": "SortName",
+            # Otherwise films in a collection fold into one BoxSet, which has no media.
+            "CollapseBoxSetItems": "false",
             "SortOrder": "Ascending",
             "StartIndex": offset,
             "Limit": limit,

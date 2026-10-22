@@ -1,3 +1,5 @@
+import asyncio
+import logging
 from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException
@@ -8,6 +10,8 @@ from services.plex_service import (
     load_config, save_config, test_connection, probe_local,
     plex_get, stream_url, thumb_url,
 )
+
+log = logging.getLogger("br.plex")
 
 router = APIRouter()
 
@@ -52,14 +56,24 @@ async def connect(req: ConnectRequest):
 async def libraries():
     try:
         data = await plex_get("/library/sections")
-        sections = data.get("MediaContainer", {}).get("Directory", [])
+        sections = [s for s in data.get("MediaContainer", {}).get("Directory", []) if s.get("type") in ("movie", "show")]
+        counts = await asyncio.gather(*(_section_count(s["key"]) for s in sections))
         return [
-            {"id": s["key"], "title": s["title"], "type": s["type"]}
-            for s in sections
-            if s.get("type") in ("movie", "show")
+            {"id": s["key"], "title": s["title"], "type": s["type"], "count": n}
+            for s, n in zip(sections, counts)
         ]
     except Exception as e:
         raise HTTPException(502, str(e))
+
+
+async def _section_count(section_id: str) -> int | None:
+    try:
+        data = await plex_get(f"/library/sections/{section_id}/all",
+                              {"X-Plex-Container-Start": 0, "X-Plex-Container-Size": 0})
+        return data.get("MediaContainer", {}).get("totalSize")
+    except Exception:
+        log.warning("Plex: section count failed for %s", section_id, exc_info=True)
+        return None
 
 
 @router.get("/library/{section_id}")
@@ -81,6 +95,7 @@ async def library_items(section_id: str, search: str = "", offset: int = 0, limi
                     "type": item["type"],
                     "thumb": thumb_url(item.get("thumb", "")),
                     "duration": item.get("duration"),
+                    "overview": item.get("summary") or None,
                 }
                 for item in items
             ],
@@ -105,6 +120,7 @@ async def children(rating_key: str):
                     "type": item["type"],
                     "thumb": thumb_url(item.get("thumb", "")),
                     "duration": item.get("duration"),
+                    "overview": item.get("summary") or None,
                 }
                 for item in items
                 if item.get("type") in ("season", "episode")
