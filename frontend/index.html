@@ -1,15 +1,93 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="fr">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Bande Rythmo</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Caveat:wght@400;700&family=IBM+Plex+Sans:wght@300;400;500;600;700;800&family=Inter:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Shantell+Sans:wght@400;600;700&display=swap" rel="stylesheet">
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
+<head>
+<meta charset="utf-8">
+<title>Bande Rythmo — atelier de doublage</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/src/home/home.css">
+</head>
+<body>
+<nav><div class="wrap nav">
+<a href="/" class="logo" aria-label="Bande Rythmo, accueil"><span class="logo-tile"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#0b0b0d" stroke-width="2" stroke-linecap="round"><path d="M5 8v8M8 5v14M11 9v6M14 4v16M17 8v8M20 10v4"></path></svg></span><span class="logo-text">BANDE RYTHMO</span></a>
+<div class="links"><a href="#flux">Comment ça marche</a><a href="#atelier">Fonctionnalités</a><a href="#export">Export</a></div>
+<div class="nav-r"><a href="/app/#login" class="btn btn-sm btn-ghost">Se connecter</a><a href="/app/#register" class="btn btn-sm btn-primary">Créer un compte</a></div>
+</div></nav>
+
+<header class="wrap hero">
+<div>
+<div class="kick">Atelier de doublage · local</div>
+<h1>Le doublage, à <em>la cadence</em> du studio.</h1>
+</div>
+<div>
+<p class="lede">Découpez vos rushes, transcrivez avec Whisper et calez la bande rythmo image par image. Vos vidéos et vos voix restent sur votre machine.</p>
+<div class="cta-row"><a href="/app/#register" class="btn btn-primary">Créer un compte</a><a href="/app/" class="btn btn-outline">Ouvrir l'atelier</a></div>
+<div class="cta-note">Gratuit. Fonctionne aussi sans compte.</div>
+</div>
+</header>
+
+<div class="band" aria-label="Bande rythmo de démonstration">
+<canvas id="band"></canvas>
+<div class="band-meta"><span class="band-tc" id="tc">00:00:00:00</span><span>24 i/s</span></div>
+</div>
+
+<div class="wrap">
+<div class="shot"><img src="/home/editor.png" width="1440" height="900" alt="L'éditeur : vidéo, bande rythmo par personnage et liste des répliques"></div>
+<div class="caption"><span>L'éditeur : la vidéo, la bande par personnage et les répliques côte à côte.</span><span class="mono">1440 × 900</span></div>
+
+<section id="flux">
+<div class="kick">Le flux</div>
+<h2>Du rush brut à la prise validée.</h2>
+<p class="h2-sub">Quatre écrans, dans l'ordre où vous travaillez. Chaque étape reprend là où la précédente s'arrête.</p>
+<div class="flow">
+<div class="steps" role="tablist">
+<button class="step" role="tab" aria-selected="true" data-img="/home/import.png"><span class="step-n">01</span><span class="step-t">Importer</span><span class="step-b">Fichier local, Plex ou URL. Posez IN et OUT au clavier, nommez les clips, choisissez la piste audio.</span></button>
+<button class="step" role="tab" aria-selected="false" data-img="/home/editor.png"><span class="step-n">02</span><span class="step-t">Éditer la bande</span><span class="step-b">Whisper transcrit, vous corrigez. Une piste par personnage, le texte étiré sur la durée de la réplique, respirations et détection au clavier.</span></button>
+<button class="step" role="tab" aria-selected="false" data-img="/home/studio.png"><span class="step-n">03</span><span class="step-t">Enregistrer</span><span class="step-b">Choisissez le rôle, réplique par réplique ou en continu. Décompte sur image figée, prises comparées en A/B.</span></button>
+<button class="step" role="tab" aria-selected="false" data-img="/home/export.png"><span class="step-n">04</span><span class="step-t">Exporter</span><span class="step-b">MP4 avec la bande incrustée, sous-titres, documents studio ou audio. Le rendu tourne en tâche de fond.</span></button>
+</div>
+<div class="flow-shot"><img id="flowImg" src="/home/import.png" alt="Aperçu de l'étape"></div>
+</div>
+</section>
+
+<section id="atelier">
+<div class="kick">Pensé pour la cabine</div>
+<h2>Tout est là où vous l'attendez.</h2>
+<div class="feats">
+<div class="feat"><div class="feat-t"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18M12 3a14 14 0 010 18 14 14 0 010-18z"></path></svg>Whisper en local</div><p>Transcription par clip, langue choisie au cas par cas. Aucun fichier n'est envoyé.</p></div>
+<div class="feat"><div class="feat-t"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="9" cy="8" r="3.5"></circle><path d="M2 21v-1a7 7 0 0114 0v1M16 5.5a3.5 3.5 0 010 6.5M22 21v-1a7 7 0 00-5-6.7"></path></svg>Une piste par voix</div><p>Couleur par personnage, texte étiré sur la durée : la convention de la bande rythmo, en natif.</p></div>
+<div class="feat"><div class="feat-t"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 14c0-3 2-5 5-5s3 3 6 3 5-2 5-5"></path><circle cx="8" cy="14" r="1.6"></circle><circle cx="14" cy="12" r="1.6"></circle></svg>Respirations et détection</div><p>Souffles, pauses et signes de détection posés sur la lettre. Tout reste éditable et s'exporte.</p></div>
+<div class="feat"><div class="feat-t"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="9" y="2.5" width="6" height="12" rx="3"></rect><path d="M5 11a7 7 0 0014 0M12 18.5V22"></path></svg>Studio d'enregistrement</div><p>Décompte, élan avant la réplique, prises par rôle et comparaison A/B. La progression du rôle reste visible.</p></div>
+<div class="feat"><div class="feat-t"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="2" y="6" width="20" height="12" rx="2"></rect><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"></path></svg>Raccourcis de cabine</div><p><kbd>Espace</kbd> lecture, <kbd>I</kbd> <kbd>O</kbd> pour la plage, <kbd>R</kbd> pour enregistrer, <kbd>?</kbd> pour tout voir.</p></div>
+<div class="feat"><div class="feat-t"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="3"></rect><circle cx="8.5" cy="9" r="1.4"></circle><path d="M7 16c1.2-1.6 3-2.4 5-2.4s3.8.8 5 2.4"></path></svg>Atelier mème et GIF</div><p>Un extrait, un texte, un GIF ou un MP3 pour le soundboard, sans quitter l'application.</p></div>
+</div>
+</section>
+
+<section id="export">
+<div class="kick">Livraison</div>
+<h2>Une prise, tous les formats du métier.</h2>
+<div class="fmts">
+<div class="fmt"><i style="background:#5EC27C"></i><b>MP4 + BR</b><span>vidéo incrustée</span></div>
+<div class="fmt"><i style="background:#FF6644"></i><b>GIF</b><span>extrait animé</span></div>
+<div class="fmt"><i style="background:#5AA9F0"></i><b>SRT</b><span>sous-titres</span></div>
+<div class="fmt"><i style="background:#A98BF0"></i><b>ASS</b><span>défilement BR</span></div>
+<div class="fmt"><i style="background:#FF9944"></i><b>DetX</b><span>détection</span></div>
+<div class="fmt"><i style="background:#DDAA44"></i><b>Croisillé</b><span>personnages × boucles</span></div>
+<div class="fmt"><i style="background:#F06AA0"></i><b>MP3</b><span>soundboard</span></div>
+<div class="fmt"><i style="background:#A98BF0"></i><b>WAV</b><span>sans perte</span></div>
+</div>
+</section>
+
+<div class="end">
+<div><h3>Prêt à doubler ?</h3><p>L'atelier s'ouvre sur votre dernier projet. Les clips, les répliques et les prises sont là où vous les avez laissés.</p></div>
+<div class="cta-row cta-row--flush"><a href="/app/#register" class="btn btn-primary">Créer un compte</a><a href="/app/" class="btn btn-outline">Ouvrir l'atelier</a></div>
+</div>
+</div>
+
+<footer><div class="wrap foot"><span>BANDE RYTHMO · local-first · 2026</span><span class="foot-links"><a href="/app/#login">Se connecter</a><a href="/confidentialite.html">Confidentialité</a></span></div></footer>
+
+<script type="module" src="/src/home/home.js"></script>
+</body>
 </html>

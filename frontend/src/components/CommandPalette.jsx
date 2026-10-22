@@ -20,6 +20,7 @@ export default function CommandPalette({ open, onClose, onNavigate, onNewClip, o
       { id: 'nav-memes',    ic: ICONS.meme,     label: 'Atelier Meme · GIF · Audio', run: () => onNavigate('memes') },
       { id: 'nav-activity', ic: ICONS.activity, label: 'Voir l’activité',        run: () => onNavigate('activity') },
       { id: 'nav-settings', ic: ICONS.settings, label: 'Réglages',                   run: () => onNavigate('settings') },
+      { id: 'nav-account',  ic: ICONS.user,     label: 'Mon compte',                 run: () => onNavigate('account') },
       { id: 'act-new',      ic: ICONS.plus,     label: 'Nouveau clip — importer une vidéo', run: () => onNewClip?.() },
       { id: 'act-help',     ic: ICONS.keyboard, label: 'Raccourcis clavier',         run: () => onShortcuts?.() },
     ]

@@ -18,7 +18,13 @@ uvicorn main:app --reload --port 8000 --timeout-graceful-shutdown 2
 # Frontend
 cd frontend
 npm run dev -- --port 5173
+# → http://localhost:5173/ = accueil (landing), /app/ = l'atelier
+
+# Tests
+cd backend && venv\Scripts\python.exe -m unittest discover tests
+cd frontend && npm test
 ```
+Second backend (worktree) : `BR_API_TARGET=http://127.0.0.1:8010` redirige le proxy Vite.
 
 ## Architecture
 ```
@@ -40,6 +46,7 @@ backend/
     fonts.py               # upload TTF/OTF + registry + resolve_font_path
     lexicon.py             # CRUD lexique de doublage (scope projet + globaux)
     translate.py           # /status + traduction (DeepL/LibreTranslate)
+    auth.py                # comptes locaux : register/login/logout, /me (profil, prefs, mdp, e-mail, sessions, export, suppression), forgot/reset/verify
   services/
     ffmpeg_service.py      # extract_segment, extract_thumbnail, export_gif, probe_fps, run_ffmpeg_with_progress, detect_scene_cuts, make_proxy, h264_encoder_args/available_hw_encoders
     whisper_service.py     # transcribe_segment (singleton model)
@@ -54,6 +61,8 @@ backend/
     export_service.py      # record_export/list/get/delete (historique)
     translate_service.py   # provider_status + translate (DeepL/LibreTranslate, env)
     vocal_service.py       # separation_status + separate (Demucs two-stems)
+    auth_service.py        # hash scrypt, sessions (token cookie → SHA-256 en base), liens à usage unique, throttle
+    mail_service.py        # SMTP (env) + messages reset / vérification
     jobs.py                # Job, JOBS dict, create_job, progress/cancel, JobStartResponse/JobStatus
   fonts/                   # AtkinsonHyperlegible-Bold, Caveat, Inter, JetBrainsMono-Bold, ShantellSans
   uploads/fonts/           # polices uploadées (gitignored) + _registry.json
@@ -63,6 +72,7 @@ frontend/src/
   App.jsx                  # top bar + nav rail + routing + handlers (rename/status/project/...)
   Icons.jsx                # set SVG unifié (Icon, ICONS)
   SettingsContext.jsx      # contexte préférences (accent, BR style, densité)
+  AuthContext.jsx          # compte (user, login/register/…) + sync préférences ↔ compte
   ProgressContext.jsx      # jobs[] + ProgressToasts (file de cartes empilées) + WS/poll
   ToastContext.jsx         # undo-toast (suppression réplique)
   detection.js             # classifyChar() + SIGN_KINDS + DEFAULT_SIGN_TOGGLES (miroir detection.py)
@@ -90,6 +100,9 @@ frontend/src/
     MemeGenerator.jsx      # memes — player unifié, résultat remplace source
     Preferences.jsx        # réglages (accent, BR style, densité, Whisper, Médiathèques Plex/Jellyfin)
     LibraryBrowser.jsx     # connexion + navigation médiathèque, switch Plex/Jellyfin (config/libraryProviders.js)
+    account/               # AuthScreen (connexion/inscription/oublié/reset, plein écran) + AccountScreen (Mon compte)
+  home/                    # home.css + home.js de la landing (frontend/index.html) ; confidentialite.html
+frontend/app/index.html    # entrée de l'atelier (/app/) ; frontend/index.html = landing (/)
 ```
 
 ## Bugs connus / résolus
@@ -312,6 +325,7 @@ Backend: fichier absent → `_BR_FONT_FALLBACKS` (warning loggé une fois par id
 ### Dégradation gracieuse (deps optionnelles)
 - **Traduction** : `DEEPL_API_KEY` ou `LIBRETRANSLATE_URL` (+ `LIBRETRANSLATE_API_KEY`). Sinon `GET /api/translate/status` → `available:false`, contrôle masqué, `POST` → 503.
 - **Séparation vocale** : `pip install demucs`. Sinon `GET /api/clips/vocal-separation/status` → `available:false`, contrôle masqué, `POST` → 503.
+- **E-mails de compte** : `SMTP_HOST` + `SMTP_FROM` (+ `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_SECURITY` starttls|ssl|none, `APP_URL` base des liens). Sinon `GET /api/auth/status` → `email:false`, « Mot de passe oublié » et la vérification masqués, `POST /forgot` → 503.
 
 ### Fait — Phase 0+1 REMAKE_PLAN (2026-06-07)
 - **Hardening** : SQLite WAL + busy_timeout + index FK, excepts loggés, garde
@@ -380,10 +394,25 @@ preuves `design/studio_v2_proofs/` (`shoot_studio_v2.py`, aucune écriture backe
 - Lecture sans son (AC3/EAC3/DTS dans Chrome) : remux AAC automatique de la piste par défaut
   (`utils/audioCodec.js`, `canPlayType`) ; `_extract_audio` ne copie que l'AAC/MP3.
 
+### Fait — Accueil + comptes (2026-10-22, branche `feat/accounts-home`)
+Briefs `design/design_handoff_redesign_v2/HOME.md` + `ACCOUNT.md`, refs `reference/home.html` + `redesign/screen-account.jsx`.
+- **Accueil** `/` (statique, `frontend/index.html`) : bande rythmo canvas, flux en onglets, formats.
+  Visiteur connecté → `/app/`. Captures `public/home/*.png` = **placeholders** (à remplacer avant publication).
+- **Comptes locaux** (base SQLite de l'atelier, pas de serveur distant) : `User`, `UserSession`, `AuthToken`.
+  Le compte ne porte que l'identité + les préférences ; clips/répliques/prises restent partagés sur la machine.
+  Cookie httpOnly `br_session` (SameSite=Lax), 30 j si « Rester connecté », sinon 12 h + cookie de session.
+  Login : erreur générique + 5 échecs / 15 min par IP+e-mail → 429.
+- **Écran auth** `#login` `#register` `#reset=<token>` ; `#verify=<token>` confirme l'adresse ; `#account` → Mon compte.
+- **Mon compte** : profil (avatar 6 couleurs, nom, nom de comédien), e-mail (modifier + vérification),
+  mot de passe (déconnecte les autres appareils), appareils connectés, archive JSON, suppression (tape l'e-mail).
+- **Préférences** suivent le compte : celles du compte gagnent à la connexion, puis chaque changement est poussé.
+- **Comédien** : rôle sans comédien → nom de comédien du compte affiché (Studio + onglet Voix), stocké seulement si édité.
+
 ### Reste à faire (non démarré)
 - **Phase 2 (REMAKE_PLAN)** : split DubbingWorkspace (3 650 lignes) en hooks,
   export côté serveur (DB source of truth), Vitest
-- **Gestion utilisateurs** : auth (JWT/session), multi-user, contenu par user
+- **Comptes — suite** : texte des conditions d'utilisation (case à cocher sans page), compte hébergé
+  (multi-appareils, gamification), contenu par utilisateur
 - **Intégrations tierces** : Stremio (lecture vidéo), qBittorrent (download → import auto)
 - `.rythmo.txt` import (DetX XML déjà couvert)
 

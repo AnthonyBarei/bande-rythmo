@@ -19,7 +19,8 @@ import { mergeTranslations } from '../utils/mergeTranslations'
 import { TRACK_COLORS } from '../config/tracks'
 import { fmtSMPTE } from '../utils/timecode'
 import { usePlayerVolume, applyPlayerVolume, toggleMuted } from '../utils/playerVolume'
-import { readComediens, writeComediens, writeEditorSelection } from '../utils/studioPrefs'
+import { readComediens, writeComediens, writeEditorSelection, withComedienDefault } from '../utils/studioPrefs'
+import { useAuth } from '../AuthContext'
 import { nextOpenLine } from '../utils/studio'
 import BandCanvas from './band/BandCanvas'
 import {
@@ -250,6 +251,9 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   const numTracks = Math.max(1, Object.keys(charMap).length)
   const canvasH = bandCanvasHeight(numTracks)
   const charList = useMemo(() => Object.keys(charMap), [charMap])
+  const { user: account } = useAuth()
+  const shownComediens = useMemo(() => withComedienDefault(comediens, charList, account ? (account.comedien || account.name) : ''),
+    [comediens, charList, account])
   charMapRef.current = charMap
   numTracksRef.current = numTracks
 
@@ -1531,7 +1535,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
           }}
           voixProps={{
             charList, charMap, subtitles, activeSubtitle, selectedIdx, setSelectedIdx,
-            takes, bandNow, comediens, onSetComedien: setComedien,
+            takes, bandNow, comediens: shownComediens, onSetComedien: setComedien,
             onRecord: recordRoleInStudio,
             onSeek: seekBand, clipDuration: clip.end - clip.start, onAddCharacter: addCharacter,
           }}

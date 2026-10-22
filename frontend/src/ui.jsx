@@ -307,22 +307,45 @@ export function Select({ value, options, onChange, width = 'auto', size = 'md', 
 // (.ui-input in index.css: bg2, border2, radius 9, accent border on focus);
 // the native input inside is bare. `.field-ring` draws the keyboard focus ring
 // on the wrapper, not inside it (FINAL_REVIEW #6).
-// size: sm 28px / 12px · md 32px / 13px · lg 44px / 16px (command palette).
+// size: sm 28px / 12px · md 32px / 13px · lg 44px / 16px (command palette)
+// · form 42px / 14px and form-sm 36px (ACCOUNT.md: surface2, radius 10,
+// accent border + 3px tinted ring on focus).
 // icon: leading ICONS path · right: trailing node (Kbd, hint) · style: wrapper
-// (layout: flex, width, margin) · inputStyle: the input · ref + every other
-// prop go to the <input>.
-export const Input = React.forwardRef(function Input({ size = 'md', icon, right, style, inputStyle, ...props }, ref) {
-  const iconSize = { sm: 13, md: 14, lg: 18 }[size] || 14
+// (layout: flex, width, margin) · inputStyle: the input · type="password" adds
+// the show/hide eye · error / hint: sentence under the field (passing either
+// prop, even null, wraps the field so it keeps focus when the message comes
+// and goes) · ref + every other prop go to the <input>.
+export const Input = React.forwardRef(function Input({ size = 'md', icon, right, style, inputStyle, type, error, hint, ...props }, ref) {
+  const [shown, setShown] = useState(false)
+  const form = size === 'form' || size === 'form-sm'
+  const iconSize = form ? 15 : ({ sm: 13, md: 14, lg: 18 }[size] || 14)
+  const password = type === 'password'
   function focusInput(e) {
     if (e.target !== e.currentTarget) return
     e.preventDefault()
     e.currentTarget.querySelector('input')?.focus()
   }
-  return (
-    <span className={`ui-input ui-input--${size} field-ring`} onMouseDown={focusInput} style={style}>
+  const field = (
+    <span className={`ui-input ui-input--${size}${form ? '' : ' field-ring'}${error ? ' ui-input--error' : ''}`}
+      onMouseDown={focusInput} style={error === undefined && hint === undefined ? style : undefined}>
       {icon && <Icon d={icon} size={iconSize} stroke={T.text3} style={{ flexShrink: 0 }} />}
-      <input ref={ref} {...props} style={inputStyle} />
+      <input ref={ref} type={password && shown ? 'text' : type} aria-invalid={error ? true : undefined} {...props} style={inputStyle} />
+      {password && (
+        <button type="button" data-rd onClick={() => setShown(s => !s)} title={shown ? 'Masquer' : 'Afficher'}
+          aria-label={shown ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
+          style={{ background: 'none', border: 'none', padding: 4, cursor: 'pointer', display: 'flex', opacity: shown ? 1 : 0.6 }}>
+          <Icon d={ICONS.eye} size={iconSize} stroke={shown ? T.accent : T.text3} />
+        </button>
+      )}
       {right}
+    </span>
+  )
+  if (error === undefined && hint === undefined) return field
+  return (
+    <span style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0, ...style }}>
+      {field}
+      {error ? <span role="alert" style={{ fontSize: 12, color: T.danger }}>{error}</span>
+        : hint ? <span style={{ fontSize: 12, color: T.text3 }}>{hint}</span> : null}
     </span>
   )
 })

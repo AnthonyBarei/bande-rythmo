@@ -22,7 +22,17 @@ const write = (store, key, value) => {
 export const readComediens = clipId => read(localStorage, `br-comediens-${clipId}`, {}) || {}
 export const writeComediens = (clipId, map) => write(localStorage, `br-comediens-${clipId}`, map)
 
-export const readStudioRole = clipId => read(localStorage, `br-studio-role-${clipId}`, null)
+// Signed in (ACCOUNT.md §4): a role with no comédien yet shows the account's
+// comédien name. Display only — nothing is stored until the field is edited,
+// and a field cleared on purpose ('' in the map) stays empty.
+export function withComedienDefault(map, roles, fallback) {
+  if (!fallback) return map
+  const out = { ...map }
+  for (const role of roles) if (!Object.hasOwn(out, role)) out[role] = fallback
+  return out
+}
+
+export const readStudioRole =clipId => read(localStorage, `br-studio-role-${clipId}`, null)
 export const writeStudioRole = (clipId, role) => write(localStorage, `br-studio-role-${clipId}`, role)
 
 export const readStudioMode = clipId => read(localStorage, `br-studio-mode-${clipId}`, 'line')

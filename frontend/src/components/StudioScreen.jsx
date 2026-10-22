@@ -5,7 +5,8 @@ import { useSettings } from '../SettingsContext'
 import { useToast } from '../ToastContext'
 import { adjacentLine, characterProgress, nextOpenLine } from '../utils/studio'
 import { usePlayerVolume, applyPlayerVolume, toggleMuted } from '../utils/playerVolume'
-import { readComediens, writeComediens, readStudioRole, writeStudioRole, readStudioMode, writeStudioMode, readEditorSelection } from '../utils/studioPrefs'
+import { readComediens, writeComediens, readStudioRole, writeStudioRole, readStudioMode, writeStudioMode, readEditorSelection, withComedienDefault } from '../utils/studioPrefs'
+import { useAuth } from '../AuthContext'
 import { rangeLines } from '../utils/continuous'
 import BandCanvas from './band/BandCanvas'
 import {
@@ -183,13 +184,17 @@ export default function StudioScreen({ clip, onBack, onExportDubbed }) {
   // ── Role (STUDIO_V2 §1): the character of the current réplique, chosen
   // explicitly from the picker or 1–9.
   const [comediens, setComediens] = useState(() => readComediens(clip.clip_id))
+  const { user } = useAuth()
+  const accountComedien = user ? (user.comedien || user.name) : ''
+  const shownComediens = useMemo(() => withComedienDefault(comediens, Object.keys(charMap), accountComedien),
+    [comediens, charMap, accountComedien])
   const [roleOpen, setRoleOpen] = useState(false)
   const roles = useMemo(() => Object.entries(charMap)
     .sort((a, b) => a[1] - b[1])
     .map(([name, i]) => ({
       name, label: name || 'Sans personnage', color: TRACK_HEXES[i % TRACK_HEXES.length],
-      comedien: comediens[name] || '', ...characterProgress(subtitles, takes, name),
-    })), [charMap, comediens, subtitles, takes])
+      comedien: shownComediens[name] || '', ...characterProgress(subtitles, takes, name),
+    })), [charMap, shownComediens, subtitles, takes])
   const roleInfo = roles.find(r => r.name === role) || null
   useEffect(() => { if (role != null) writeStudioRole(clip.clip_id, role) }, [clip.clip_id, role])
 
@@ -504,7 +509,7 @@ export default function StudioScreen({ clip, onBack, onExportDubbed }) {
             {roleInfo && (
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: T.fs.xs, color: T.text3 }}>
                 Comédien
-                <Input size="sm" value={comediens[role] || ''} placeholder="Nom du comédien…" aria-label={`Comédien de ${roleInfo.label}`}
+                <Input size="sm" value={shownComediens[role] || ''} placeholder="Nom du comédien…" aria-label={`Comédien de ${roleInfo.label}`}
                   onChange={e => setComedien(e.target.value)} style={{ width: 160 }} />
               </label>
             )}
