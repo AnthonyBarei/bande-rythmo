@@ -6,6 +6,7 @@ import { useProgress } from '../ProgressContext'
 import { fmtSMPTE } from '../utils/timecode'
 import { sourceTitle, urlFilename } from '../utils/sourceTitle'
 import { streamLabel } from '../utils/streamLabel'
+import { autoAudioStream } from '../utils/audioCodec'
 import { LIBRARY_PROVIDERS } from '../config/libraryProviders'
 
 const TAB = { LOCAL: 'local', LIBRARY: 'library', URL: 'url' }
@@ -188,6 +189,7 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
 
       const hasStreams = data.video_streams.length > 0 || data.audio_streams.length > 0
       setStreams(hasStreams ? data : null)
+      setAudioStream(autoAudioStream(data.audio_streams))
     } catch (err) {
       setError('Erreur : ' + err.message)
     } finally {
@@ -233,6 +235,8 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
 
     const hasStreams = (source.video_streams?.length > 0) || (source.audio_streams?.length > 0)
     setStreams(hasStreams ? { video_streams: source.video_streams, audio_streams: source.audio_streams } : null)
+    // Dolby / DTS default track would play silent — start its AAC remux right away.
+    setAudioStream(autoAudioStream(source.audio_streams))
   }
 
   const videoOptions = streams?.video_streams ?? []
