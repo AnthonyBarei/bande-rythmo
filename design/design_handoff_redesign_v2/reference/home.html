@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Bande Rythmo — atelier de doublage</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&amp;family=IBM+Plex+Sans:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;600;700&amp;display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0b0b0d;--bg2:#101013;--surface:#16161a;--surface2:#1c1c21;--border:#26262d;--border2:#32323b;--border3:#3f3f4a;--text:#ECECEF;--text2:#A6A6AE;--text3:#7A7A85;--text4:#565660;--accent:#F5C518;--lea:#F5C518;--marc:#5AA9F0;--sarah:#F06AA0;--noah:#5EC27C;--ui:'IBM Plex Sans',system-ui,sans-serif;--mono:'JetBrains Mono',monospace;--hand:'Caveat',cursive}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--ui);font-size:16px;line-height:1.55;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+a{color:var(--accent);text-decoration:none}a:hover{color:#ffd84a}
+::selection{background:rgba(245,197,24,.35)}
+.wrap{max-width:1200px;margin:0 auto;padding:0 32px}
+.btn{display:inline-flex;align-items:center;gap:9px;height:44px;padding:0 20px;border-radius:10px;font:600 15px var(--ui);white-space:nowrap;transition:background .15s,border-color .15s,color .15s}
+.btn-sm{height:36px;padding:0 14px;font-size:14px;border-radius:9px}
+.btn-primary{background:var(--accent);color:#0b0b0d}.btn-primary:hover{background:#ffd84a;color:#0b0b0d}
+.btn-outline{border:1px solid var(--border2);color:var(--text)}.btn-outline:hover{border-color:var(--border3);background:var(--surface);color:var(--text)}
+.btn-ghost{color:var(--text2)}.btn-ghost:hover{color:var(--text)}
+.kick{font:700 11px var(--mono);letter-spacing:.18em;color:var(--text3);text-transform:uppercase}
+/* nav */
+nav{position:sticky;top:0;z-index:20;background:rgba(11,11,13,.86);backdrop-filter:blur(10px);border-bottom:1px solid var(--border)}
+.nav{display:flex;align-items:center;gap:32px;height:64px}
+.logo{display:flex;align-items:center;gap:11px;color:var(--text);font:700 14px var(--ui);letter-spacing:.06em}.logo:hover{color:var(--text)}
+.logo-tile{width:34px;height:34px;border-radius:10px;background:var(--accent);display:flex;align-items:center;justify-content:center}
+.links{display:flex;gap:26px}.links a{color:var(--text2);font-size:14px}.links a:hover{color:var(--text)}
+.nav-r{margin-left:auto;display:flex;gap:8px;align-items:center}
+@media(max-width:860px){.links{display:none}}
+/* hero */
+.hero{padding:88px 32px 56px;display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:56px;align-items:end}
+@media(max-width:900px){.hero{grid-template-columns:1fr;gap:28px;padding:56px 32px 40px}}
+h1{font-size:clamp(46px,6.4vw,84px);line-height:.98;letter-spacing:-.035em;font-weight:700;margin-top:20px;text-wrap:balance}
+h1 em{font:700 1.12em var(--hand);letter-spacing:0;color:var(--accent);font-style:normal}
+.lede{font-size:18px;color:var(--text2);max-width:46ch;text-wrap:pretty}
+.cta-row{display:flex;flex-wrap:wrap;gap:10px;margin-top:26px;align-items:center}
+.cta-note{font-size:13px;color:var(--text3);margin-top:12px}
+/* band */
+.band{position:relative;border-top:1px solid var(--border);border-bottom:1px solid var(--border);background:#0e0e11}
+.band canvas{display:block;width:100%;height:228px}
+.band-meta{position:absolute;top:12px;right:32px;display:flex;gap:8px;font:600 11px var(--mono);color:var(--text3)}
+.band-meta span{padding:4px 9px;border:1px solid var(--border2);border-radius:6px;background:rgba(11,11,13,.8)}
+.band-tc{color:var(--text)!important}
+/* product shot */
+.shot{margin:72px auto 0;border:1px solid var(--border2);border-radius:16px;overflow:hidden;background:var(--surface);box-shadow:0 30px 80px rgba(0,0,0,.55)}
+.shot img{display:block;width:100%;height:auto}
+.caption{display:flex;justify-content:space-between;gap:16px;margin-top:14px;font-size:13px;color:var(--text3)}
+/* sections */
+section{padding:112px 0 0}
+h2{font-size:clamp(32px,3.6vw,48px);line-height:1.05;letter-spacing:-.025em;font-weight:700;margin-top:14px;max-width:20ch;text-wrap:balance}
+.h2-sub{font-size:17px;color:var(--text2);max-width:58ch;margin-top:14px;text-wrap:pretty}
+/* flow */
+.flow{display:grid;grid-template-columns:minmax(0,340px) minmax(0,1fr);gap:40px;margin-top:48px;align-items:start}
+@media(max-width:900px){.flow{grid-template-columns:1fr}}
+.steps{display:flex;flex-direction:column}
+.step{display:grid;grid-template-columns:44px 1fr;gap:4px 12px;padding:18px 16px;border-radius:12px;border:1px solid transparent;cursor:pointer;text-align:left;background:none;color:var(--text);font-family:var(--ui)}
+.step:hover{background:var(--bg2)}
+.step[aria-selected="true"]{background:var(--surface);border-color:var(--border2)}
+.step-n{grid-row:span 2;font:700 13px var(--mono);color:var(--text4);padding-top:3px}
+.step[aria-selected="true"] .step-n{color:var(--accent)}
+.step-t{font-size:18px;font-weight:600}
+.step-b{font-size:14.5px;color:var(--text2);line-height:1.5}
+.step:not([aria-selected="true"]) .step-b{display:none}
+.flow-shot{border:1px solid var(--border2);border-radius:14px;overflow:hidden;background:var(--surface);aspect-ratio:1440/900;position:sticky;top:88px}
+.flow-shot img{width:100%;height:100%;object-fit:cover;object-position:top left;display:block;animation:fade .3s ease-out}
+@keyframes fade{from{opacity:.2}to{opacity:1}}
+/* features */
+.feats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0 48px;margin-top:40px}
+@media(max-width:900px){.feats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){.feats{grid-template-columns:1fr}}
+.feat{padding:26px 0;border-top:1px solid var(--border)}
+.feat-t{display:flex;align-items:center;gap:10px;font-size:16px;font-weight:600;margin-bottom:6px}
+.feat-t svg{color:var(--accent);flex-shrink:0}
+.feat p{font-size:14.5px;color:var(--text2);text-wrap:pretty}
+kbd{font:600 12px var(--mono);padding:1px 6px;border:1px solid var(--border2);border-bottom-width:2px;border-radius:5px;background:var(--surface2);color:var(--text)}
+/* formats */
+.fmts{display:flex;flex-wrap:wrap;gap:10px;margin-top:36px}
+.fmt{display:flex;align-items:center;gap:10px;padding:12px 16px;border:1px solid var(--border);border-radius:10px;background:var(--bg2)}
+.fmt b{font:700 13px var(--mono);letter-spacing:.04em}
+.fmt span{font-size:13px;color:var(--text3)}
+.fmt i{width:8px;height:8px;border-radius:2px;flex-shrink:0}
+/* cta */
+.end{margin:120px 0 0;padding:72px 0;border-top:1px solid var(--border);display:grid;grid-template-columns:minmax(0,1fr) auto;gap:32px;align-items:center}
+@media(max-width:760px){.end{grid-template-columns:1fr}}
+.end h3{font:700 clamp(40px,5vw,64px)/1 var(--hand);color:var(--accent)}
+.end p{color:var(--text2);margin-top:10px;max-width:52ch}
+footer{border-top:1px solid var(--border);padding:28px 0 48px;font:12px var(--mono);color:var(--text4)}
+.foot{display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px}
+.foot a{color:var(--text3)}.foot a:hover{color:var(--text)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
+</style>
+</head>
+<body>
+<nav><div class="wrap nav">
+<a href="#" class="logo"><span class="logo-tile"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#0b0b0d" stroke-width="2" stroke-linecap="round"><path d="M5 8v8M8 5v14M11 9v6M14 4v16M17 8v8M20 10v4"></path></svg></span>BANDE RYTHMO</a>
+<div class="links"><a href="#flux">Comment ça marche</a><a href="#atelier">Fonctionnalités</a><a href="#export">Export</a></div>
+<div class="nav-r"><a href="redesign.html#login" class="btn btn-sm btn-ghost">Se connecter</a><a href="redesign.html#register" class="btn btn-sm btn-primary">Créer un compte</a></div>
+</div></nav>
+
+<header class="wrap hero">
+<div>
+<div class="kick">Atelier de doublage · local</div>
+<h1>Le doublage, à <em>la cadence</em> du studio.</h1>
+</div>
+<div>
+<p class="lede">Découpez vos rushes, transcrivez avec Whisper et calez la bande rythmo image par image. Vos vidéos et vos voix restent sur votre machine.</p>
+<div class="cta-row"><a href="redesign.html#register" class="btn btn-primary">Créer un compte</a><a href="redesign.html" class="btn btn-outline">Ouvrir l'atelier</a></div>
+<div class="cta-note">Gratuit. Fonctionne aussi sans compte.</div>
+</div>
+</header>
+
+<div class="band" aria-label="Bande rythmo de démonstration">
+<canvas id="band"></canvas>
+<div class="band-meta"><span class="band-tc" id="tc">00:00:00:00</span><span>24 i/s</span></div>
+</div>
+
+<div class="wrap">
+<div class="shot"><img src="assets/home/editor.png" alt="L'éditeur : vidéo, bande rythmo par personnage et liste des répliques"></div>
+<div class="caption"><span>L'éditeur : la vidéo, la bande par personnage et les répliques côte à côte.</span><span style="font-family:var(--mono)">1440 × 900</span></div>
+
+<section id="flux">
+<div class="kick">Le flux</div>
+<h2>Du rush brut à la prise validée.</h2>
+<p class="h2-sub">Quatre écrans, dans l'ordre où vous travaillez. Chaque étape reprend là où la précédente s'arrête.</p>
+<div class="flow">
+<div class="steps" role="tablist">
+<button class="step" role="tab" aria-selected="true" data-img="assets/home/import.png"><span class="step-n">01</span><span class="step-t">Importer</span><span class="step-b">Fichier local, Plex ou URL. Posez IN et OUT au clavier, nommez les clips, choisissez la piste audio.</span></button>
+<button class="step" role="tab" aria-selected="false" data-img="assets/home/editor.png"><span class="step-n">02</span><span class="step-t">Éditer la bande</span><span class="step-b">Whisper transcrit, vous corrigez. Une piste par personnage, le texte étiré sur la durée de la réplique, respirations et détection au clavier.</span></button>
+<button class="step" role="tab" aria-selected="false" data-img="assets/home/studio.png"><span class="step-n">03</span><span class="step-t">Enregistrer</span><span class="step-b">Choisissez le rôle, réplique par réplique ou en continu. Décompte sur image figée, prises comparées en A/B.</span></button>
+<button class="step" role="tab" aria-selected="false" data-img="assets/home/export.png"><span class="step-n">04</span><span class="step-t">Exporter</span><span class="step-b">MP4 avec la bande incrustée, sous-titres, documents studio ou audio. Le rendu tourne en tâche de fond.</span></button>
+</div>
+<div class="flow-shot"><img id="flowImg" src="assets/home/import.png" alt="Aperçu de l'étape"></div>
+</div>
+</section>
+
+<section id="atelier">
+<div class="kick">Pensé pour la cabine</div>
+<h2>Tout est là où vous l'attendez.</h2>
+<div class="feats">
+<div class="feat"><div class="feat-t"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18M12 3a14 14 0 010 18 14 14 0 010-18z"></path></svg>Whisper en local</div><p>Transcription par clip, langue choisie au cas par cas. Aucun fichier n'est envoyé.</p></div>
+<div class="feat"><div class="feat-t"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="9" cy="8" r="3.5"></circle><path d="M2 21v-1a7 7 0 0114 0v1M16 5.5a3.5 3.5 0 010 6.5M22 21v-1a7 7 0 00-5-6.7"></path></svg>Une piste par voix</div><p>Couleur par personnage, texte étiré sur la durée : la convention de la bande rythmo, en natif.</p></div>
+<div class="feat"><div class="feat-t"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 14c0-3 2-5 5-5s3 3 6 3 5-2 5-5"></path><circle cx="8" cy="14" r="1.6"></circle><circle cx="14" cy="12" r="1.6"></circle></svg>Respirations et détection</div><p>Souffles, pauses et signes de détection posés sur la lettre. Tout reste éditable et s'exporte.</p></div>
+<div class="feat"><div class="feat-t"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="9" y="2.5" width="6" height="12" rx="3"></rect><path d="M5 11a7 7 0 0014 0M12 18.5V22"></path></svg>Studio d'enregistrement</div><p>Décompte, élan avant la réplique, prises par rôle et comparaison A/B. La progression du rôle reste visible.</p></div>
+<div class="feat"><div class="feat-t"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="2" y="6" width="20" height="12" rx="2"></rect><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"></path></svg>Raccourcis de cabine</div><p><kbd>Espace</kbd> lecture, <kbd>I</kbd> <kbd>O</kbd> pour la plage, <kbd>R</kbd> pour enregistrer, <kbd>?</kbd> pour tout voir.</p></div>
+<div class="feat"><div class="feat-t"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="3"></rect><circle cx="8.5" cy="9" r="1.4"></circle><path d="M7 16c1.2-1.6 3-2.4 5-2.4s3.8.8 5 2.4"></path></svg>Atelier mème et GIF</div><p>Un extrait, un texte, un GIF ou un MP3 pour le soundboard, sans quitter l'application.</p></div>
+</div>
+</section>
+
+<section id="export">
+<div class="kick">Livraison</div>
+<h2>Une prise, tous les formats du métier.</h2>
+<div class="fmts">
+<div class="fmt"><i style="background:#5EC27C"></i><b>MP4 + BR</b><span>vidéo incrustée</span></div>
+<div class="fmt"><i style="background:#FF6644"></i><b>GIF</b><span>extrait animé</span></div>
+<div class="fmt"><i style="background:#5AA9F0"></i><b>SRT</b><span>sous-titres</span></div>
+<div class="fmt"><i style="background:#A98BF0"></i><b>ASS</b><span>défilement BR</span></div>
+<div class="fmt"><i style="background:#FF9944"></i><b>DetX</b><span>détection</span></div>
+<div class="fmt"><i style="background:#DDAA44"></i><b>Croisillé</b><span>personnages × boucles</span></div>
+<div class="fmt"><i style="background:#F06AA0"></i><b>MP3</b><span>soundboard</span></div>
+<div class="fmt"><i style="background:#A98BF0"></i><b>WAV</b><span>sans perte</span></div>
+</div>
+</section>
+
+<div class="end">
+<div><h3>Prêt à doubler ?</h3><p>L'atelier s'ouvre sur votre dernier projet. Les clips, les répliques et les prises sont là où vous les avez laissés.</p></div>
+<div class="cta-row" style="margin:0"><a href="redesign.html#register" class="btn btn-primary">Créer un compte</a><a href="redesign.html" class="btn btn-outline">Ouvrir l'atelier</a></div>
+</div>
+</div>
+
+<footer><div class="wrap foot"><span>BANDE RYTHMO · local-first · 2026</span><span style="display:flex;gap:18px"><a href="redesign.html#login">Se connecter</a><a href="#">Confidentialité</a></span></div></footer>
+
+<script>
+(function(){
+  // flow tabs
+  const steps=[...document.querySelectorAll('.step')],img=document.getElementById('flowImg');
+  steps.forEach(s=>s.addEventListener('click',()=>{steps.forEach(x=>x.setAttribute('aria-selected',x===s));img.src=s.dataset.img;img.style.animation='none';img.offsetHeight;img.style.animation='';}));
+  // band
+  const LINES=[
+    {c:0,s:1.0,e:2.6,t:'Attends, quelque chose ne va pas.'},{c:1,s:3.0,e:4.2,t:'De quoi tu parles ?'},
+    {c:0,s:4.6,e:6.8,t:'Regarde la porte. Elle était fermée.'},{c:2,s:7.2,e:8.0,t:'(souffle)'},
+    {c:1,s:8.4,e:11.0,t:'On devrait appeler quelqu’un, non ?'},{c:0,s:11.4,e:13.2,t:'Pas le temps. Viens.'},
+    {c:2,s:13.6,e:15.4,t:'Et si c’était un piège ?'},{c:1,s:15.8,e:17.2,t:'C’est forcément un piège.'}];
+  const NAMES=['LÉA','MARC','SARAH'],COLS=['#F5C518','#5AA9F0','#F06AA0'],LOOP=18.6,PX=150,FPS=24;
+  const cv=document.getElementById('band'),tcEl=document.getElementById('tc'),ctx=cv.getContext('2d');
+  const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let t=3.6,last=performance.now();
+  const pad=n=>String(n).padStart(2,'0');
+  const tc=s=>`00:00:${pad(Math.floor(s))}:${pad(Math.floor((s%1)*FPS))}`;
+  function draw(now){
+    const dt=Math.min(.05,(now-last)/1000);last=now;if(!reduce)t=(t+dt)%LOOP;
+    const dpr=devicePixelRatio||1,W=cv.offsetWidth,H=cv.offsetHeight;
+    if(cv.width!==W*dpr||cv.height!==H*dpr){cv.width=W*dpr;cv.height=H*dpr;}
+    ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,W,H);
+    const ruler=22,th=(H-ruler)/3,cx=Math.round(W*.3);
+    for(let i=0;i<3;i++){const y=i*th;
+      ctx.fillStyle=i%2?'#101013':'#0e0e11';ctx.fillRect(0,y,W,th);
+      ctx.fillStyle=COLS[i];ctx.fillRect(0,y+8,3,16);
+      ctx.font='700 10px "JetBrains Mono"';ctx.textBaseline='top';ctx.fillText(NAMES[i],10,y+10);
+      ctx.strokeStyle='#1d1d23';ctx.beginPath();ctx.moveTo(0,y+th+.5);ctx.lineTo(W,y+th+.5);ctx.stroke();}
+    const t0=t-cx/PX,t1=t+(W-cx)/PX;
+    for(let s=Math.floor(t0*2)/2;s<=t1;s+=.5){const x=cx+(s-t)*PX,maj=Math.abs(s%1)<.01;
+      ctx.strokeStyle=maj?'#2a2a32':'#1c1c22';ctx.beginPath();ctx.moveTo(x+.5,H-ruler);ctx.lineTo(x+.5,H-ruler+(maj?9:5));ctx.stroke();
+      if(maj){ctx.fillStyle='#565660';ctx.font='10px "JetBrains Mono"';ctx.textBaseline='bottom';ctx.fillText(tc(((s%LOOP)+LOOP)%LOOP),x+4,H-3);}}
+    for(const k of [-1,0,1])for(const L of LINES){
+      const s=L.s+k*LOOP,e=L.e+k*LOOP,x0=cx+(s-t)*PX,x1=cx+(e-t)*PX;if(x1<0||x0>W)continue;
+      const y=L.c*th,col=COLS[L.c],on=t>=s&&t<=e;
+      ctx.fillStyle=col+(on?'26':'14');ctx.fillRect(x0,y+6,x1-x0,th-12);
+      ctx.fillStyle=col;ctx.fillRect(x0,y+6,2,th-12);
+      ctx.font=`700 ${Math.round(th*.5)}px Caveat`;ctx.textBaseline='middle';
+      const w=ctx.measureText(L.t).width,sx=Math.min(1.6,(x1-x0-16)/w);
+      ctx.save();ctx.translate(x0+8,y+th/2+2);ctx.scale(sx,1);ctx.fillStyle=on?'#ffffff':'rgba(236,236,239,.42)';ctx.fillText(L.t,0,0);ctx.restore();}
+    ctx.fillStyle='rgba(11,11,13,.5)';ctx.fillRect(0,0,cx-1,H-ruler);
+    ctx.fillStyle='#F5C518';ctx.fillRect(cx-1,0,2,H-ruler);
+    ctx.beginPath();ctx.moveTo(cx-7,0);ctx.lineTo(cx+7,0);ctx.lineTo(cx,9);ctx.closePath();ctx.fill();
+    tcEl.textContent=tc(t);
+    requestAnimationFrame(draw);}
+  (document.fonts?document.fonts.ready:Promise.resolve()).then(()=>requestAnimationFrame(draw));
+})();
+</script>
+</body>
+</html>

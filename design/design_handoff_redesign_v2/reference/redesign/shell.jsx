@@ -46,7 +46,8 @@
     );
   }
 
-  function TopBar({ accent, onCmd, onHelp }) {
+  function TopBar({ accent, onCmd, onHelp, user, go, onLogin, onLogout }) {
+    const { Popover, MenuItem, MenuSep } = window.RD;
     return (
       <div style={{ height: 52, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 14, padding: '0 18px', borderBottom: `1px solid ${T.border}`, background: T.bg }}>
         <span style={{ fontSize: T.fs.sm, fontWeight: 700, letterSpacing: 0.5 }}>BANDE RYTHMO <span style={{ color: T.text4, fontWeight: 400 }}>· studio</span></span>
@@ -63,7 +64,22 @@
         <Btn size="sm" icon={ICONS.keyboard} title="Raccourcis (?)" onClick={onHelp} />
         <Btn size="sm" icon={ICONS.activity} title="Activité" />
         <div style={{ width: 1, height: 22, background: T.border }} />
-        <Avatar name="Studio" color={accent} size={30} />
+        {user ? (
+          <Popover align="right" width={240} trigger={(o, tg) => (
+            <button onClick={tg} title="Mon compte" style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', borderRadius: '50%', boxShadow: o ? `0 0 0 2px ${accent}` : 'none' }}><Avatar name={user.name} color={user.color || accent} size={30} /></button>)}>
+            {close => <>
+              <div style={{ padding: '8px 10px 10px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                <Avatar name={user.name} color={user.color || accent} size={32} />
+                <div style={{ minWidth: 0 }}><div style={{ fontSize: T.fs.sm, fontWeight: 600 }}>{user.name}</div><div style={{ fontSize: 11.5, color: T.text3, overflow: 'hidden', textOverflow: 'ellipsis' }}>{user.email}</div></div>
+              </div>
+              <MenuSep />
+              <MenuItem icon={ICONS.user} onClick={() => { close(); go('account'); }}>Mon compte</MenuItem>
+              <MenuItem icon={ICONS.settings} onClick={() => { close(); go('settings'); }}>Réglages</MenuItem>
+              <MenuSep />
+              <MenuItem icon={ICONS.chevronL} onClick={() => { close(); onLogout(); }}>Se déconnecter</MenuItem>
+            </>}
+          </Popover>
+        ) : <Btn size="sm" variant="outline" icon={ICONS.user} onClick={() => onLogin('login')}>Se connecter</Btn>}
       </div>
     );
   }
@@ -80,6 +96,7 @@
       { label: 'Atelier Meme · GIF · Audio', ic: ICONS.meme, fn: () => go('meme') },
       { label: 'Exporter', ic: ICONS.download, fn: () => go('export') },
       { label: 'Voir l\u2019activité', ic: ICONS.activity, fn: () => go('activity') },
+      { label: 'Mon compte', ic: ICONS.user, fn: () => go('account') },
       { label: 'Réglages', ic: ICONS.settings, fn: () => go('settings') },
       { label: 'Transcrire avec Whisper', ic: ICONS.sparkle, fn: () => go('activity') },
     ].filter(c => c.label.toLowerCase().includes(q.toLowerCase()));

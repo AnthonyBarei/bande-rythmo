@@ -42,13 +42,21 @@
 <script type="text/babel" src="redesign/screen-editor.jsx"></script>
 <script type="text/babel" src="redesign/screen-export.jsx"></script>
 <script type="text/babel" src="redesign/screen-studio.jsx"></script>
+<script type="text/babel" src="redesign/screen-account.jsx"></script>
 <script type="text/babel" src="redesign/screen-misc.jsx"></script>
 
 <script type="text/babel">
   const { useState, useEffect } = React;
 
   function App() {
-    const [screen, setScreen] = useState('library');
+    const hashAuth = () => (['login', 'register'].includes(location.hash.slice(1)) ? location.hash.slice(1) : null);
+    const [screen, setScreen] = useState(hashAuth() ? 'auth' : 'library');
+    const [authMode, setAuthMode] = useState(hashAuth() || 'login');
+    const [user, setUserS] = useState(() => { try { return JSON.parse(localStorage.getItem('br-user')); } catch (e) { return null; } });
+    const setUser = (u) => { setUserS(u); if (u) localStorage.setItem('br-user', JSON.stringify(u)); else localStorage.removeItem('br-user'); };
+    const openAuth = (m) => { setAuthMode(m); history.replaceState(null, '', '#' + m); setScreen('auth'); };
+    const leaveAuth = (s = 'library') => { history.replaceState(null, '', location.pathname); setScreen(s); };
+    useEffect(() => { const h = () => { const m = hashAuth(); if (m) { setAuthMode(m); setScreen('auth'); } }; window.addEventListener('hashchange', h); return () => window.removeEventListener('hashchange', h); }, []);
     const [cmd, setCmd] = useState(false);
     const [help, setHelp] = useState(false);
     const [accent, setAccent] = useState('#F5C518');
@@ -81,6 +89,7 @@
       export: <S.Export go={go} accent={accent} />,
       meme: <S.Meme go={go} accent={accent} />,
       activity: <S.Activity go={go} accent={accent} />,
+      account: <S.Account go={go} accent={accent} user={user} setUser={setUser} onLogin={openAuth} onLogout={() => { setUser(null); openAuth('login'); }} />,
       settings: <S.Settings go={go} accent={accent} setAccent={setAccent} brStyle={brStyle} setBrStyle={setBrStyle} density={density} setDensity={setDensity} />,
     };
 
@@ -88,11 +97,13 @@
     // editor + export are full-bleed (own top bars); others use the shell top bar
     const fullBleed = screen === 'editor';
 
+    if (screen === 'auth') return <S.Auth key={authMode} initial={authMode} accent={accent} onDone={(u) => { setUser(u); leaveAuth('library'); }} onLocal={() => leaveAuth('library')} />;
+
     return (
       <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: '#0b0b0d' }}>
         <Rail screen={screen} go={go} accent={accent} />
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-          {!fullBleed && <TopBar accent={accent} onCmd={() => setCmd(true)} onHelp={() => setHelp(true)} />}
+          {!fullBleed && <TopBar accent={accent} onCmd={() => setCmd(true)} onHelp={() => setHelp(true)} user={user} go={go} onLogin={openAuth} onLogout={() => { setUser(null); openAuth('login'); }} />}
           <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
             {screens[screen]}
           </div>
