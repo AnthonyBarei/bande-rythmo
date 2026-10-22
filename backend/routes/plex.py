@@ -1,3 +1,5 @@
+from urllib.parse import quote
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -81,6 +83,31 @@ async def library_items(section_id: str, search: str = "", offset: int = 0, limi
                     "duration": item.get("duration"),
                 }
                 for item in items
+            ],
+        }
+    except Exception as e:
+        raise HTTPException(502, str(e))
+
+
+@router.get("/children/{rating_key}")
+async def children(rating_key: str):
+    """Seasons of a show, or episodes of a season (Specials last)."""
+    try:
+        data = await plex_get(f"/library/metadata/{quote(rating_key)}/children")
+        items = data.get("MediaContainer", {}).get("Metadata", [])
+        items.sort(key=lambda i: i.get("type") == "season" and i.get("index") == 0)
+        return {
+            "items": [
+                {
+                    "rating_key": item["ratingKey"],
+                    "title": f"E{item['index']:02d} · {item['title']}" if item.get("type") == "episode" and item.get("index") is not None else item["title"],
+                    "year": item.get("year") or item.get("parentYear"),
+                    "type": item["type"],
+                    "thumb": thumb_url(item.get("thumb", "")),
+                    "duration": item.get("duration"),
+                }
+                for item in items
+                if item.get("type") in ("season", "episode")
             ],
         }
     except Exception as e:

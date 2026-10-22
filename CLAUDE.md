@@ -369,6 +369,10 @@ preuves `design/studio_v2_proofs/` (`shoot_studio_v2.py`, aucune écriture backe
 - Auth : header `Authorization: MediaBrowser …, Token="…"` (X-Emby-Token / api_key désactivés par défaut
   dès Jellyfin 10.12) ; URL de flux `?ApiKey=` (redigée par `_redact_token`). Séries → épisodes listés.
 - Source : `libraryName/libraryTitle/libraryYear` (ex-`plexTitle/plexYear`).
+- Séries en dossiers : série → saisons → épisodes (`GET {api}/children/{id}`, fil d'Ariane + Retour,
+  série à saison unique ouverte directement). Jellyfin : `/Shows/{id}/Seasons|Episodes` (sans dossiers
+  de saison sur disque, une saison n'a pas d'enfants via `ParentId`). Recherche → séries + épisodes.
+- Captures Claude Design : `design/mediatheque_2026-10-22/` (`shoot_mediatheque.py`, README = pistes UI).
 
 ### Reste à faire (non démarré)
 - **Phase 2 (REMAKE_PLAN)** : split DubbingWorkspace (3 650 lignes) en hooks,

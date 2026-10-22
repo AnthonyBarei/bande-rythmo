@@ -1,4 +1,5 @@
 from typing import Annotated
+from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Path
 from pydantic import BaseModel
@@ -11,12 +12,13 @@ from services.jellyfin_service import (
 
 # Same response shapes as routes/plex.py — the frontend LibraryBrowser is
 # provider-agnostic (items keyed by `rating_key`, parts with stream info).
+# Show libraries browse as folders: series → seasons → episodes (/children).
 
 router = APIRouter()
 
 JellyfinId = Annotated[str, Path(pattern=r"^[A-Za-z0-9-]{1,64}$")]
 
-_TYPE = {"Movie": "movie", "Episode": "episode", "Series": "show"}
+_TYPE = {"Movie": "movie", "Episode": "episode", "Series": "show", "Season": "season"}
 _ITEM_FIELDS = "ProductionYear,RunTimeTicks,ImageTags,SeriesPrimaryImageTag"
 
 
@@ -30,12 +32,27 @@ def _duration_ms(item: dict) -> int | None:
     return ticks // 10_000 if ticks else None
 
 
-def _title(item: dict) -> str:
+def _title(item: dict, in_season: bool = False) -> str:
+    """Episodes: `Series · S01E02 · Name` in search results, `E02 · Name` inside their season."""
     if item.get("Type") != "Episode":
         return item.get("Name") or ""
     season, episode = item.get("ParentIndexNumber"), item.get("IndexNumber")
+    if in_season:
+        return " · ".join(p for p in (f"E{episode:02d}" if episode is not None else "", item.get("Name")) if p)
     code = f"S{season:02d}E{episode:02d}" if season is not None and episode is not None else ""
     return " · ".join(p for p in (item.get("SeriesName"), code, item.get("Name")) if p)
+
+
+def _card(item: dict, in_season: bool = False) -> dict:
+    return {
+        "rating_key": item["Id"],
+        "title": _title(item, in_season),
+        "year": item.get("ProductionYear"),
+        "type": _TYPE.get(item.get("Type"), item.get("Type")),
+        "thumb": thumb_url(item),
+        # A series' RunTimeTicks is one episode's — meaningless on a folder.
+        "duration": None if item.get("Type") in ("Series", "Season") else _duration_ms(item),
+    }
 
 
 @router.get("/probe")
@@ -88,8 +105,9 @@ async def library_items(section_id: JellyfinId, search: str = "", offset: int = 
         params: dict = {
             "ParentId": section_id,
             "Recursive": "true",
-            "IncludeItemTypes": "Movie,Episode",
-            "SortBy": "SeriesSortName,ParentIndexNumber,IndexNumber,SortName",
+            # Shows list as series folders; a search also reaches episodes directly.
+            "IncludeItemTypes": "Movie,Series,Episode" if search else "Movie,Series",
+            "SortBy": "SortName",
             "SortOrder": "Ascending",
             "StartIndex": offset,
             "Limit": limit,
@@ -102,18 +120,34 @@ async def library_items(section_id: JellyfinId, search: str = "", offset: int = 
         items = data.get("Items", [])
         return {
             "total": data.get("TotalRecordCount", len(items)),
-            "items": [
-                {
-                    "rating_key": item["Id"],
-                    "title": _title(item),
-                    "year": item.get("ProductionYear"),
-                    "type": _TYPE.get(item.get("Type"), item.get("Type")),
-                    "thumb": thumb_url(item),
-                    "duration": _duration_ms(item),
-                }
-                for item in items
-            ],
+            "items": [_card(item) for item in items],
         }
+    except Exception as e:
+        raise HTTPException(502, str(e))
+
+
+@router.get("/children/{item_id}")
+async def children(item_id: JellyfinId):
+    """Seasons of a series, or episodes of a season (Specials last).
+
+    /Shows endpoints, not ParentId: without season folders on disk, episodes'
+    parent is the series folder and a season has no direct children."""
+    try:
+        found = (await jellyfin_get("/Items", {"Ids": item_id})).get("Items", [])
+        if not found:
+            raise HTTPException(404, "Élément introuvable")
+        item = found[0]
+        params = {"IsMissing": "false", "Fields": _ITEM_FIELDS}
+        if item.get("Type") == "Series":
+            data = await jellyfin_get(f"/Shows/{item_id}/Seasons", params)
+        elif item.get("Type") == "Season" and item.get("SeriesId"):
+            data = await jellyfin_get(f"/Shows/{quote(item['SeriesId'])}/Episodes", {**params, "seasonId": item_id})
+        else:
+            return {"items": []}
+        items = sorted(data.get("Items", []), key=lambda i: i.get("Type") == "Season" and i.get("IndexNumber") == 0)
+        return {"items": [_card(i, in_season=True) for i in items]}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(502, str(e))
 
