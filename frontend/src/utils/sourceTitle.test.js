@@ -3,12 +3,12 @@ import { sourceTitle, urlFilename, UNTITLED } from './sourceTitle'
 
 describe('sourceTitle', () => {
     it('uses the original filename first', () => {
-        expect(sourceTitle({ filename: 'Une_episode_brut.mp4', plexTitle: 'Une épisode', url: 'http://h/x/y.mp4' }))
+        expect(sourceTitle({ filename: 'Une_episode_brut.mp4', libraryTitle: 'Une épisode', url: 'http://h/x/y.mp4' }))
             .toBe('Une_episode_brut.mp4')
     })
 
-    it('falls back to the Plex title when there is no filename', () => {
-        expect(sourceTitle({ filename: '  ', plexTitle: 'Le Film', url: '/api/files/stream/abc' })).toBe('Le Film')
+    it('falls back to the library title when there is no filename', () => {
+        expect(sourceTitle({ filename: '  ', libraryTitle: 'Le Film', url: '/api/files/stream/abc' })).toBe('Le Film')
     })
 
     it('falls back to the last URL path segment, decoded', () => {
@@ -25,7 +25,7 @@ describe('sourceTitle', () => {
     it('falls back to "Vidéo sans titre"', () => {
         expect(sourceTitle(null)).toBe(UNTITLED)
         expect(sourceTitle({})).toBe(UNTITLED)
-        expect(sourceTitle({ filename: '', plexTitle: '', url: 'https://example.com/' })).toBe(UNTITLED)
+        expect(sourceTitle({ filename: '', libraryTitle: '', url: 'https://example.com/' })).toBe(UNTITLED)
         expect(UNTITLED).toBe('Vidéo sans titre')
     })
 })

@@ -58,6 +58,7 @@ backend/memes/
 backend/clips.json
 backend/sources/*
 backend/plex_config.json
+backend/jellyfin_config.json
 backend/takes/
 
 # --- Tooling ---

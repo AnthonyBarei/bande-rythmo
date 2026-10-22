@@ -24,11 +24,11 @@ export function urlFilename(u) {
 
 const clean = s => (typeof s === 'string' ? s.trim() : '')
 
-// Original filename → Plex title → last URL path segment → "Vidéo sans titre".
+// Original filename → library (Plex/Jellyfin) title → last URL path segment → "Vidéo sans titre".
 export function sourceTitle(video) {
   if (!video) return UNTITLED
   return clean(video.filename)
-    || clean(video.plexTitle)
+    || clean(video.libraryTitle)
     || clean(urlFilename(video.url || video.sourcePath))
     || UNTITLED
 }

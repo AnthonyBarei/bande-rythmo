@@ -16,11 +16,14 @@ SAFE_ID_PATTERN = r"^[A-Za-z0-9_-]{1,64}$"
 SafeId = Annotated[str, StringConstraints(pattern=SAFE_ID_PATTERN)]
 
 
+_TOKEN_PARAM = re.compile(r"(X-Plex-Token|ApiKey|api_key)=[^&]+", re.IGNORECASE)
+
+
 def _redact_token(path):
-    """Plex stream URLs carry X-Plex-Token — never send it to the browser."""
-    if not path or "X-Plex-Token" not in path:
+    """Plex/Jellyfin stream URLs carry a token — never send it to the browser."""
+    if not path:
         return path
-    return re.sub(r"X-Plex-Token=[^&]+", "X-Plex-Token=***", path)
+    return _TOKEN_PARAM.sub(r"\1=***", path)
 
 
 def _parse_words(raw):

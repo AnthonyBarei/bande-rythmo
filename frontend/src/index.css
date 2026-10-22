@@ -250,3 +250,91 @@ video { display: block; }
 @keyframes stOutR { to { transform: translateX(48px); opacity: 0 } }
 @keyframes stFromL { from { transform: translateX(-48px); opacity: 0 } }
 @keyframes stFromR { from { transform: translateX(48px); opacity: 0 } }
+
+/* Médiathèque — poster / episode cards, library list, pager, skeleton
+   (MEDIATHEQUE.md). The ring is drawn on the card box, not the button. */
+.lib-card {
+  position: relative; display: flex; flex-direction: column; width: 100%;
+  background: none; border: none; padding: 0; text-align: left; cursor: pointer;
+  color: inherit; font: inherit; border-radius: 12px; outline: none;
+}
+.lib-card:focus-visible { box-shadow: none !important; }
+.lib-box {
+  background: var(--surface); border-radius: 12px; box-shadow: 0 0 0 1px var(--border); padding-bottom: 9px;
+  transition: transform .22s cubic-bezier(.2,.7,.2,1), box-shadow .22s;
+}
+.lib-card[data-on="1"] .lib-box { box-shadow: 0 0 0 1px var(--accent), 0 0 0 3px var(--accent-dim); }
+.lib-card:hover .lib-box, .lib-card:focus-visible .lib-box {
+  transform: translateY(-4px); box-shadow: 0 0 0 1px var(--border3), 0 16px 36px rgba(0,0,0,.55);
+}
+.lib-card:focus-visible .lib-box { box-shadow: 0 0 0 2px var(--accent), 0 16px 36px rgba(0,0,0,.55); }
+.lib-art { position: relative; border-radius: 12px 12px 0 0; overflow: hidden; background: var(--surface); }
+.lib-img {
+  position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block;
+  transition: transform .5s cubic-bezier(.2,.7,.2,1), filter .3s;
+}
+.lib-card:hover .lib-img, .lib-card:focus-visible .lib-img { transform: scale(1.06); filter: brightness(.62); }
+.lib-meta {
+  position: absolute; left: 8px; bottom: 8px; padding: 2px 7px; border-radius: 5px; background: rgba(0,0,0,.72);
+  font: 600 10.5px var(--font-mono, 'JetBrains Mono', monospace); color: var(--text); transition: opacity .15s;
+}
+.lib-card:hover .lib-meta, .lib-card:focus-visible .lib-meta { opacity: 0; }
+.lib-badge {
+  position: absolute; top: 6px; left: 6px; padding: 2px 6px; border-radius: 3px;
+  background: var(--accent); color: #0b0b0d; font-size: 8.5px; font-weight: 800;
+}
+.lib-ov {
+  position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: flex-end; gap: 8px; padding: 12px;
+  background: linear-gradient(transparent 25%, rgba(0,0,0,.65));
+  opacity: 0; transform: translateY(8px); transition: opacity .2s, transform .22s cubic-bezier(.2,.7,.2,1);
+}
+.lib-card:hover .lib-ov, .lib-card:focus-visible .lib-ov { opacity: 1; transform: none; }
+.lib-desc {
+  font-size: 11.5px; line-height: 1.4; color: #d8d8dd;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.lib-cta {
+  align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 11px; border-radius: 7px;
+  background: var(--accent); color: #0b0b0d; font: 700 12px var(--font-ui);
+}
+.lib-cta.ghost { background: rgba(255,255,255,.14); color: #fff; backdrop-filter: blur(4px); }
+.lib-foot { display: flex; align-items: center; gap: 8px; padding: 9px 10px 0; }
+.lib-title {
+  flex: 1; min-width: 0; font-size: 13px; font-weight: 600; color: var(--text); line-height: 1.3;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: color .15s;
+}
+.lib-card:hover .lib-title, .lib-card:focus-visible .lib-title { color: var(--accent); }
+.lib-sub { font-size: 11.5px; color: var(--text3); margin-top: 2px; padding: 0 10px; }
+.lib-chev { display: flex; color: var(--text4); transition: transform .2s cubic-bezier(.2,.7,.2,1), color .15s; }
+.lib-card:hover .lib-chev, .lib-card:focus-visible .lib-chev { transform: translateX(3px); color: var(--accent); }
+@keyframes libIn { from { opacity: 0; transform: translateY(10px) } to { opacity: 1; transform: none } }
+.lib-in { animation: libIn .35s cubic-bezier(.2,.7,.2,1) both; }
+.lib-skel {
+  border-radius: 12px; background: linear-gradient(90deg, var(--surface) 0%, #1f1f25 40%, var(--surface) 80%);
+  background-size: 300% 100%; animation: libShim 1.2s linear infinite;
+}
+@keyframes libShim { from { background-position: 100% 0 } to { background-position: -200% 0 } }
+.lib-item {
+  display: flex; align-items: center; gap: 9px; width: 100%; height: 36px; padding: 0 10px; border-radius: 9px;
+  border: 1px solid transparent; background: none; cursor: pointer; color: var(--text2);
+  font: 500 13.5px var(--font-ui); transition: background .15s, color .15s;
+}
+.lib-item:hover { background: var(--surface2); color: var(--text); }
+.lib-item[data-on="1"] { background: rgba(245,197,24,.1); border-color: rgba(245,197,24,.45); color: var(--accent); font-weight: 600; }
+.lib-pg {
+  min-width: 32px; height: 32px; padding: 0 8px; border-radius: 8px; border: 1px solid transparent; background: none;
+  cursor: pointer; color: var(--text2); font: 600 12.5px var(--font-mono, 'JetBrains Mono', monospace);
+  display: flex; align-items: center; justify-content: center; transition: background .15s, color .15s, border-color .15s;
+}
+.lib-pg:hover:not(:disabled) { background: var(--surface2); color: var(--text); border-color: var(--border2); }
+.lib-pg[data-on="1"] { background: var(--accent); color: #0b0b0d; }
+.lib-pg:disabled { opacity: .35; cursor: default; }
+@media (prefers-reduced-motion: reduce) {
+  .lib-box, .lib-img, .lib-ov, .lib-chev { transition: opacity .2s, box-shadow .2s, color .15s; }
+  .lib-card:hover .lib-box, .lib-card:focus-visible .lib-box,
+  .lib-card:hover .lib-img, .lib-card:focus-visible .lib-img,
+  .lib-card:hover .lib-chev, .lib-card:focus-visible .lib-chev,
+  .lib-ov { transform: none; }
+  @keyframes libIn { from { opacity: 0 } to { opacity: 1 } }
+  .lib-skel { animation: none; }
+}

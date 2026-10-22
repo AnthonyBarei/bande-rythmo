@@ -1,23 +1,21 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import VideoEditor from './VideoEditor'
-import PlexBrowser from './PlexBrowser'
-import { Btn, Dot, Kbd, Icon, ICONS, T, alpha, pressable } from '../ui'
+import LibraryBrowser from './LibraryBrowser'
+import { Btn, Dot, Kbd, Icon, ICONS, Spinner, T, alpha, pressable } from '../ui'
 import { useProgress } from '../ProgressContext'
 import { fmtSMPTE } from '../utils/timecode'
 import { sourceTitle, urlFilename } from '../utils/sourceTitle'
 import { streamLabel } from '../utils/streamLabel'
+import { autoAudioStream } from '../utils/audioCodec'
+import { LIBRARY_PROVIDERS } from '../config/libraryProviders'
 
-const TAB = { LOCAL: 'local', PLEX: 'plex', URL: 'url' }
+const TAB = { LOCAL: 'local', LIBRARY: 'library', URL: 'url' }
 
 // Header "Marquer un clip" walks the player's IN / OUT model (utils/inOut markStep).
 const MARK_BTN = {
   none: { label: 'Marquer un clip', title: 'Marque IN à la tête de lecture (I) · 2e clic : OUT (O)' },
   in: { label: 'Marquer la fin', title: 'Marque OUT à la tête de lecture (O)' },
   range: { label: 'Ajouter le clip', title: 'Ajoute la plage IN → OUT aux clips en attente, puis marquez le suivant' },
-}
-
-function Spinner({ size = 11, color = T.accent }) {
-  return <span style={{ width: size, height: size, borderRadius: '50%', border: `2px solid ${color}`, borderTopColor: 'transparent', animation: 'brspin 0.7s linear infinite', display: 'inline-block', flexShrink: 0 }} />
 }
 
 export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
@@ -30,7 +28,7 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
   const [videoStream, setVideoStream] = useState(null)
   const [audioStream, setAudioStream] = useState(null)
   const [audioSrc, setAudioSrc] = useState(null)  // extracted audio track URL
-  const [plexStatus, setPlexStatus] = useState(null)
+  const [libraryStatus, setLibraryStatus] = useState({})  // { [providerId]: { connected, server?, url } }
   const [editorState, setEditorState] = useState({ count: 0, saving: false, duration: 0, phase: 'none' })
   const editorActions = useRef(null)
   const sourceIdRef = useRef(null)
@@ -44,14 +42,20 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
     if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null }
   }, [])
 
+  const setProviderStatus = useCallback((id, data) => {
+    setLibraryStatus(prev => ({ ...prev, [id]: data }))
+  }, [])
+
   useEffect(() => {
     let alive = true
-    fetch('/api/plex/status')
-      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() })
-      .then(d => { if (alive) setPlexStatus(d) })
-      .catch(e => console.warn('Statut Plex indisponible', e))
+    for (const p of LIBRARY_PROVIDERS) {
+      fetch(`${p.api}/status`)
+        .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() })
+        .then(d => { if (alive) setProviderStatus(p.id, d) })
+        .catch(e => console.warn(`Statut ${p.label} indisponible`, e))
+    }
     return () => { alive = false }
-  }, [])
+  }, [setProviderStatus])
 
   useEffect(() => {
     const sid = sourceIdRef.current
@@ -125,7 +129,7 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
       timeoutRef.current = setTimeout(() => {
         stopPoll()
         setRemuxing(false)
-        setError('Extraction audio trop longue — vérifiez la connexion Plex ou le fichier source')
+        setError('Extraction audio trop longue — vérifiez la connexion au serveur ou le fichier source')
       }, 3 * 60 * 1000)
 
       pollRef.current = setInterval(async () => {
@@ -185,6 +189,7 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
 
       const hasStreams = data.video_streams.length > 0 || data.audio_streams.length > 0
       setStreams(hasStreams ? data : null)
+      setAudioStream(autoAudioStream(data.audio_streams))
     } catch (err) {
       setError('Erreur : ' + err.message)
     } finally {
@@ -211,7 +216,7 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
     onVideoSet(null)
   }
 
-  function handlePlexSelected(source) {
+  function handleLibrarySelected(source) {
     setError(null)
     resetStreams()
     stopPoll()
@@ -223,17 +228,21 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
       sourcePath: source.sourcePath,
       sourceId: source.sourceId,
       url: source.url,
-      plexTitle: source.plexTitle,
-      plexYear: source.plexYear,
+      libraryName: source.libraryName,
+      libraryTitle: source.libraryTitle,
+      libraryYear: source.libraryYear,
     })
 
     const hasStreams = (source.video_streams?.length > 0) || (source.audio_streams?.length > 0)
     setStreams(hasStreams ? { video_streams: source.video_streams, audio_streams: source.audio_streams } : null)
+    // Dolby / DTS default track would play silent — start its AAC remux right away.
+    setAudioStream(autoAudioStream(source.audio_streams))
   }
 
   const videoOptions = streams?.video_streams ?? []
   const audioOptions = streams?.audio_streams ?? []
-  const plexHost = plexStatus?.url ? plexStatus.url.replace(/^https?:\/\//, '') : 'bibliothèque locale'
+  const connectedLibraries = LIBRARY_PROVIDERS.filter(p => libraryStatus[p.id]?.connected).map(p => p.label)
+  const libraryHint = (connectedLibraries.length ? connectedLibraries : LIBRARY_PROVIDERS.map(p => p.label)).join(' · ')
   const { count, saving, duration, phase } = editorState
   const markBtn = MARK_BTN[phase] || MARK_BTN.none
   const sourceFps = videoOptions[videoStream ?? 0]?.fps
@@ -241,7 +250,7 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
   const meta = video ? [
     duration ? fmtSMPTE(duration, sourceFps) : null,
     streamLabel(videoOptions[0]),
-  ].filter(Boolean).join(' · ') : 'Fichier local, bibliothèque Plex ou URL directe'
+  ].filter(Boolean).join(' · ') : 'Fichier local, médiathèque (Plex, Jellyfin) ou URL directe'
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -251,18 +260,18 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: T.fs.micro, color: T.text3, letterSpacing: 1.4, fontWeight: 600, marginBottom: 4 }}>IMPORTER</div>
             <div title={video ? sourceTitle(video) : undefined} style={{ fontSize: T.fs.xxl, fontWeight: 600, letterSpacing: -0.6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {video ? sourceTitle(video) : tab === TAB.PLEX ? 'Choisir un fichier dans Plex' : 'Importer une vidéo'}
+              {video ? sourceTitle(video) : tab === TAB.LIBRARY ? 'Choisir un fichier dans la médiathèque' : 'Importer une vidéo'}
             </div>
             <div style={{ fontSize: T.fs.xs, color: T.text3, fontFamily: T.fontMono, marginTop: 6, display: 'flex', gap: 8, alignItems: 'center', minWidth: 0, whiteSpace: 'nowrap' }}>
               {meta}
-              {video?.plexTitle && <><Dot color={T.success} size={6} /> <span style={{ color: T.success, overflow: 'hidden', textOverflow: 'ellipsis' }}>depuis Plex · {video.plexTitle}{video.plexYear ? ` (${video.plexYear})` : ''}</span></>}
-              {video && !video.plexTitle && <span style={{ color: T.text4, overflow: 'hidden', textOverflow: 'ellipsis' }}>{video.sourceId ? video.sourcePath : 'URL directe'}</span>}
+              {video?.libraryTitle && <><Dot color={T.success} size={6} /> <span style={{ color: T.success, overflow: 'hidden', textOverflow: 'ellipsis' }}>depuis {video.libraryName} · {video.libraryTitle}{video.libraryYear ? ` (${video.libraryYear})` : ''}</span></>}
+              {video && !video.libraryTitle && <span style={{ color: T.text4, overflow: 'hidden', textOverflow: 'ellipsis' }}>{video.sourceId ? video.sourcePath : 'URL directe'}</span>}
               {(picking || remuxing) && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, color: T.accent }}><Spinner />{picking ? 'Ouverture…' : 'Changement piste…'}</span>}
             </div>
           </div>
           {video && (
             <>
-              <Btn variant="outline" icon={ICONS.back} onClick={clearSource}>{tab === TAB.PLEX ? 'Bibliothèque' : 'Changer de source'}</Btn>
+              <Btn variant="outline" icon={ICONS.back} onClick={clearSource}>{tab === TAB.LIBRARY ? 'Médiathèque' : 'Changer de source'}</Btn>
               <Btn variant="solid" icon={ICONS.scissors} onClick={() => editorActions.current?.mark()} active={phase !== 'none'}
                 title={markBtn.title}>
                 {markBtn.label}
@@ -281,7 +290,7 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
         <div style={{ display: 'flex', gap: 6, padding: 5, background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.r.ctl, width: 'fit-content' }}>
           {[
             { id: TAB.LOCAL, label: 'Fichier local', ic: ICONS.upload, hint: 'glisser un .mp4' },
-            { id: TAB.PLEX, label: 'Plex', ic: ICONS.film, hint: plexHost, online: !!plexStatus?.connected },
+            { id: TAB.LIBRARY, label: 'Médiathèque', ic: ICONS.film, hint: libraryHint, online: connectedLibraries.length > 0 },
             { id: TAB.URL, label: 'URL / Stream', ic: ICONS.plug, hint: 'http://…' },
           ].map(s => {
             const active = s.id === tab
@@ -333,8 +342,8 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
               hasStreams={!!streams}
             />
           </>
-        ) : tab === TAB.PLEX ? (
-          <PlexBrowser onSourceSelected={handlePlexSelected} onStatus={setPlexStatus} />
+        ) : tab === TAB.LIBRARY ? (
+          <LibraryBrowser statuses={libraryStatus} onSourceSelected={handleLibrarySelected} onStatus={setProviderStatus} />
         ) : tab === TAB.LOCAL ? (
           <EmptySource icon={ICONS.upload} onClick={handleLocalPick}
             title={picking ? 'Ouverture du sélecteur…' : 'Cliquez pour choisir un fichier local'}
