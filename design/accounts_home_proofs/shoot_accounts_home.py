@@ -7,7 +7,7 @@ e-mail sending on, three devices), so no account is created. Every other
 non-GET /api/ request is refused by CDP Fetch interception — nothing is
 written to the backend.
 
-Writes home/01..04 and account/01..07 (+ account/01-login-1100.png).
+Writes home/01..05, legal/01 and account/01..07 (+ account/01-login-1100.png).
 """
 import argparse
 import asyncio
@@ -187,6 +187,11 @@ async def run():
         await cdp.js("document.querySelectorAll('.step')[2].click(); 1")
         await asyncio.sleep(0.8)
         await cdp.shot("home/04-flow-step3.png")
+        await cdp.js("document.documentElement.style.scrollBehavior = 'auto'; document.getElementById('telecharger').scrollIntoView(); scrollBy(0, -88); 1")
+        await asyncio.sleep(0.6)
+        await cdp.shot("home/05-download.png")
+        await cdp.go(ROOT + "conditions.html", wait=2)
+        await cdp.shot("legal/01-conditions.png")
         await cdp.size(900, 900)
         await cdp.go(ROOT, wait=2)
         await cdp.shot("home/02-home-900.png", full=True)

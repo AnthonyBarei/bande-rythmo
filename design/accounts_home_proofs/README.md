@@ -1,4 +1,38 @@
-# HOME + ACCOUNT — implementation report
+# HOME + ACCOUNT — round 2 (`FIXES_ACCOUNT_HOME_R2.md`)
+
+All proofs below were reshot after round 2. The round-1 report follows.
+
+| # | Status | Where to look |
+|---|---|---|
+| 1 Band chips over the text | ✅ Chips sit in the ruler row, bottom-right, on solid `bg` + `border2`. Below 520px only the TC chip stays. | `home/01`, `02`, `03` |
+| 2 Outdated / unlicensed stills | ✅ All 4 flow stills and the hero shot recaptured from the current app on ***Tears of Steel*** (Blender Foundation, **CC BY 3.0**). Credit under the hero shot and in the footer. `alt` texts describe the UI. Studio is v2 in *prêt*. | `home/01`, `04`; `frontend/public/home/*.png` |
+| 3 Logout glyph | ✅ `ICONS.logout` (door + arrow) in the avatar menu and on the Mon compte button. | `account/04`, `05` |
+| 4 Labels against tall content | ✅ `Field top` → `align-items:flex-start` + 6px on the label (devices, open password / e-mail / delete forms). | `account/05`, `06` |
+| 5 Header far from the content | ✅ Header constrained to the 720px column. | `account/05` |
+| 6 « Enregistrer » when unchanged | ✅ Row hidden until dirty, slides in (opacity + 4px, .15s) with Annuler; « Profil enregistré » stays after saving. | `account/05` |
+| 7 Auth at 1100 | ✅ Back link taken out of the flow, form centred. Band: three copies scrolled ⅓ → ⅔, so the text starts at the playhead and loops without a jump; the past (left of the playhead) is dimmed like the home strip. | `account/01-login-1100` |
+| 8 Terms | ✅ `/conditions.html`, same layout as `/confidentialite.html`, notice « Version provisoire · à compléter ». Text in `frontend/docs/conditions.md` (rendered by a small Markdown renderer). Linked from the register checkbox and the home footer. | `legal/01-conditions` |
+| 9 Public product page | ⚠️ Adapted — see below. | `home/05-download` |
+| 10 Namespace for migration | ✅ The account id was already a UUID (`users.id`) with `created_at`; preferences are now stored as `{"v": 1, "settings": {…}}` (older bare blobs still read as v1). | backend test |
+
+Also added for #9: `<meta name="description">`, Open Graph + Twitter card, `og.png` (1200×630, logo + headline over the live band strip) and an SVG favicon from the logo tile on every page.
+
+### #9 — what the user decided, and how it differs from the brief
+
+The questions in this brief were put to the user again before building. Their answers:
+
+- **There is no build to download yet.** The section exists with the three cards (Windows · macOS · Linux), the visitor's OS first with an accent outline and a « Votre système » badge. Each card says « Bientôt disponible ». **« Me prévenir » is disabled**: on a public page « stored locally » would mean the visitor's own browser, so nothing would ever reach anyone. It comes alive with the hosted account. The requirements line is there; the release-notes link is replaced by « Notes de version avec la première version ».
+- **The home is served locally for now** (by the atelier itself). So there is **no `/api/health` probe**: it would always succeed locally, and from a public https page a probe of `http://localhost` is blocked by the browser (mixed content + local-network access). « Ouvrir l'atelier » stays the hero secondary CTA. **`home/06-hero-no-atelier.png` was not produced** for that reason.
+- **CTAs:** « Télécharger » is primary in the nav, the hero and the closing CTA; « Se connecter » stays ghost in the nav; « Créer un compte » is gone from the home page.
+
+**For the brief that makes the page public:** decide where it's hosted, how the download links and « Me prévenir » are served, and what « Ouvrir l'atelier » / « Se connecter » become on a machine without the atelier.
+
+### Footage
+*Tears of Steel* (c) Blender Foundation | mango.blender.org, CC BY 3.0. The excerpt (0:20 → 0:56, the bridge scene, 10 répliques, CELIA / THOM / TECH) is in the user's Bibliothèque as « Tears of Steel — le pont ». Stills: `shoot_home_stills.py <clip_id> <source.mov>` (also writes `og.png`).
+
+---
+
+# HOME + ACCOUNT — implementation report (round 1)
 
 **For:** Claude Design. **Briefs:** `../design_handoff_redesign_v2/HOME.md` and `ACCOUNT.md`.
 **Branch:** `feat/accounts-home` (rebased on `main` after the Jellyfin merge, 2026-10-22).
@@ -14,6 +48,8 @@ All captures are 1440×900 unless noted. `/api/auth/*` is mocked in the page (fa
 | `home/02-home-900.png` | HOME | full page, 900 wide (hero on 1 column, nav links hidden) |
 | `home/03-home-390.png` | HOME | full page, 390 wide |
 | `home/04-flow-step3.png` | HOME | Flux tab 03 « Enregistrer » selected |
+| `home/05-download.png` | R2 #9 | Télécharger, the detected OS (Windows) first |
+| `legal/01-conditions.png` | R2 #8 | Conditions d'utilisation, provisional |
 | `account/01-login.png` | ACCOUNT §1 | Connexion |
 | `account/01-login-1100.png` | ACCOUNT §1 | Connexion at 1100×800 (brand panel still shown, it hides below 900) |
 | `account/02-register-errors.png` | ACCOUNT §1 | inline errors after the first submit, strength bar « Trop court » |
