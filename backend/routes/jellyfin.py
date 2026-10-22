@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from services.ffmpeg_service import _rate
 from services.jellyfin_service import (
-    load_config, save_config, test_connection, probe_local,
+    load_config, save_config, forget_config, test_connection, probe_local,
     jellyfin_get, stream_url, thumb_url,
 )
 
@@ -76,6 +76,13 @@ async def status():
         return {"connected": True, "configured": True, "server": name, "url": cfg["url"]}
     except Exception:
         return {"connected": False, "configured": True, "url": cfg["url"]}
+
+
+@router.delete("/config")
+async def forget():
+    """Forget the saved Jellyfin server: nothing is contacted until a new connect."""
+    forget_config()
+    return {"connected": False, "configured": False, "url": load_config()["url"]}
 
 
 @router.post("/connect")

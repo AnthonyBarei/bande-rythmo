@@ -25,6 +25,12 @@ def save_config(url: str, token: str):
         json.dump({"url": url.rstrip("/"), "token": token}, f)
 
 
+def forget_config():
+    """Drop the saved server + token — the provider is unconfigured again."""
+    if os.path.exists(CONFIG_PATH):
+        os.remove(CONFIG_PATH)
+
+
 def _auth_headers(token: str) -> dict:
     return {"Accept": "application/json", "Authorization": f'{_CLIENT}, Token="{token}"'}
 

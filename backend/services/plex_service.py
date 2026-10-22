@@ -20,6 +20,12 @@ def save_config(url: str, token: str):
         json.dump({"url": url.rstrip("/"), "token": token}, f)
 
 
+def forget_config():
+    """Drop the saved server + token — the provider is unconfigured again."""
+    if os.path.exists(CONFIG_PATH):
+        os.remove(CONFIG_PATH)
+
+
 def get_plex_url(path: str) -> str:
     cfg = load_config()
     return f"{cfg['url']}{path}"
