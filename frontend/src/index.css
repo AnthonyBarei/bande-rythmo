@@ -177,6 +177,17 @@ label:has(> input:focus-visible) {
 .ui-input--sm > input { font-size: 12px; }
 .ui-input--lg > input { font-size: 16px; }
 .ui-input > input::placeholder { color: var(--text3); opacity: 1; }
+.ui-input--form, .ui-input--form-sm {
+  height: 42px; padding: 0 12px; gap: 9px;
+  background: var(--surface2); border-radius: 10px; transition: border-color .15s, box-shadow .15s;
+}
+.ui-input--form-sm { height: 36px; }
+.ui-input--form > input, .ui-input--form-sm > input { font-size: 14px; }
+.ui-input--error { border-color: var(--danger); }
+.ui-input--form:focus-within, .ui-input--form-sm:focus-within {
+  border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim);
+}
+.ui-input--form input:focus-visible, .ui-input--form-sm input:focus-visible { box-shadow: none !important; }
 
 /* Text inputs inside a pill / field wrapper (ui.jsx Input, library search,
    Importer TC field): the ring goes on the rounded wrapper, not as a rectangle
@@ -338,3 +349,30 @@ video { display: block; }
   @keyframes libIn { from { opacity: 0 } to { opacity: 1 } }
   .lib-skel { animation: none; }
 }
+
+/* ── Auth screen (ACCOUNT.md §1) — brand panel hidden below 900px ── */
+.auth-screen { display: grid; grid-template-columns: minmax(0,1fr) minmax(380px,520px); }
+.auth-brand { display: flex; }
+.auth-side { padding: 56px 48px; }
+.auth-back { top: 24px; right: 48px; }
+.auth-band { animation: authBand 26s linear infinite; }
+.auth-form { animation: authIn .25s ease-out; }
+@keyframes authBand { from { transform: translateX(-33.333%) } to { transform: translateX(-66.667%) } }
+@keyframes authIn { from { opacity: 0; transform: translateY(6px) } to { opacity: 1; transform: none } }
+@media (max-width: 900px) {
+  .auth-screen { grid-template-columns: minmax(0,1fr); }
+  .auth-brand { display: none; }
+}
+@media (max-width: 520px) {
+  .auth-side { padding: 52px 16px 20px; }
+  .auth-back { top: 18px; right: 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .auth-band, .auth-form { animation: none; }
+  .auth-band { transform: translateX(-33.333%); }
+}
+
+/* Row that appears on change (Mon compte « Enregistrer ») — FIXES_ACCOUNT_HOME_R2 #6 */
+.slide-in { animation: slideIn4 .15s ease-out; }
+@keyframes slideIn4 { from { opacity: 0; transform: translateY(4px) } to { opacity: 1; transform: none } }
+@media (prefers-reduced-motion: reduce) { .slide-in { animation: none; } }

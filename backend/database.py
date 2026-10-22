@@ -34,7 +34,7 @@ def get_db():
 
 
 def init_db():
-    from models import Clip, Subtitle, Take, Boucle, Export, LexiconEntry  # noqa: F401
+    from models import Clip, Subtitle, Take, Boucle, Export, LexiconEntry, User, UserSession, AuthToken  # noqa: F401
     Base.metadata.create_all(bind=engine)
     from sqlalchemy import text
     with engine.connect() as conn:

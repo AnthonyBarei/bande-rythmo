@@ -126,3 +126,47 @@ class LexiconEntry(Base):
     phonetic = Column(String, nullable=True)               # pronunciation hint
     note = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
+
+
+class User(Base):
+    """Local account — identity + preferences only. Clips, répliques and takes
+    stay shared on this machine whoever is signed in."""
+    __tablename__ = "users"
+
+    id = Column(String, primary_key=True)                    # uuid4 hex
+    email = Column(String, nullable=False, unique=True)      # stored lower-cased
+    password_hash = Column(String, nullable=False)           # scrypt$n$r$p$salt$dk
+    name = Column(String, nullable=False, default="")
+    comedien = Column(String, nullable=True)                 # Studio « Comédien » default
+    color = Column(String, nullable=True)                    # avatar colour (hex)
+    email_verified = Column(Boolean, nullable=False, default=False)
+    prefs = Column(String, nullable=True)                    # JSON snapshot of br_settings
+    password_changed_at = Column(DateTime, default=datetime.now)
+    created_at = Column(DateTime, default=datetime.now)
+
+
+class UserSession(Base):
+    """Signed-in browser. The cookie holds a random token; only its SHA-256 is
+    stored, so a leaked DB can't be replayed as a session."""
+    __tablename__ = "user_sessions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    token_hash = Column(String, nullable=False, unique=True)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_agent = Column(String, nullable=False, default="")
+    remember = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, default=datetime.now)
+    last_seen = Column(DateTime, default=datetime.now)
+    expires_at = Column(DateTime, nullable=False)
+
+
+class AuthToken(Base):
+    """One-time e-mailed link: password reset or e-mail verification."""
+    __tablename__ = "auth_tokens"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    token_hash = Column(String, nullable=False, unique=True)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    kind = Column(String, nullable=False)                    # reset | verify
+    email = Column(String, nullable=False)                   # address the link was sent to
+    expires_at = Column(DateTime, nullable=False)

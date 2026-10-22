@@ -5,8 +5,11 @@ import ClipsLibrary from './components/ClipsLibrary'
 import DubbingWorkspace from './components/DubbingWorkspace'
 import MemeGenerator from './components/MemeGenerator'
 import Preferences from './components/Preferences'
-import { T, Icon, ICONS, Btn, Kbd, Avatar } from './ui'
+import { T, Icon, ICONS, Btn, Kbd, Avatar, Popover, MenuItem, MenuSep } from './ui'
 import { useSettings } from './SettingsContext'
+import { useAuth } from './AuthContext'
+import AuthScreen from './components/account/AuthScreen'
+import AccountScreen from './components/account/AccountScreen'
 import { ProgressProvider, ToastDock } from './ProgressContext'
 import { ToastProvider, useToast } from './ToastContext'
 import ShortcutsOverlay from './components/ShortcutsOverlay'
@@ -26,7 +29,7 @@ export default function App() {
 }
 
 const NAV_KEY = 'br-nav'
-const RESTORABLE = new Set(['import', 'clips', 'dub', 'record', 'memes', 'settings', 'activity'])
+const RESTORABLE = new Set(['import', 'clips', 'dub', 'record', 'memes', 'settings', 'activity', 'account'])
 const CLIP_SCREENS = new Set(['dub', 'record'])
 
 function loadNav() {
@@ -44,6 +47,21 @@ function saveNav(nav) {
   } catch {
     // storage blocked — reload simply starts on Importer
   }
+}
+
+// Hash routes (ACCOUNT.md): #login · #register · #reset=<token> open the auth
+// screen, #verify=<token> confirms an e-mail, #account opens Mon compte.
+function readHash() {
+  const h = window.location.hash.slice(1)
+  if (h === 'login' || h === 'register') return { auth: h }
+  if (h.startsWith('reset=')) return { auth: 'reset', token: h.slice(6) }
+  if (h.startsWith('verify=')) return { verify: h.slice(7) }
+  if (h === 'account') return { section: 'account' }
+  return {}
+}
+
+function clearHash() {
+  window.history.replaceState(null, '', window.location.pathname + window.location.search)
 }
 
 // Éditeur and Studio own their single-key shortcuts; N stays out of their way.
@@ -65,8 +83,37 @@ function focusLocalSearch() {
   return true
 }
 
+// Signed in: avatar → account menu. Signed out: « Se connecter ».
+function AccountButton({ user, accent, onNavigate, onLogin, onLogout }) {
+  if (!user) return <Btn size="sm" variant="outline" icon={ICONS.user} onClick={() => onLogin('login')}>Se connecter</Btn>
+  const color = user.color || accent
+  return (
+    <Popover align="right" width={240} trigger={(open, toggle) => (
+      <button data-rd onClick={toggle} title="Mon compte" aria-haspopup="menu" aria-expanded={open}
+        style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', borderRadius: '50%', boxShadow: open ? `0 0 0 2px ${accent}` : 'none' }}>
+        <Avatar name={user.name} color={color} size={30} />
+      </button>
+    )}>
+      {close => <>
+        <div style={{ padding: '8px 10px 10px', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <Avatar name={user.name} color={color} size={32} />
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: T.fs.sm, fontWeight: 600 }}>{user.name}</div>
+            <div style={{ fontSize: 11.5, color: T.text3, overflow: 'hidden', textOverflow: 'ellipsis' }}>{user.email}</div>
+          </div>
+        </div>
+        <MenuSep />
+        <MenuItem icon={ICONS.user} onClick={() => { close(); onNavigate('account') }}>Mon compte</MenuItem>
+        <MenuItem icon={ICONS.settings} onClick={() => { close(); onNavigate('settings') }}>Réglages</MenuItem>
+        <MenuSep />
+        <MenuItem icon={ICONS.logout} onClick={() => { close(); onLogout() }}>Se déconnecter</MenuItem>
+      </>}
+    </Popover>
+  )
+}
+
 // Top bar — port of redesign shell.jsx TopBar.
-function TopBar({ accent, onCmd, onHelp, onActivity }) {
+function TopBar({ onCmd, onHelp, onActivity, account }) {
   return (
     <div style={{ height: 52, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 14, padding: '0 18px', borderBottom: `1px solid ${T.border}`, background: T.bg }}>
       <span style={{ fontSize: T.fs.sm, fontWeight: 700, letterSpacing: 0.5 }}>BANDE RYTHMO <span style={{ color: T.text4, fontWeight: 400 }}>· studio</span></span>
@@ -83,7 +130,7 @@ function TopBar({ accent, onCmd, onHelp, onActivity }) {
       <Btn size="sm" icon={ICONS.keyboard} title="Raccourcis (?)" onClick={onHelp} />
       <Btn size="sm" icon={ICONS.activity} title="Activité" onClick={onActivity} />
       <div style={{ width: 1, height: 22, background: T.border }} />
-      <Avatar name="Studio" color={accent} size={30} />
+      {account}
     </div>
   )
 }
@@ -91,8 +138,13 @@ function TopBar({ accent, onCmd, onHelp, onActivity }) {
 function AppInner() {
   const toast = useToast()
   const { settings } = useSettings()
+  const auth = useAuth()
+  const authRef = useRef(auth)
+  useEffect(() => { authRef.current = auth })
+  const [initialHash] = useState(readHash)
   const [initialNav] = useState(loadNav)
-  const [section, setSection] = useState(initialNav.section || 'import')
+  const [section, setSection] = useState(initialHash.section || initialNav.section || 'import')
+  const [authView, setAuthView] = useState(initialHash.auth ? { mode: initialHash.auth, token: initialHash.token } : null)
   const [video, setVideo] = useState(null)
   const [clips, setClips] = useState([])
   const [activeClip, setActiveClip] = useState(null)
@@ -130,6 +182,57 @@ function AppInner() {
     fetchClips()
     return () => { live = false }
   }, [])
+
+  // E-mail confirmation link (#verify=…) and later hash navigation.
+  useEffect(() => {
+    async function verify(token) {
+      clearHash()
+      try {
+        await authRef.current.verify(token)
+        await authRef.current.refresh()
+        toast.success('Adresse e-mail confirmée.')
+      } catch (e) {
+        console.error(e)
+        toast.error(e.message)
+      }
+    }
+    function onHash() {
+      const h = readHash()
+      if (h.auth) setAuthView({ mode: h.auth, token: h.token })
+      if (h.section) { clearHash(); setAuthView(null); setSection(h.section) }
+      if (h.verify) verify(h.verify)
+    }
+    if (initialHash.section) clearHash()
+    if (initialHash.verify) verify(initialHash.verify)
+    window.addEventListener('hashchange', onHash)
+    return () => window.removeEventListener('hashchange', onHash)
+  }, [])
+
+  // Already signed in: #login / #register have nothing to show.
+  useEffect(() => {
+    if (auth.ready && auth.user && (authView?.mode === 'login' || authView?.mode === 'register')) leaveAuth()
+  }, [auth.ready, auth.user, authView])
+
+  function openAuth(mode) {
+    window.history.replaceState(null, '', `#${mode}`)
+    setAuthView({ mode })
+  }
+
+  function leaveAuth(next = 'clips') {
+    clearHash()
+    setAuthView(null)
+    setSection(next)
+  }
+
+  async function handleLogout() {
+    try {
+      await auth.logout()
+    } catch (e) {
+      console.error(e)
+      toast.error(`Déconnexion : ${e.message}`)
+    }
+    openAuth('login')
+  }
 
   useEffect(() => {
     if (CLIP_SCREENS.has(section) && !activeClip) return // still restoring
@@ -310,6 +413,11 @@ function AppInner() {
   const exportScreen = section === 'dub' && !!activeClip && dubExportOpen
   const closeExport = () => { setDubExportOpen(false); setExportInitialFormat(null) }
 
+  if (authView) {
+    return <AuthScreen key={`${authView.mode}-${authView.token || ''}`} initialMode={authView.mode} resetToken={authView.token}
+      onDone={() => leaveAuth()} onLocal={() => leaveAuth()} />
+  }
+
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: 'var(--bg)' }}>
 
@@ -320,7 +428,8 @@ function AppInner() {
 
         {/* Top bar — only over content; hidden on the full-bleed editor. */}
         {(section !== 'dub' || exportScreen) && (
-          <TopBar accent={settings.accent} onCmd={() => setCmdOpen(true)} onHelp={() => setShortcutsOpen(true)} onActivity={() => navigate('activity')} />
+          <TopBar onCmd={() => setCmdOpen(true)} onHelp={() => setShortcutsOpen(true)} onActivity={() => navigate('activity')}
+            account={<AccountButton user={auth.user} accent={settings.accent} onNavigate={navigate} onLogin={openAuth} onLogout={handleLogout} />} />
         )}
 
         <main style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minWidth: 0 }}>
@@ -373,6 +482,7 @@ function AppInner() {
             clips={clips} onSelectClip={setMemeClip} onClipsCreated={addClips} onOpenInImporter={openInImporter} />
         )}
         {section === 'settings' && <Preferences />}
+        {section === 'account' && <AccountScreen onLogin={openAuth} onSignedOut={() => openAuth('login')} />}
         </main>
       </div>
       <ToastDock route={exportScreen ? 'export' : section} queueClipId={exportScreen ? activeClip.clip_id : null}

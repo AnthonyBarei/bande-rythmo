@@ -11,7 +11,12 @@ This time the design source is included. **`reference/` is the spec.** It is pla
 
 ## What's in this folder
 
-- `STUDIO_V2.md`: **start here.** Studio rework: role picker, Par réplique / En continu modes, countdown on a frozen image, and a held "prêt" state between répliques.
+- `FIXES_ACCOUNT_HOME_R2.md`: **start here.** The review of the home + account proofs: accepted, with 7 visual fixes.
+- `MEDIATHEQUE.md`: The Médiathèque keeps its current layout; this adds card hover and focus motion, plus pagination (24 per page, skeletons, PgSuiv/PgPréc).
+- `HOME.md`: The landing page rework (app tokens, bande rythmo strip, flow tabs). The reference is `reference/home.html`.
+- `ACCOUNT.md`: Login / register, the top-bar account menu, the Mon compte page, and the home links. The reference is in `reference/`.
+- `FIXES_STUDIO_R2.md`: This is the review of the Studio v2 proofs: the behaviour is accepted, and 7 layout and polish items remain.
+- `STUDIO_V2.md`: the Studio rework spec. Studio rework: role picker, Par réplique / En continu modes, countdown on a frozen image, and a held "prêt" state between répliques.
 - `CLOSED.md`: **the redesign is closed.** It lists the backlog items to carry over.
 - `FINAL_REVIEW.md`: the final review. It's done.
 - `FIXES_R8.md`: **round 8.** It's done, and so is the final acceptance pass.
