@@ -257,6 +257,11 @@ async def run():
         await asyncio.sleep(0.4)
         await cdp.shot("studio/18-continu-rec.png")
 
+        # A few lines further: the live row is still in view, second from the top.
+        await wait_status(cdp, "Session en cours · 6/", timeout=90)
+        await asyncio.sleep(1.0)
+        await cdp.shot("studio/18b-continu-follow.png")
+
         await press(cdp, "Escape")
         for _ in range(100):
             card = await cdp.js("document.querySelector('[role=dialog]')?.innerText || ''")
@@ -265,6 +270,12 @@ async def run():
             await asyncio.sleep(0.2)
         await asyncio.sleep(0.4)
         await cdp.shot("studio/19-continu-summary.png")
+
+        # Entrée = the summary's primary action; the last captured line opens.
+        await press(cdp, "Enter")
+        await wait_status(cdp, "validée")
+        await asyncio.sleep(0.6)
+        await cdp.shot("studio/20-apres-resume.png")
 
         await cdp.js(f"localStorage.setItem('br-studio-mode-{CLIP}', JSON.stringify('line')); 1")
         print("decompte TC readings:", readings)
