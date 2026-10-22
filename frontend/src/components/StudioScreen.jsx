@@ -335,12 +335,17 @@ export default function StudioScreen({ clip, onBack, onExportDubbed }) {
     rec.start()
   }
 
-  // ── Session summary
+  // ── Session summary — leaving it opens the last captured réplique.
   const freeCount = session ? session.created.filter(c => !validatedSet.has(c.i)).length : 0
+  function endSessionAtLast() {
+    const last = session?.captured[session.captured.length - 1]
+    rec.endSession()
+    if (last != null) setIndex(last)
+  }
 
   async function summaryValidate() {
     const s = session
-    if (!s) return
+    if (!s || s.saving > 0) return
     const before = characterProgress(subtitles, takes, role)
     let n = 0
     try {
@@ -354,7 +359,7 @@ export default function StudioScreen({ clip, onBack, onExportDubbed }) {
       setPanelError('Validation impossible : ' + e.message)
     }
     const list = await fetchTakes()
-    rec.endSession()
+    endSessionAtLast()
     setFlash(`${n} réplique${n > 1 ? 's' : ''} validée${n > 1 ? 's' : ''} · prises déjà validées conservées`)
     if (list) {
       const after = characterProgress(subtitles, list, role)
@@ -363,17 +368,24 @@ export default function StudioScreen({ clip, onBack, onExportDubbed }) {
   }
 
   function summaryReview() {
-    const first = session?.lines[0]
+    if (!session || session.saving > 0) return
+    const first = session.captured.length ? Math.min(...session.captured) : session.lines[0]
     rec.endSession()
     setMode('line')
     if (first != null) setIndex(first)
+  }
+
+  // Entrée on the summary: its primary action — validate, else review.
+  function summaryPrimary() {
+    if (freeCount > 0) summaryValidate()
+    else summaryReview()
   }
 
   // Annuler la session: the created takes disappear at once and are deleted
   // when the toast closes — unless Annuler brings them back.
   function summaryCancel() {
     const ids = (session?.created || []).map(c => c.take.id)
-    rec.endSession()
+    endSessionAtLast()
     if (!ids.length) return
     setHiddenTakes(prev => new Set([...prev, ...ids]))
     const unhide = () => setHiddenTakes(prev => new Set([...prev].filter(id => !ids.includes(id))))
@@ -397,15 +409,23 @@ export default function StudioScreen({ clip, onBack, onExportDubbed }) {
 
   // Keys: R lancer / refaire · Espace attendre (auto) · Entrée valider (revue)
   // · Échap annuler / arrêter l'écoute · ← / → réplique du personnage (Alt :
-  // tous) · Tab A ⇄ B · M son.
+  // tous) · Tab A ⇄ B · M son. Résumé de session : Entrée action principale ·
+  // Échap revoir réplique par réplique.
   const keysRef = useRef(null)
-  useEffect(() => { keysRef.current = { primary, validate, selectIndex, selected, takeA, takeB, showAB, rec, player, activeIndex, subtitles, roles, pickRole, roleOpen, setRoleOpen, locked } })
+  useEffect(() => { keysRef.current = { primary, validate, selectIndex, selected, takeA, takeB, showAB, rec, player, activeIndex, subtitles, roles, pickRole, roleOpen, setRoleOpen, locked, summaryPrimary, summaryReview } })
   useEffect(() => {
     function onKey(e) {
       if (isTyping(e.target) || e.ctrlKey || e.metaKey) return
       if (document.querySelector('[aria-modal="true"]')) return
       const k = keysRef.current
       if (!k) return
+      if (k.rec.phase === 'summary' && (e.key === 'Enter' || e.key === 'Escape')) {
+        if (e.key === 'Enter' && e.target.closest?.('button')) return   // a focused card button clicks itself
+        e.preventDefault()
+        if (e.key === 'Enter') k.summaryPrimary()
+        else k.summaryReview()
+        return
+      }
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
         if (e.shiftKey) return
         e.preventDefault()   // Alt+← is the browser's "back"
@@ -449,9 +469,11 @@ export default function StudioScreen({ clip, onBack, onExportDubbed }) {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
+  // The header and the line strip show the same réplique: the session's
+  // during En continu, the current one otherwise.
   const n = subtitles.length
-  const shownLine = session ? session.curI : activeIndex
-  const sub = [clip.name, n ? `réplique ${(shownLine ?? 0) + 1} / ${n}` : '0 réplique'].filter(Boolean).join(' · ')
+  const stripLine = session ? session.curI : activeIndex
+  const sub = [clip.name, n ? `réplique ${(stripLine ?? 0) + 1} / ${n}` : '0 réplique'].filter(Boolean).join(' · ')
   const videoUrl = clip.has_proxy ? `/segments/${clip.clip_id}_proxy.mp4` : `/${clip.segment_path}`
   const { volume, muted } = usePlayerVolume()
   useEffect(() => { applyPlayerVolume(videoRef.current) }, [volume, muted, videoUrl])
@@ -523,7 +545,7 @@ export default function StudioScreen({ clip, onBack, onExportDubbed }) {
             <TakeSettings cfg={cfg} onCfg={update} disabled={locked} showChain={mode === 'line'} />
           </div>
           <StudioStage
-            subtitles={subtitles} takes={takes} index={session ? session.curI : activeIndex} fps={clipFps} onSelectIndex={selectIndex} charIndex={charMap}
+            subtitles={subtitles} takes={takes} index={stripLine} fps={clipFps} onSelectIndex={selectIndex} charIndex={charMap}
             rec={rec} cfg={cfg} selectedLabel={selected ? labelOf(selected) : null} flash={flash}
             mode={mode} sLines={sLines} roleLabel={roleInfo?.label || ''}
             summary={{ free: freeCount, onValidate: summaryValidate, onReview: summaryReview, onCancel: summaryCancel }}
