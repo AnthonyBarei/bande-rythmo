@@ -36,6 +36,30 @@ export function readLibraryProvider() {
   }
 }
 
+// Which providers have a saved server, remembered from the last status/connect:
+// an unconfigured one shows its form at once instead of waiting on a check.
+const CONFIGURED_KEY = 'br-library-configured'
+
+function readConfiguredMap() {
+  try {
+    return JSON.parse(localStorage.getItem(CONFIGURED_KEY) || '{}') || {}
+  } catch {
+    return {}   // storage unavailable or corrupt — nothing known
+  }
+}
+
+export function readLibraryConfigured(id) {
+  return !!readConfiguredMap()[id]
+}
+
+export function writeLibraryConfigured(id, configured) {
+  try {
+    localStorage.setItem(CONFIGURED_KEY, JSON.stringify({ ...readConfiguredMap(), [id]: !!configured }))
+  } catch (e) {
+    console.warn('Médiathèque : état non mémorisé', e)
+  }
+}
+
 export function writeLibraryProvider(id) {
   try {
     localStorage.setItem(PROVIDER_KEY, id)

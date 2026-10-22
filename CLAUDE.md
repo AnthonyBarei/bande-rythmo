@@ -374,6 +374,9 @@ preuves `design/studio_v2_proofs/` (`shoot_studio_v2.py`, aucune écriture backe
 - **Éditeur → Studio** : R, ● de l'inspecteur et ● de l'onglet Voix ouvrent le Studio sur la réplique
   (sélectionnée, sinon sous la tête de lecture ; Voix : 1re réplique du rôle sans prise validée).
   L'enregistreur intégré à l'inspecteur (RecorderPanel) est supprimé — on enregistre dans le Studio.
+- **Round 2** (`FIXES_STUDIO_R2.md`) : texte de la réplique + puce TC ancrés au rect réel de la vidéo
+  (letterbox ≥ 72 px sinon 30 % bas de l'image), liste En continu qui suit la tête (2ᵉ ligne, pause 4 s
+  après scroll manuel), `(sans texte)`, en-tête = bande, résumé : micro désactivé, Entrée / Échap.
 
 ### Fait — Jellyfin (2026-10-22, branche `feat/jellyfin`)
 - Onglet Importer « Plex » → **Médiathèque** : switch Plex / Jellyfin (dernier choix en `localStorage`
