@@ -4,7 +4,10 @@
   const { PLEX } = window.RDATA;
 
   function Import({ go, accent }) {
-    const [src, setSrc] = React.useState('upload');
+    const [src, setSrc] = React.useState('plex');
+    const [picked, setPicked] = React.useState(null);
+    const MT = window.RScreens._Mediatheque;
+    const pickedTitle = picked ? (picked.kind === 'episode' ? `${picked.series.title} · ${window.RScreens._mtEpCode(picked)} · ${picked.title}` : picked.title) : 'Une_episode_brut.mp4';
     return (
       <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {/* Header */}
@@ -12,23 +15,23 @@
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 14, marginBottom: 18 }}>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: T.fs.micro, color: T.text3, letterSpacing: 1.4, fontWeight: 600, marginBottom: 4 }}>IMPORTER</div>
-              <div style={{ fontSize: T.fs.xxl, fontWeight: 600, letterSpacing: -0.6 }}>Une_episode_brut.mp4</div>
+              <div style={{ fontSize: T.fs.xxl, fontWeight: 600, letterSpacing: -0.6 }}>{src === 'plex' ? 'Choisir dans la médiathèque' : pickedTitle}</div>
               <div style={{ fontSize: T.fs.xs, color: T.text3, fontFamily: T.fontMono, marginTop: 6, display: 'flex', gap: 8, alignItems: 'center' }}>
-                42:18 · 1.2 GB · 24 fps · 1920×1080
-                <Dot color={T.success} size={6} /> <span style={{ color: T.success }}>depuis Plex · Films / Saison 02</span>
+                {src === 'plex' ? 'Films et séries de vos serveurs Jellyfin et Plex' : <>42:18 · 1.2 GB · 24 fps · 1920×1080
+                <Dot color={T.success} size={6} /> <span style={{ color: T.success }}>{picked ? `depuis Jellyfin · ${picked.kind === 'episode' ? picked.series.title + ' / Saison ' + picked.season : 'Films'}` : 'fichier local'}</span></>}
               </div>
             </div>
-            <Btn variant="solid" icon={ICONS.scissors}>Marquer un clip</Btn>
+            {src !== 'plex' && <><Btn variant="solid" icon={ICONS.scissors}>Marquer un clip</Btn>
             <Btn variant="primary" size="lg" onClick={() => go('library')}>
               Créer 3 clips <span style={{ display: 'inline-flex', gap: 3, marginLeft: 4 }}><Kbd>⌘</Kbd><Kbd>S</Kbd></span>
-            </Btn>
+            </Btn></>}
           </div>
 
           {/* Source switcher */}
           <div style={{ display: 'flex', gap: 6, padding: 5, background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.r.ctl, width: 'fit-content' }}>
             {[
               { id: 'upload', label: 'Fichier local', ic: ICONS.upload, hint: 'glisser un .mp4' },
-              { id: 'plex', label: 'Plex', ic: ICONS.film, hint: '192.168.1.4:32400', online: true },
+              { id: 'plex', label: 'Médiathèque', ic: ICONS.film, hint: 'Jellyfin · Plex' },
               { id: 'url', label: 'URL / Stream', ic: ICONS.plug, hint: 'http://…' },
             ].map(s => {
               const active = s.id === src;
@@ -51,7 +54,7 @@
 
         {/* Body */}
         <div style={{ flex: 1, minHeight: 0, padding: '16px 32px 20px', display: 'flex', gap: 18, overflow: 'hidden' }}>
-          {src === 'plex' ? <PlexBrowse accent={accent} /> : (
+          {src === 'plex' ? (MT ? <MT accent={accent} onPick={(it) => { setPicked(it); setSrc('upload'); }} /> : <PlexBrowse accent={accent} />) : (
             <>
               {/* Left: preview + timeline + pending */}
               <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto', overflowX: 'hidden', paddingRight: 2 }}>
