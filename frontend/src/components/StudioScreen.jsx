@@ -5,7 +5,9 @@ import { useSettings } from '../SettingsContext'
 import { useToast } from '../ToastContext'
 import { adjacentLine, characterProgress, nextOpenLine } from '../utils/studio'
 import { usePlayerVolume, applyPlayerVolume, toggleMuted } from '../utils/playerVolume'
-import { readComediens, writeComediens, readStudioRole, writeStudioRole, readStudioMode, writeStudioMode, readEditorSelection, withComedienDefault } from '../utils/studioPrefs'
+import { readComediens, writeComediens, withComedienDefault } from '../utils/studioPrefs'
+import { dropLegacyStudioKeys, studioStateOf, takeHandoff } from '../utils/clipState'
+import useClipUiState from '../hooks/useClipUiState'
 import { useAuth } from '../AuthContext'
 import { rangeLines } from '../utils/continuous'
 import BandCanvas from './band/BandCanvas'
@@ -69,15 +71,18 @@ function useVideoClock(videoRef) {
 // and the take queue of the current réplique.
 // `onExportDubbed` (optional): opens the export screen on "MP4 doublé" — the
 // action of the "toutes les répliques validées" toast.
-export default function StudioScreen({ clip, onBack, onExportDubbed }) {
+// `onLocalState(clipId, { ui_state })`: mirrors the saved role / mode into the app's clip.
+export default function StudioScreen({ clip, onLocalState, onBack, onExportDubbed }) {
   const videoRef = useRef(null)
   const subtitles = useMemo(() => clip.subtitles || [], [clip.subtitles])
   // Opens on the réplique selected in the Éditeur, else on the last role's
   // first réplique without a validated take (once the takes are loaded).
+  // Role and mode are kept in clips.ui_state.studio (P4).
+  const [studioSaved] = useState(() => studioStateOf(clip))
   const [entry] = useState(() => {
-    const sel = readEditorSelection(clip.clip_id)
+    const sel = takeHandoff(clip.clip_id) ?? clip.ui_state?.selected
     if (sel != null && subtitles[sel]) return { index: sel, role: null }
-    return { index: subtitles.length ? 0 : null, role: readStudioRole(clip.clip_id) }
+    return { index: subtitles.length ? 0 : null, role: studioSaved.role }
   })
   const [index, setIndex] = useState(entry.index)
   const activeIndex = index != null && subtitles[index] ? index : (subtitles.length ? 0 : null)
@@ -141,11 +146,7 @@ export default function StudioScreen({ clip, onBack, onExportDubbed }) {
   const role = target ? target.character || '' : null
 
   // ── Mode (STUDIO_V2 §2): Par réplique · En continu, saved per clip.
-  const [mode, setModeState] = useState(() => readStudioMode(clip.clip_id))
-  function setMode(m) {
-    setModeState(m)
-    writeStudioMode(clip.clip_id, m)
-  }
+  const [mode, setMode] = useState(studioSaved.mode)
   const [rangeKind, setRangeKind] = useState('from')
   const [inout, setInout] = useState(null)
 
@@ -196,7 +197,17 @@ export default function StudioScreen({ clip, onBack, onExportDubbed }) {
       comedien: shownComediens[name] || '', ...characterProgress(subtitles, takes, name),
     })), [charMap, shownComediens, subtitles, takes])
   const roleInfo = roles.find(r => r.name === role) || null
-  useEffect(() => { if (role != null) writeStudioRole(clip.clip_id, role) }, [clip.clip_id, role])
+  const saveUi = useClipUiState(clip.clip_id, (id, patch) => onLocalState?.(id, { ui_state: patch }))
+  // No ui_state.studio yet (first visit, or pre-P4 keys): save on first render.
+  const studioKeyRef = useRef(clip.ui_state?.studio ? JSON.stringify({ role: studioSaved.role, mode: studioSaved.mode }) : null)
+  useEffect(() => {
+    if (role == null) return
+    const key = JSON.stringify({ role, mode })
+    if (key === studioKeyRef.current) return
+    studioKeyRef.current = key
+    saveUi({ studio: { role, mode } })
+    dropLegacyStudioKeys(clip.clip_id)
+  }, [clip.clip_id, role, mode, saveUi])
 
   function setComedien(name) {
     setComediens(prev => {

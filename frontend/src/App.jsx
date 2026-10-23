@@ -435,9 +435,19 @@ function AppInner() {
     go({ view: 'memes' })
   }
 
+  // Server copies of a clip keep our ui_state / br_offset: those are written
+  // here first (handleClipLocal) and a save response may predate them.
   function handleClipUpdated(updated) {
-    setClips(prev => prev.map(c => c.clip_id === updated.clip_id ? updated : c))
-    setMemeClip(prev => prev?.clip_id === updated.clip_id ? updated : prev)
+    const keepLocal = c => ({ ...updated, ui_state: c.ui_state, br_offset: c.br_offset })
+    setClips(prev => prev.map(c => c.clip_id === updated.clip_id ? keepLocal(c) : c))
+    setMemeClip(prev => prev?.clip_id === updated.clip_id ? keepLocal(prev) : prev)
+  }
+
+  // Editor / Studio working state (P4): { ui_state patch } or { br_offset }.
+  function handleClipLocal(clipId, { ui_state: uiPatch, ...fields }) {
+    setClips(prev => prev.map(c => c.clip_id !== clipId ? c : {
+      ...c, ...fields, ...(uiPatch && { ui_state: { ...c.ui_state, ...uiPatch } }),
+    }))
   }
 
   async function handleDelete(clipId) {
@@ -595,6 +605,7 @@ function AppInner() {
                 key={activeClip.clip_id}
                 clip={activeClip}
                 onUpdate={handleClipUpdated}
+                onLocalState={handleClipLocal}
                 onBack={() => goStage('clips')}
                 exportOpen={dubExportOpen}
                 onToggleExport={() => goStage(dubExportOpen ? 'dub' : 'export')}
@@ -606,7 +617,7 @@ function AppInner() {
         )}
         {exportScreen && <div ref={setExportSlot} style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }} />}
         {section === 'record' && activeClip && (
-          <StudioScreen key={activeClip.clip_id} clip={activeClip} onBack={() => goStage('dub')}
+          <StudioScreen key={activeClip.clip_id} clip={activeClip} onLocalState={handleClipLocal} onBack={() => goStage('dub')}
             onExportDubbed={() => { setExportInitialFormat('mp4-dubbed'); goStage('export') }} />
         )}
         {section === 'memes' && (atelierImport ? (
