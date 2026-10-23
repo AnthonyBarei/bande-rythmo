@@ -86,6 +86,8 @@ frontend/src/
     import/                # ImportPlayer, SeekBar, PlayerControls (lecteur Importer), SourceList (vidéos du projet)
     band/                  # BandCanvas + bandRender/bandHit — rendu bande partagé Éditeur/Studio
     editor/                # EditorHeader, VideoStage, Transport, TimelineNav, BandToolbar, Inspector + onglets
+                           # + hooks usePlayback, useLoops, useBoucles, useBandInteraction (drag/menu/édition),
+                           #   useEditorKeys, useClipTools, useClipMedia, useUploadedFonts, useEditorLayout, useBandPrefs
     StudioScreen.jsx       # écran Studio v2 : rôle, Par réplique / En continu, résumé de session
     studio/                # useStudioRecorder (phases prêt→décompte→élan→rec→queue→revue, continu),
                            # useTakePlayer (A/B, écoute sur l'image), StudioStage, RolePicker,
@@ -422,8 +424,8 @@ Briefs `design/design_handoff_redesign_v2/HOME.md` + `ACCOUNT.md`, refs `referen
 - **Comédien** : rôle sans comédien → nom de comédien du compte affiché (Studio + onglet Voix), stocké seulement si édité.
 
 ### Reste à faire (non démarré)
-- **Phase 2 (REMAKE_PLAN)** : split DubbingWorkspace (3 650 lignes) en hooks,
-  export côté serveur (DB source of truth), Vitest
+- **Phase 2 (REMAKE_PLAN) — suite** : DubbingWorkspace découpé en hooks `editor/use*` (2026-10-23) ;
+  restent ExportPanel en lazy-load et l'export côté serveur (DB source of truth)
 - **Comptes — suite** : texte des conditions (`frontend/docs/conditions.md`), compte hébergé
   (multi-appareils, gamification, « Me prévenir »), contenu par utilisateur
 - **Installateurs** (Windows / macOS / Linux) — la section Télécharger de l'accueil les attend
