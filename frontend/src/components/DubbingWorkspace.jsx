@@ -28,7 +28,9 @@ import { useAuth } from '../AuthContext'
 import useSubtitleManager from '../hooks/useSubtitleManager'
 import { isActiveAt, activeIndexAt } from '../utils/band'
 import { usePlayerVolume, applyPlayerVolume } from '../utils/playerVolume'
-import { readComediens, writeComediens, writeEditorSelection, withComedienDefault } from '../utils/studioPrefs'
+import { readComediens, writeComediens, withComedienDefault } from '../utils/studioPrefs'
+import { handOffSelection, putBrOffset } from '../utils/clipState'
+import useClipUiState from '../hooks/useClipUiState'
 import { nextOpenLine } from '../utils/studio'
 import BandCanvas from './band/BandCanvas'
 import { CURSOR_X_RATIO, bandAccent, bandCanvasHeight, buildCharMap, autoFitPxPerSec } from './band/bandRender'
@@ -38,13 +40,15 @@ const CANVAS_HINT = 'glisser pour créer · ⇧ glisser : boucle · double-clic 
 
 // BR editor — orchestrates the editor hooks (editor/use*) and lays out header,
 // video, transport, nav bar, band toolbar, band and inspector.
-export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus, exportOpen, onToggleExport, onRecord, onHelp }) {
+export default function DubbingWorkspace({ clip, onUpdate, onLocalState, onBack, onSaveStatus, exportOpen, onToggleExport, onRecord, onHelp }) {
+  // Where this clip was left (clips.ui_state, P4): playhead, zoom, tab, selection.
+  const [saved] = useState(() => clip.ui_state || {})
   // Subtitle state machine (array, selection, undo/redo, debounced autosave).
   const {
     subtitles, selectedIdx, setSelectedIdx, saveStatus,
     changeSubtitles, setSubtitlesTransient, commitDrag, finishDrag, saveNow,
     undo, redo, canUndo, canRedo,
-  } = useSubtitleManager({ clipId: clip.clip_id, initialSubtitles: clip.subtitles || [], onSaved: onUpdate })
+  } = useSubtitleManager({ clipId: clip.clip_id, initialSubtitles: clip.subtitles || [], initialSelectedIdx: saved.selected, onSaved: onUpdate })
   const subtitlesRef = useLatestRef(subtitles)
   const selectedIdxRef = useLatestRef(selectedIdx)
   // Last non-null selection (the inspector falls back to it).
@@ -71,9 +75,12 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   const lockedRef = useLatestRef(locked)
   // DOUBLAGE_IA_REVIEW §7 — default 150 px/s (comfortable reading cadence at
   // normal speech). pxPerSec is also re-measured per clip in the auto-fit block.
-  const [pxPerSec, setPxPerSec] = useState(150)
+  const [pxPerSec, setPxPerSec] = useState(saved.pxPerSec ?? 150)
+  // A zoom the user chose is kept per clip; the auto-fit one is not.
+  const zoomChosenRef = useRef(saved.pxPerSec != null)
+  const setZoom = v => { zoomChosenRef.current = true; setPxPerSec(v) }
   const pxPerSecRef = useLatestRef(pxPerSec)
-  const [rightTab, setRightTab] = useState('repliques')
+  const [rightTab, setRightTab] = useState(saved.rightTab || 'repliques')
   const [takes, setTakes] = useState([])
   const [comediens, setComediens] = useState({})
   // DOUBLAGE_IA_REVIEW §6.2 — header character pills FILTER the band.
@@ -83,7 +90,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   const onsetsRef = useRef(null)
 
   const { colRef, bandH, setBandH, clampBand, inspW, setInspW, inspOpen, setInspOpen } = useEditorLayout()
-  const play = usePlayback({ clipFps })
+  const play = usePlayback({ clipFps, initialTime: saved.playhead || 0, initialBrOffset: clip.br_offset || 0 })
   const { videoRef, getBandTime, seekBand, bandNow } = play
   const prefs = useBandPrefs()
   const detectionRef = useLatestRef(prefs.detection)
@@ -116,7 +123,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   })
 
   const band = useBandInteraction({
-    canvasRef, videoRef, subtitlesRef, charMapRef, numTracksRef, pxPerSecRef, setPxPerSec,
+    canvasRef, videoRef, subtitlesRef, charMapRef, numTracksRef, pxPerSecRef, setPxPerSec: setZoom,
     detectionRef, wordByWord: prefs.wordByWord, onsetsRef, lockedRef, charList,
     getBandTime, seekBand, setLoopRegion: loops.setLoopRegion, loopRegionRef: loops.loopRegionRef, loopSub: loops.loopSub,
     changeSubtitles, setSubtitlesTransient, dragCommit: commitDrag, finishDrag, deleteReplica: deleteReplicaWithUndo,
@@ -132,8 +139,36 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
     })
   }
 
-  // The Studio opens on the réplique selected here.
-  useEffect(() => { writeEditorSelection(clip.clip_id, selectedIdx) }, [clip.clip_id, selectedIdx])
+  // Working state saved per clip: playhead, chosen zoom, inspector tab, selection.
+  const saveUi = useClipUiState(clip.clip_id, (id, patch) => onLocalState?.(id, { ui_state: patch }))
+  const playheadKey = Math.round(play.currentTime * 10)
+  const lastUiRef = useRef(null)
+  useEffect(() => {
+    const next = {
+      playhead: playheadKey / 10, rightTab, selected: selectedIdx,
+      pxPerSec: zoomChosenRef.current ? pxPerSec : null,
+    }
+    const key = JSON.stringify(next)
+    if (lastUiRef.current == null) { lastUiRef.current = key; return }   // as restored
+    if (key === lastUiRef.current) return
+    lastUiRef.current = key
+    saveUi(next)
+  }, [playheadKey, pxPerSec, rightTab, selectedIdx, saveUi])
+
+  // BR sync correction — clip data (Q4), saved like the répliques.
+  const brOffsetTimer = useRef(null)
+  const brOffsetSaved = useRef(play.brOffset)
+  useEffect(() => {
+    if (play.brOffset === brOffsetSaved.current) return
+    clearTimeout(brOffsetTimer.current)
+    const value = play.brOffset
+    brOffsetTimer.current = setTimeout(() => {
+      brOffsetSaved.current = value
+      onLocalState?.(clip.clip_id, { br_offset: value })
+      putBrOffset(clip.clip_id, value).catch(e => toast.error('Décalage BR non enregistré : ' + e.message))
+    }, 800)
+    return () => clearTimeout(brOffsetTimer.current)
+  }, [play.brOffset, clip.clip_id])
 
   // Fetch takes (refreshed when the right pane tab changes)
   useEffect(() => {
@@ -149,7 +184,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   // Auto-fit scroll rate, once per clip: pick pxPerSec so the densest réplique
   // sits near its natural width and lighter ones stretch out — the airy
   // VoxDub-style layout, without the user having to touch the zoom.
-  const autoFitRef = useRef(null)
+  const autoFitRef = useRef(saved.pxPerSec != null ? clip.clip_id : null)
   useEffect(() => {
     if (!subtitles.length || autoFitRef.current === clip.clip_id) return
     autoFitRef.current = clip.clip_id
@@ -231,7 +266,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
   // to open on (its role follows), then switch screens.
   function openStudio(idx) {
     saveNow()
-    writeEditorSelection(clip.clip_id, idx != null && idx >= 0 ? idx : null)
+    handOffSelection(clip.clip_id, idx)
     onRecord?.()
   }
   // R / inspector ● — the selected réplique, else the one under the playhead.
@@ -392,7 +427,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
             viewEnd={viewStart + viewSpan}
             pxPerSec={pxPerSec}
             onSeek={seekBand}
-            onZoom={setPxPerSec}
+            onZoom={setZoom}
             onScrubStart={play.pauseForScrub}
             onScrubEnd={play.resumeAfterScrub}
           />
@@ -407,7 +442,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onBack, onSaveStatus,
             loopRegion={loops.loopRegion}
             onToggleLoopSelection={loops.toggleLoopSelection}
             pxPerSec={pxPerSec}
-            setPxPerSec={setPxPerSec}
+            setPxPerSec={setZoom}
             charMap={charMap}
             locked={locked}
             setLocked={setLocked}

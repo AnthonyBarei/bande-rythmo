@@ -1,6 +1,6 @@
-// Per-clip Studio memory, local to this browser: comédien names (shared with
-// the Éditeur's Voix tab), the last role recorded, the recording mode, and the
-// réplique selected in the Éditeur (session only) so the Studio opens on it.
+// Comédien names per clip, local to this browser (shared with the Éditeur's
+// Voix tab) — until the project cast (PROJECTS_PLAN P5). The Studio's role and
+// mode now live in clips.ui_state (utils/clipState).
 
 const read = (store, key, fallback) => {
   try {
@@ -31,12 +31,3 @@ export function withComedienDefault(map, roles, fallback) {
   for (const role of roles) if (!Object.hasOwn(out, role)) out[role] = fallback
   return out
 }
-
-export const readStudioRole =clipId => read(localStorage, `br-studio-role-${clipId}`, null)
-export const writeStudioRole = (clipId, role) => write(localStorage, `br-studio-role-${clipId}`, role)
-
-export const readStudioMode = clipId => read(localStorage, `br-studio-mode-${clipId}`, 'line')
-export const writeStudioMode = (clipId, mode) => write(localStorage, `br-studio-mode-${clipId}`, mode)
-
-export const readEditorSelection = clipId => read(sessionStorage, `br-editor-sel-${clipId}`, null)
-export const writeEditorSelection = (clipId, index) => write(sessionStorage, `br-editor-sel-${clipId}`, index)

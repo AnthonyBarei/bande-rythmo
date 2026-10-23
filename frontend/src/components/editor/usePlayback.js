@@ -5,18 +5,21 @@ import useLatestRef from '../../hooks/useLatestRef'
 // Editor video + the band time base. Band time = video time + brOffset; it is
 // the one time base for réplique edits and lookups, and seeks to a band
 // position convert back to video time.
-export default function usePlayback({ clipFps }) {
+// initialTime / initialBrOffset: where the clip was left (clips.ui_state, br_offset).
+export default function usePlayback({ clipFps, initialTime = 0, initialBrOffset = 0 }) {
   const videoRef = useRef(null)
-  const [currentTime, setCurrentTime] = useState(0)
+  // Starts at the saved playhead so a save before the restoring seek keeps it.
+  const [currentTime, setCurrentTime] = useState(initialTime)
   const [duration, setDuration] = useState(0)
   const [playing, setPlaying] = useState(false)
   const [speed, setSpeed] = useState(1)
-  const [brOffset, setBrOffset] = useState(0)
+  const [brOffset, setBrOffset] = useState(initialBrOffset)
   const brOffsetRef = useLatestRef(brOffset)
   const clipFpsRef = useLatestRef(clipFps)
   const scrubResumeRef = useRef(false)
-  // Restores the playhead after a Master/Proxy source swap.
-  const resumeTimeRef = useRef(null)
+  // Playhead to restore once metadata loads: the saved one, then after a
+  // Master/Proxy source swap.
+  const resumeTimeRef = useRef(initialTime || null)
   // Smooth time interpolation: video.currentTime only updates at video fps (e.g. 24fps).
   // Between updates, we interpolate using wall clock so the canvas scrolls at 60fps.
   const interpTimeRef = useRef({ videoTime: 0, wallMs: 0, active: false })
