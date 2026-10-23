@@ -78,11 +78,12 @@ frontend/src/
   detection.js             # classifyChar() + SIGN_KINDS + DEFAULT_SIGN_TOGGLES (miroir detection.py)
   components/
     Sidebar.jsx            # nav rail: Projets / Atelier · Activité / Réglages
-    ImportSection.jsx      # upload + timeline drag-to-create + onglet Médiathèque (Plex/Jellyfin)
+    ImportSection.jsx      # étape Médias : vidéos du projet (pistes + brouillon de découpe sauvés) + onglets Ajouter
+                           # (fichier / Médiathèque / URL) ; mode libre pour l'import de l'Atelier
     VideoEditor.jsx        # éditeur clip (job-mode batch)
     TimelineBar.jsx        # timeline zoom + minimap (import)
     BRTimeline.jsx         # nav plein-clip sous canvas BR (waveform/boucles/scenes/playhead)
-    import/                # ImportPlayer, SeekBar, PlayerControls (lecteur Importer)
+    import/                # ImportPlayer, SeekBar, PlayerControls (lecteur Importer), SourceList (vidéos du projet)
     band/                  # BandCanvas + bandRender/bandHit — rendu bande partagé Éditeur/Studio
     editor/                # EditorHeader, VideoStage, Transport, TimelineNav, BandToolbar, Inspector + onglets
     StudioScreen.jsx       # écran Studio v2 : rôle, Par réplique / En continu, résumé de session

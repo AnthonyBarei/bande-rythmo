@@ -109,8 +109,6 @@ function TopBar({ onCmd, onHelp, onActivity, account }) {
   )
 }
 
-const ATELIER = '__atelier'   // video slot of the Atelier's inline import
-
 function AppInner() {
   const toast = useToast()
   const { settings } = useSettings()
@@ -158,7 +156,7 @@ function AppInner() {
   const [clips, setClips] = useState([])
   const [clipsLoaded, setClipsLoaded] = useState(false)
   const [loadedProject, setProject] = useState(null)
-  const [videos, setVideos] = useState({})   // projectId | ATELIER → import screen source
+  const [atelierVideo, setAtelierVideo] = useState(null)   // the Atelier's inline import source
   const [memeClip, setMemeClip] = useState(null)
   const [memeInitialTab, setMemeInitialTab] = useState(null)
   const [atelierImport, setAtelierImport] = useState(false)
@@ -169,6 +167,9 @@ function AppInner() {
   const [createPending, setCreatePending] = useState(false)   // N / palette → open « Nouveau projet »
   const [moving, setMoving] = useState(null)   // clip being moved to another project
   const lastClipRef = useRef({})               // projectId → last clip opened
+  const [sourceSel, setSourceSel] = useState({})   // projectId → Médias source id (null = « Ajouter »)
+  // Drafts written this session win over a project refresh that raced their PUT.
+  const localDraftsRef = useRef({})
 
   useEffect(() => {
     let live = true
@@ -192,7 +193,9 @@ function AppInner() {
   const refreshProject = useCallback(async id => {
     try {
       const detail = await getProject(id)
-      if (routeRef.current.projectId === id) setProject(detail)
+      const drafts = localDraftsRef.current
+      const sources = detail.sources.map(s => (s.id in drafts ? { ...s, draft: drafts[s.id] } : s))
+      if (routeRef.current.projectId === id) setProject({ ...detail, sources })
     } catch (e) {
       console.error(e)
       if (routeRef.current.projectId !== id) return
@@ -206,6 +209,26 @@ function AppInner() {
   }, [projectId, refreshProject])
   // The previous project's detail never shows under another project's id.
   const project = loadedProject?.id === projectId ? loadedProject : null
+
+  // Médias: the source picked this session, else the one saved on the
+  // project, else the first one (none → the « Ajouter » tabs).
+  const selectedSourceId = useMemo(() => {
+    if (!project) return null
+    if (projectId in sourceSel) return sourceSel[projectId]
+    const saved = project.ui_state?.source_id
+    return project.sources.some(s => s.id === saved) ? saved : project.sources[0]?.id ?? null
+  }, [project, projectId, sourceSel])
+
+  // Partial source update (track pick, draft) or a new source of this project.
+  const updateSource = useCallback(patch => {
+    if ('draft' in patch) localDraftsRef.current[patch.id] = patch.draft
+    setProject(p => {
+      if (!p || (patch.project_id && patch.project_id !== p.id)) return p
+      const exists = p.sources.some(s => s.id === patch.id)
+      const sources = exists ? p.sources.map(s => (s.id === patch.id ? { ...s, ...patch } : s)) : [...p.sources, patch]
+      return { ...p, sources }
+    })
+  }, [])
 
   const projectClips = useMemo(
     () => (projectId ? clips.filter(c => c.project_id === projectId) : [])
@@ -259,6 +282,7 @@ function AppInner() {
     const uiState = {
       stage: route.stage === 'export' ? 'dub' : route.stage,
       clip_id: route.clipId || lastClipRef.current[route.projectId] || null,
+      source_id: selectedSourceId,
     }
     const key = JSON.stringify(uiState)
     if (savedStateRef.current[route.projectId] === key) return
@@ -269,7 +293,7 @@ function AppInner() {
         .catch(e => console.error('Projet : état non enregistré', e))
     }, 400)
     return () => clearTimeout(t)
-  }, [route])
+  }, [route, selectedSourceId])
 
   // ── Auth / verify ──
   useEffect(() => {
@@ -386,12 +410,12 @@ function AppInner() {
     }))
     addClips(filed)
     setAtelierImport(false)
-    setVideos(v => ({ ...v, [ATELIER]: null }))
+    setAtelierVideo(null)
     if (filed.length) { setMemeClip(filed[0]); setMemeInitialTab(null) }
   }
 
   function openInImporter(file) {
-    setVideos(v => ({ ...v, [ATELIER]: { file, url: URL.createObjectURL(file), filename: file.name, sourcePath: null, sourceId: null } }))
+    setAtelierVideo({ file, url: URL.createObjectURL(file), filename: file.name, sourcePath: null, sourceId: null })
     setAtelierImport(true)
     go({ view: 'memes' })
   }
@@ -511,7 +535,6 @@ function AppInner() {
   }
 
   const account = <AccountButton user={auth.user} accent={settings.accent} onNavigate={navigate} onLogin={openAuth} onLogout={handleLogout} />
-  const projectVideo = projectId ? videos[projectId] || null : null
 
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: 'var(--bg)' }}>
@@ -536,12 +559,14 @@ function AppInner() {
           <ProjectsHome onOpen={openProject} createPending={createPending} onCreateHandled={() => setCreatePending(false)}
             onProjectsChanged={handleProjectsChanged} />
         )}
-        {section === 'import' && (
+        {section === 'import' && project && (
           <ImportSection
             key={projectId}
             projectId={projectId}
-            video={projectVideo}
-            onVideoSet={v => setVideos(prev => ({ ...prev, [projectId]: v }))}
+            sources={project.sources}
+            selectedSourceId={selectedSourceId}
+            onSelectSource={id => setSourceSel(prev => ({ ...prev, [projectId]: id }))}
+            onSourceUpdated={updateSource}
             onClipsCreated={handleClipsCreated}
           />
         )}
@@ -586,8 +611,8 @@ function AppInner() {
         )}
         {section === 'memes' && (atelierImport ? (
           <ImportSection
-            video={videos[ATELIER] || null}
-            onVideoSet={v => { setVideos(prev => ({ ...prev, [ATELIER]: v })); if (!v) setAtelierImport(false) }}
+            video={atelierVideo}
+            onVideoSet={v => { setAtelierVideo(v); if (!v) setAtelierImport(false) }}
             onClipsCreated={handleAtelierClipsCreated}
           />
         ) : (
