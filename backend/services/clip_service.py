@@ -36,6 +36,16 @@ def _parse_words(raw):
         return None
 
 
+def _parse_ui_state(raw):
+    if not raw:
+        return {}
+    try:
+        v = json.loads(raw)
+        return v if isinstance(v, dict) else {}
+    except (ValueError, TypeError):
+        return {}
+
+
 def _parse_scene_cuts(raw):
     if not raw:
         return []
@@ -60,6 +70,10 @@ def _to_dict(clip: Clip) -> dict:
         "fps": clip.fps or 25.0,
         "scene_cuts": _parse_scene_cuts(clip.scene_cuts),
         "project": clip.project or "",
+        "project_id": clip.project_id,
+        "source_id": clip.source_id,
+        "br_offset": clip.br_offset or 0.0,
+        "ui_state": _parse_ui_state(clip.ui_state),
         "has_proxy": os.path.isfile(f"segments/{clip.clip_id}_proxy.mp4"),
         "has_bed": os.path.isfile(f"segments/{clip.clip_id}_bed.wav"),
         "subtitles": [
@@ -81,12 +95,16 @@ def _to_dict(clip: Clip) -> dict:
     }
 
 
-def create_clip(db: Session, clip_id, name, source_filename, start, end, segment_path, thumbnail_path, source_path=None, fps=25.0):
+def create_clip(db: Session, clip_id, name, source_filename, start, end, segment_path, thumbnail_path,
+                source_path=None, fps=25.0, project_id=None, project=None, source_id=None):
     clip = Clip(
         clip_id=clip_id,
         name=name,
         source_filename=source_filename,
         source_path=source_path,
+        project_id=project_id,
+        project=project,
+        source_id=source_id,
         start=start,
         end=end,
         segment_path=segment_path,
@@ -100,8 +118,11 @@ def create_clip(db: Session, clip_id, name, source_filename, start, end, segment
     return _to_dict(clip)
 
 
-def list_clips(db: Session):
-    clips = db.query(Clip).order_by(Clip.created_at.desc()).all()
+def list_clips(db: Session, project_id=None):
+    query = db.query(Clip)
+    if project_id:
+        query = query.filter(Clip.project_id == project_id)
+    clips = query.order_by(Clip.created_at.desc()).all()
     return [_to_dict(c) for c in clips]
 
 
@@ -186,11 +207,33 @@ def update_scene_cuts(db: Session, clip_id, cuts):
     return _to_dict(clip)
 
 
-def update_project(db: Session, clip_id, project):
+def update_project(db: Session, clip_id, project, project_id):
+    """Legacy text tag + project_id are written together until P6."""
     clip = db.query(Clip).filter(Clip.clip_id == clip_id).first()
     if not clip:
         return None
     clip.project = (project or "").strip() or None
+    clip.project_id = project_id
+    db.commit()
+    db.refresh(clip)
+    return _to_dict(clip)
+
+
+def update_br_offset(db: Session, clip_id, br_offset):
+    clip = db.query(Clip).filter(Clip.clip_id == clip_id).first()
+    if not clip:
+        return None
+    clip.br_offset = float(br_offset)
+    db.commit()
+    db.refresh(clip)
+    return _to_dict(clip)
+
+
+def update_ui_state(db: Session, clip_id, ui_state):
+    clip = db.query(Clip).filter(Clip.clip_id == clip_id).first()
+    if not clip:
+        return None
+    clip.ui_state = json.dumps(ui_state) if ui_state else None
     db.commit()
     db.refresh(clip)
     return _to_dict(clip)

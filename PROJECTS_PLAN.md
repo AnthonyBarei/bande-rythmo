@@ -1,6 +1,6 @@
 # PROJECTS PLAN — from volatile screens to projects
 
-> Written 2026-10-23. Status: **plan only, nothing built.**
+> Written 2026-10-23. Status: **decisions taken (§8). P1 in progress.**
 > Goal: the app works the way professional dubbing/editing tools do. You create a **project**,
 > import one or more videos into it, then go through cutting clips → bande rythmo → dubbing →
 > export. Everything is saved: leave, reload or restart and you land where you left off.
@@ -89,6 +89,7 @@ by entry when the clips are created.
 - `+ source_id TEXT FK sources ON DELETE SET NULL`. Clips are self-contained segments
   (`segments/{id}.mp4`), so removing or losing a source **never** breaks a clip. It only
   blocks cutting new clips from it.
+- `+ br_offset REAL NOT NULL DEFAULT 0`: the BR sync correction, stored as clip data (Q4).
 - `+ ui_state TEXT JSON`: `{playhead, pxPerSec, rightTab, selected, studio: {role, mode}}`.
   Replaces `br-editor-sel-{id}`, `br-studio-role-{id}` and `br-studio-mode-{id}`.
 - `project` (text) and `source_path` stay, read-only, until phase 6, then are dropped/ignored.
@@ -215,13 +216,25 @@ instead of `_sources`, so they work after a backend restart.
 Each phase ships on its own branch and leaves the app usable.
 
 ### P1 · Data foundation (backend only, no UI change)
-- [ ] `Project`, `Source`, `ProjectRole`, `meta` models. New columns on `clips`/`lexicon`.
-- [ ] Migration (§3, steps 0–4) with backup + idempotency test.
-- [ ] `/api/projects` CRUD, `/api/sources`, `?project_id=` on clips.
-- [ ] `files.py` persists sources to the DB instead of `_sources`. Stream/remux survive a restart.
-- [ ] The old `Clip.project` endpoints keep working (write both) until P2 ships.
+- [x] `Project`, `Source`, `ProjectRole`, `meta` models. New columns on `clips`/`lexicon`
+  (+ `clips.br_offset`, Q4).
+- [x] Migration (§3, steps 0–4) with backup + idempotency test. Each step only touches rows
+  with no project/source yet, so it runs at every startup and also adopts clips created by
+  the old screens.
+- [x] `/api/projects` CRUD (typed-name delete, `disk_bytes`), `/api/sources`
+  (draft, tracks, relink with duration check, delete keeps clips), `?project_id=` on clips,
+  `PUT /clips/{id}/br-offset|ui-state`.
+- [x] `files.py` persists sources to the DB instead of `_sources`. Stream/remux survive a
+  restart (remux written to `.part` then renamed, so a file on disk means ready).
+- [x] The old `Clip.project` endpoints keep working (write both) until P2 ships.
 - **Done when:** the unittest suite passes, the migration fixture passes twice, and the
   current UI works unchanged.
+- Notes:
+  - `sources.project_id` is **nullable**. The pre-project import screen picks and registers
+    sources outside any project. A cut adopts them into the clip's project; P6 prunes the
+    leftovers that have no clips.
+  - Library sources are stored as `{provider, part_id}` (Plex) or
+    `{provider, item_id, media_source_id}` (Jellyfin).
 
 ### P2 · Projects home + project shell
 - [ ] Hash router, nav rail change, Projects home, New project dialog.
@@ -250,7 +263,8 @@ Each phase ships on its own branch and leaves the app usable.
 
 ### P6 · Project lifecycle + cleanup
 - [ ] Rename / colour / archive / delete (Q2) / move clips between projects.
-- [ ] Drop reads of `Clip.project`, `LexiconEntry.project`, `source_path`. Remove `_sources`.
+- [ ] Drop reads of `Clip.project`, `LexiconEntry.project`, `source_path`. Prune sources
+  with no project and no clips.
 - [ ] Update CLAUDE.md architecture + data model sections.
 - Later: project ZIP export/import, `owner_id` + sharing with hosted accounts, project-level
   batch export (REMAKE Phase 3).
@@ -275,18 +289,15 @@ Each phase ships on its own branch and leaves the app usable.
 
 ---
 
-## 8 · Open questions
+## 8 · Decisions (2026-10-23)
 
-- **Q1 · Memes.** Today MemeGenerator tags its clips with a fixed project name. Options:
-  (a) Memes stays a standalone tool whose clips go to an auto `kind='memes'` project, hidden
-  from the home grid; (b) memes become a stage of any project. **Recommend (a).**
-- **Q2 · Deleting a project.** It deletes clips, takes, exports, proxies and stems on disk, but
-  never the original source files. Confirm by typing the name, showing the disk size freed.
-  Or archive-only, with no hard delete? **Recommend delete + typed confirmation, archive as
-  the default card action.**
-- **Q3 · UI state per user or per project?** Per project is simpler and right for one person
-  per machine. Per user matters only with hosted accounts. **Recommend per project now.**
-- **Q4 · `brOffset`.** It is a sync correction (a property of the clip), not a view setting.
-  Persist it as clip data (`clips.br_offset`) rather than in `ui_state`? **Recommend yes.**
-- **Q5 · Language.** Per project (Whisper default) is the plan. A source with several audio
-  tracks may need a per-source override. Add `sources.language` only if it comes up.
+- **Q1 · Memes.** Memes stays a standalone tool. Its clips go to an auto project with
+  `kind='memes'`, hidden from the Projects home grid.
+- **Q2 · Deleting a project.** The default card action is **archive**. A real delete requires
+  typing the project name and shows the disk space freed. It removes clips, takes, exports,
+  proxies, beds and stems on disk, and never the original source videos.
+- **Q3 · UI state.** Stored per project and per clip, not per user. Revisit with hosted accounts.
+- **Q4 · `brOffset`.** Stored as clip data in `clips.br_offset REAL NOT NULL DEFAULT 0`, and used
+  by the editor, Studio and exports.
+- **Q5 · Language.** Set per project as the Whisper default. No per-source override until a
+  multi-track source needs one.

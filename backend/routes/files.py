@@ -2,43 +2,44 @@ import asyncio
 import logging
 import mimetypes
 import os
+import re
 import subprocess
-import uuid
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import FileResponse, RedirectResponse
+from sqlalchemy.orm import Session
 
-from services.clip_service import _redact_token
+from database import get_db
+from models import Project
+from services import source_service
+from services.clip_service import SAFE_ID_PATTERN, _redact_token
 from services.ffmpeg_service import probe_streams
-from services.jobs import create_job, get_job
+from services.files_dialog import open_video_dialog
+from services.jobs import create_job
 
 log = logging.getLogger("br.files")
 
 router = APIRouter()
 
-# source entry: {"path": str (local path or HTTP URL for ffmpeg), "stream_url": str (browser URL), "filename": str}
-_sources: dict[str, dict] = {}
-_remux_cache: dict[tuple, str] = {}   # (source_id, v, a) → local path
+# Sources live in the `sources` table (survive a restart). Remuxed audio lives
+# on disk at sources/{source_id}_a{n}.m4a — its presence means "ready".
 _remux_status: dict[str, str] = {}    # "{source_id}_v{v}_a{a}" → "pending"|"ready"|"error"
 _remux_jobs: dict[str, str] = {}      # status_key → job_id (for progress + cancel)
 
-_PICK_SCRIPT = """
-Add-Type -AssemblyName System.Windows.Forms
-$d = New-Object System.Windows.Forms.OpenFileDialog
-$d.Title = 'Sélectionner une vidéo'
-$d.Filter = 'Vidéos (*.mp4;*.mkv;*.mov;*.avi;*.m4v;*.webm)|*.mp4;*.mkv;*.mov;*.avi;*.m4v;*.webm|Tous (*.*)|*.*'
-if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $d.FileName }
-"""
+
+def _remux_path(source_id: str, audio: int) -> str:
+    return f"sources/{source_id}_a{audio}.m4a"
 
 
-def _open_dialog() -> str | None:
-    result = subprocess.run(
-        ["powershell", "-NoProfile", "-Command", _PICK_SCRIPT],
-        capture_output=True, text=True,
-    )
-    path = result.stdout.strip()
-    return path if path else None
+def _source_path(db: Session, source_id: str) -> str:
+    src = source_service.get(db, source_id)
+    if not src:
+        raise HTTPException(404, "Source not found")
+    try:
+        return source_service.resolve_path(src)
+    except source_service.SourceOffline:
+        raise HTTPException(404, "Source not found")
 
 
 # Chrome/Edge decode these in an MP4 everywhere; AC3/EAC3/DTS/TrueHD play
@@ -111,44 +112,41 @@ def _discard_partial(path: str):
             log.warning("could not remove partial remux %s", path, exc_info=True)
 
 
-async def _remux_task(job, path: str, remux_path: str, cache_key: tuple, status_key: str):
+async def _remux_task(job, path: str, remux_path: str, audio: int, status_key: str):
+    # Written aside then renamed: a file at remux_path is always complete.
+    partial = remux_path + ".part"
     try:
-        a_idx = cache_key[2]
         job.update(stage="Extraction piste audio", pct=0.05)
-        await asyncio.to_thread(_extract_audio, path, remux_path, a_idx, job)
+        await asyncio.to_thread(_extract_audio, path, partial, audio, job)
         if job.cancelled:
             _remux_status[status_key] = "error"
-            _discard_partial(remux_path)
+            _discard_partial(partial)
             return
-        _remux_cache[cache_key] = remux_path
+        os.replace(partial, remux_path)
         _remux_status[status_key] = "ready"
         job.done({"path": remux_path})
     except Exception as e:
         log.exception("remux failed for %s", status_key)
         _remux_status[status_key] = "error"
-        _discard_partial(remux_path)
+        _discard_partial(partial)
         job.fail(str(e))
 
 
 @router.post("/pick")
-async def pick_file():
-    path = await asyncio.to_thread(_open_dialog)
+async def pick_file(project_id: Optional[str] = None, db: Session = Depends(get_db)):
+    if project_id and not db.get(Project, project_id):
+        raise HTTPException(404, "Project not found")
+    path = await asyncio.to_thread(open_video_dialog)
     if not path:
         return {"cancelled": True}
     if not os.path.isfile(path):
         raise HTTPException(400, f"File not found: {path}")
 
-    source_id = str(uuid.uuid4())
-    _sources[source_id] = {
-        "path": path,
-        "stream_url": None,  # local → served via /stream endpoint
-        "filename": os.path.basename(path),
-    }
-
     streams = await asyncio.to_thread(probe_streams, path)
+    src = source_service.create(db, path, os.path.basename(path), project_id=project_id, streams=streams)
     return {
-        "source_id": source_id,
-        "filename": os.path.basename(path),
+        "source_id": src.id,
+        "filename": src.filename,
         "path": path,
         **streams,
     }
@@ -159,28 +157,22 @@ async def start_remux(
     source_id: str,
     audio: int = Query(0),
     video: int = Query(0),
+    db: Session = Depends(get_db),
 ):
-    src = _sources.get(source_id)
-    if not src:
-        raise HTTPException(404, "Source not found")
-    path = src["path"]
-    if not path.startswith("http") and not os.path.isfile(path):
-        raise HTTPException(404, "Source not found")
-
-    cache_key = (source_id, video, audio)
+    path = _source_path(db, source_id)
     status_key = f"{source_id}_v{video}_a{audio}"
+    remux_path = _remux_path(source_id, audio)
 
-    if cache_key in _remux_cache:
-        return {"status": "ready", "job_id": _remux_jobs.get(status_key)}
     if _remux_status.get(status_key) == "pending":
         return {"status": "pending", "job_id": _remux_jobs.get(status_key)}
+    if os.path.isfile(remux_path):
+        return {"status": "ready", "job_id": _remux_jobs.get(status_key)}
 
     os.makedirs("sources", exist_ok=True)
-    remux_path = f"sources/{source_id}_a{audio}.m4a"
     _remux_status[status_key] = "pending"
     job = create_job("plex-remux", title="Préparation audio")
     _remux_jobs[status_key] = job.id
-    asyncio.create_task(_remux_task(job, path, remux_path, cache_key, status_key))
+    asyncio.create_task(_remux_task(job, path, remux_path, audio, status_key))
     return {"status": "pending", "job_id": job.id}
 
 
@@ -189,26 +181,29 @@ async def get_remux_status(
     source_id: str,
     audio: int = Query(0),
     video: int = Query(0),
+    db: Session = Depends(get_db),
 ):
-    cache_key = (source_id, video, audio)
     status_key = f"{source_id}_v{video}_a{audio}"
     job_id = _remux_jobs.get(status_key)
-    if cache_key in _remux_cache:
+    status = _remux_status.get(status_key)
+    if status != "pending" and os.path.isfile(_remux_path(source_id, audio)):
         return {"status": "ready", "job_id": job_id}
-    # Source vanished (server restart) — stop polling
-    if source_id not in _sources and _remux_status.get(status_key) not in ("pending", "ready", "error"):
+    if source_service.get(db, source_id) is None:
         return {"status": "error", "reason": "source_lost"}
-    return {"status": _remux_status.get(status_key, "unknown"), "job_id": job_id}
+    return {"status": status or "unknown", "job_id": job_id}
 
 
 @router.post("/register")
-async def register_url_source(source_id: str, stream_url: str, filename: str):
-    """Register an external URL source (Plex, Jellyfin) without local file."""
-    _sources[source_id] = {
-        "path": stream_url,       # ffmpeg reads HTTP directly
-        "stream_url": stream_url, # browser also uses directly
-        "filename": filename,
-    }
+async def register_url_source(source_id: str, stream_url: str, filename: str,
+                              project_id: Optional[str] = None, db: Session = Depends(get_db)):
+    """Register an external URL source (Plex, Jellyfin) without local file.
+    Library URLs are stored as a provider reference — the token stays in the config."""
+    # The id becomes a file name (sources/{id}_a{n}.m4a).
+    if not re.fullmatch(SAFE_ID_PATTERN, source_id):
+        raise HTTPException(400, "Invalid source_id")
+    if project_id and not db.get(Project, project_id):
+        raise HTTPException(404, "Project not found")
+    source_service.create(db, stream_url, filename, project_id=project_id, source_id=source_id)
     return {"ok": True}
 
 
@@ -217,29 +212,18 @@ async def stream_file(
     source_id: str,
     audio: Optional[int] = Query(None),
     video: Optional[int] = Query(None),
+    db: Session = Depends(get_db),
 ):
-    src = _sources.get(source_id)
-    if not src:
-        raise HTTPException(404, "Source not found")
-
-    path = src["path"]
-    is_url = path.startswith("http")
-
     if audio is None and video is None:
-        if is_url:
-            from fastapi.responses import RedirectResponse
+        path = _source_path(db, source_id)
+        if path.startswith("http"):
             return RedirectResponse(path)
-        if not os.path.isfile(path):
-            raise HTTPException(404, "File not found")
         media_type = mimetypes.guess_type(path)[0] or "video/mp4"
         return FileResponse(path, media_type=media_type)
 
-    v_idx = video if video is not None else 0
-    a_idx = audio if audio is not None else 0
-    cache_key = (source_id, v_idx, a_idx)
-
-    if cache_key not in _remux_cache:
+    if source_service.get(db, source_id) is None:
+        raise HTTPException(404, "Source not found")
+    remux_path = _remux_path(source_id, audio if audio is not None else 0)
+    if not os.path.isfile(remux_path):
         raise HTTPException(425, "Remux not ready — start via POST /api/files/remux/{source_id}")
-
-    audio_path = _remux_cache[cache_key]
-    return FileResponse(audio_path, media_type="audio/mp4")
+    return FileResponse(remux_path, media_type="audio/mp4")

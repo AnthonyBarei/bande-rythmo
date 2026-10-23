@@ -33,11 +33,15 @@ def get_db():
         db.close()
 
 
-def init_db():
-    from models import Clip, Subtitle, Take, Boucle, Export, LexiconEntry, User, UserSession, AuthToken  # noqa: F401
-    Base.metadata.create_all(bind=engine)
+def init_db(bind=None):
+    from models import (  # noqa: F401
+        Project, Source, ProjectRole, Meta,
+        Clip, Subtitle, Take, Boucle, Export, LexiconEntry, User, UserSession, AuthToken,
+    )
+    bind = bind or engine
+    Base.metadata.create_all(bind=bind)
     from sqlalchemy import text
-    with engine.connect() as conn:
+    with bind.connect() as conn:
         cols = [r[1] for r in conn.execute(text("PRAGMA table_info(clips)")).fetchall()]
         if "source_path" not in cols:
             conn.execute(text("ALTER TABLE clips ADD COLUMN source_path TEXT"))
@@ -56,6 +60,18 @@ def init_db():
         # Project/folder grouping (free-text, nullable).
         if "project" not in cols:
             conn.execute(text("ALTER TABLE clips ADD COLUMN project TEXT"))
+        # Projects (PROJECTS_PLAN P1). SQLite allows REFERENCES on ADD COLUMN when the default is NULL.
+        if "project_id" not in cols:
+            conn.execute(text("ALTER TABLE clips ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE CASCADE"))
+        if "source_id" not in cols:
+            conn.execute(text("ALTER TABLE clips ADD COLUMN source_id TEXT REFERENCES sources(id) ON DELETE SET NULL"))
+        if "br_offset" not in cols:
+            conn.execute(text("ALTER TABLE clips ADD COLUMN br_offset REAL NOT NULL DEFAULT 0"))
+        if "ui_state" not in cols:
+            conn.execute(text("ALTER TABLE clips ADD COLUMN ui_state TEXT"))
+        lex_cols = [r[1] for r in conn.execute(text("PRAGMA table_info(lexicon)")).fetchall()]
+        if "project_id" not in lex_cols:
+            conn.execute(text("ALTER TABLE lexicon ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE CASCADE"))
         sub_cols = [r[1] for r in conn.execute(text("PRAGMA table_info(subtitles)")).fetchall()]
         if "words" not in sub_cols:
             conn.execute(text("ALTER TABLE subtitles ADD COLUMN words TEXT"))
@@ -84,4 +100,9 @@ def init_db():
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_takes_clip_id ON takes (clip_id)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_boucles_clip_id ON boucles (clip_id)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_exports_clip_id ON exports (clip_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_clips_project_id ON clips (project_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_clips_source_id ON clips (source_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_lexicon_project_id ON lexicon (project_id)"))
         conn.commit()
+    from services.project_migration import migrate_projects
+    migrate_projects(bind)

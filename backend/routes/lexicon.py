@@ -6,8 +6,14 @@ from typing import Optional
 
 from database import get_db
 from models import LexiconEntry
+from services import project_service
 
 router = APIRouter()
+
+
+def _project_id(db: Session, name: str) -> Optional[str]:
+    """Legacy scope name → project id ('' = global = None)."""
+    return project_service.get_or_create_by_name(db, name).id if name else None
 
 
 class LexiconIn(BaseModel):
@@ -22,6 +28,7 @@ def _to_dict(e: LexiconEntry) -> dict:
     return {
         "id": e.id,
         "project": e.project or "",
+        "project_id": e.project_id,
         "term": e.term,
         "translation": e.translation or "",
         "phonetic": e.phonetic or "",
@@ -32,12 +39,14 @@ def _to_dict(e: LexiconEntry) -> dict:
 
 @router.get("")
 @router.get("/")
-async def list_entries(project: Optional[str] = None, q: Optional[str] = None,
-                       db: Session = Depends(get_db)):
-    """List lexicon entries. When project given, returns that project's entries
-    plus globals (project=''). Optional case-insensitive term/translation search."""
+async def list_entries(project: Optional[str] = None, project_id: Optional[str] = None,
+                       q: Optional[str] = None, db: Session = Depends(get_db)):
+    """List lexicon entries. When a project (id, or legacy name) is given, returns
+    its entries plus globals. Optional case-insensitive term/translation search."""
     query = db.query(LexiconEntry)
-    if project is not None:
+    if project_id is not None:
+        query = query.filter(LexiconEntry.project_id.is_(None) | (LexiconEntry.project_id == project_id))
+    elif project is not None:
         query = query.filter(LexiconEntry.project.in_(["", project]))
     rows = query.order_by(LexiconEntry.term).all()
     out = [_to_dict(r) for r in rows]
@@ -53,8 +62,10 @@ async def create_entry(body: LexiconIn, db: Session = Depends(get_db)):
     term = (body.term or "").strip()
     if not term:
         raise HTTPException(400, "term is required")
+    scope = (body.project or "").strip()
     e = LexiconEntry(
-        project=(body.project or "").strip(),
+        project=scope,
+        project_id=_project_id(db, scope),
         term=term,
         translation=(body.translation or "").strip() or None,
         phonetic=(body.phonetic or "").strip() or None,
@@ -77,6 +88,7 @@ async def update_entry(entry_id: int, body: LexiconIn, db: Session = Depends(get
     e.note = (body.note or "").strip() or None
     if body.project is not None:
         e.project = (body.project or "").strip()
+        e.project_id = _project_id(db, e.project)
     db.commit()
     db.refresh(e)
     return _to_dict(e)
