@@ -69,7 +69,7 @@ backend/
   segments/                # {id}.mp4, {id}_proxy.mp4, stems/ (séparation vocale)
 
 frontend/src/
-  App.jsx                  # top bar + nav rail + routing + handlers (rename/status/project/...)
+  App.jsx                  # routeur hash (utils/route.js) + rail + TopBar/ProjectBar + handlers clips
   Icons.jsx                # set SVG unifié (Icon, ICONS)
   SettingsContext.jsx      # contexte préférences (accent, BR style, densité)
   AuthContext.jsx          # compte (user, login/register/…) + sync préférences ↔ compte
@@ -77,7 +77,7 @@ frontend/src/
   ToastContext.jsx         # undo-toast (suppression réplique)
   detection.js             # classifyChar() + SIGN_KINDS + DEFAULT_SIGN_TOGGLES (miroir detection.py)
   components/
-    Sidebar.jsx            # nav rail: Importer / Mes Clips / Memes / Réglages
+    Sidebar.jsx            # nav rail: Projets / Atelier · Activité / Réglages
     ImportSection.jsx      # upload + timeline drag-to-create + onglet Médiathèque (Plex/Jellyfin)
     VideoEditor.jsx        # éditeur clip (job-mode batch)
     TimelineBar.jsx        # timeline zoom + minimap (import)
@@ -90,8 +90,10 @@ frontend/src/
                            # useTakePlayer (A/B, écoute sur l'image), StudioStage, RolePicker,
                            # TakesColumn, ContinuousColumn, RangePicker, TakeSettings, StageParts
     takes/                 # TakeCard + TakeWave, Meter (Studio)
-    ClipsLibrary.jsx       # grille clips + filtres status + chips projet
-    ClipCard.jsx           # card: thumbnail, rename, projet, Doubler / ▶ / MP3 / GIF / ✕
+    ClipsLibrary.jsx       # étape Clips d'un projet : grille + filtres status + filtre vidéo source
+    ClipCard.jsx           # card: thumbnail, rename, Déplacer, Doubler / ▶ / MP3 / GIF / ✕
+    projects/              # ProjectsHome (accueil Projets), ProjectBar (étapes Médias·Clips·BR·Studio·Export),
+                           # ProjectDialogs (nouveau/modifier, suppression nom tapé, Déplacer vers…), Dialog
     DubbingWorkspace.jsx   # BR pro: SMPTE, détection, boucles, undo/redo, proxy, traduction, scènes, auto-save
     SubtitleEditor.jsx     # tableau timecode+perso+texte+note + import SRT/ASS/VTT/DetX
     LexiconPanel.jsx       # lexique (onglet right pane)

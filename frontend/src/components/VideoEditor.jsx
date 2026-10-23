@@ -20,7 +20,7 @@ const UNTITLED = 'Nom du clip…'
 // the header button all edit `mark`. A complete IN→OUT range is a pending clip
 // (timeline block + list row, counted in "Créer N clips") until it is banked
 // into `pendingClips` or created with the batch.
-export default function VideoEditor({ video, onClipsCreated, videoStream, audioStream, audioSrc, fps, actionsRef, onStateChange }) {
+export default function VideoEditor({ projectId, video, onClipsCreated, videoStream, audioStream, audioSrc, fps, actionsRef, onStateChange }) {
   const videoRef = useRef(null)
   const progress = useProgress()
   const [currentTime, setCurrentTime] = useState(0)
@@ -95,6 +95,8 @@ export default function VideoEditor({ video, onClipsCreated, videoStream, audioS
       const body = {
         path: sourcePath,
         source_filename: video.filename,
+        ...(video.sourceId && { source_id: video.sourceId }),
+        ...(projectId && { project_id: projectId }),
         clips: pending.map(c => ({
           name: c.name, start: c.start, end: c.end,
           ...(videoStream != null && { video_stream: videoStream }),
@@ -148,6 +150,7 @@ export default function VideoEditor({ video, onClipsCreated, videoStream, audioS
           ...(audioStream != null && { audio_stream: audioStream }),
         }))
       ))
+      if (projectId) form.append('project_id', projectId)
       const res = await fetch('/api/clips/batch', { method: 'POST', body: form })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const results = await res.json()
@@ -159,7 +162,7 @@ export default function VideoEditor({ video, onClipsCreated, videoStream, audioS
     } finally {
       finish()
     }
-  }, [video?.url, video?.file, video?.filename, video?.sourcePath, onClipsCreated, videoStream, audioStream, progress, updateMark])
+  }, [video?.url, video?.file, video?.filename, video?.sourcePath, video?.sourceId, projectId, onClipsCreated, videoStream, audioStream, progress, updateMark])
 
   // Header "Marquer un clip": IN, then OUT, then add the range to the pending clips.
   const markAtPlayhead = useCallback(() => applyMark(markStep, videoRef.current?.currentTime ?? 0, true), [applyMark])

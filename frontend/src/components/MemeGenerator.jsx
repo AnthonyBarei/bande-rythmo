@@ -11,7 +11,7 @@ import { usePlayerVolume, applyPlayerVolume, toggleMuted } from '../utils/player
 import VolumeControl from './VolumeControl'
 
 // F12 — short videos are imported inline as clips of this project.
-const MEME_PROJECT = 'Memes & extraits'
+export const MEME_PROJECT = 'Memes & extraits'
 const SHORT_VIDEO_MAX_S = 60
 const IMAGE_RE = /\.(png|jpe?g|webp|gif)$/i
 const VIDEO_RE = /\.(mp4|m4v|mov|webm|mkv|avi)$/i

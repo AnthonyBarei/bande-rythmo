@@ -4,7 +4,8 @@ import { T, Icon, ICONS, Input, Kbd } from '../ui'
 
 // Command palette (⌘K / Ctrl+K / "/") — port of redesign shell.jsx CommandPalette.
 // Search over navigation, quick actions, and clips. Keyboard: ↑/↓ move, ↵ run, Esc close.
-export default function CommandPalette({ open, onClose, onNavigate, onNewClip, onShortcuts, clips = [], onOpenClip }) {
+// inProject: the open project's stages are offered; else only « Projets ».
+export default function CommandPalette({ open, onClose, onNavigate, onNewClip, onNewProject, onShortcuts, clips = [], onOpenClip, inProject }) {
   const [q, setQ] = useState('')
   const [sel, setSel] = useState(0)
   const inputRef = useRef(null)
@@ -12,16 +13,21 @@ export default function CommandPalette({ open, onClose, onNavigate, onNewClip, o
   useEffect(() => { if (open) { setQ(''); setSel(0); setTimeout(() => inputRef.current?.focus(), 0) } }, [open])
 
   const items = useMemo(() => {
-    const base = [
-      { id: 'nav-clips',    ic: ICONS.library,  label: 'Aller à la Bibliothèque',    run: () => onNavigate('clips') },
-      { id: 'nav-import',   ic: ICONS.import,   label: 'Importer une vidéo',         run: () => onNavigate('import') },
-      { id: 'nav-dub',      ic: ICONS.edit,     label: 'Ouvrir l’éditeur BR',     run: () => onNavigate('dub') },
+    const stages = inProject ? [
+      { id: 'nav-import',   ic: ICONS.import,   label: 'Médias — importer une vidéo', run: () => onNavigate('import') },
+      { id: 'nav-clips',    ic: ICONS.library,  label: 'Clips du projet',            run: () => onNavigate('clips') },
+      { id: 'nav-dub',      ic: ICONS.edit,     label: 'Ouvrir la bande rythmo',     run: () => onNavigate('dub') },
       { id: 'nav-record',   ic: ICONS.mic,      label: 'Studio d’enregistrement', run: () => onNavigate('record') },
+    ] : []
+    const base = [
+      { id: 'nav-projects', ic: ICONS.folder,   label: 'Aller aux projets',          run: () => onNavigate('projects') },
+      ...stages,
       { id: 'nav-memes',    ic: ICONS.meme,     label: 'Atelier Meme · GIF · Audio', run: () => onNavigate('memes') },
       { id: 'nav-activity', ic: ICONS.activity, label: 'Voir l’activité',        run: () => onNavigate('activity') },
       { id: 'nav-settings', ic: ICONS.settings, label: 'Réglages',                   run: () => onNavigate('settings') },
       { id: 'nav-account',  ic: ICONS.user,     label: 'Mon compte',                 run: () => onNavigate('account') },
-      { id: 'act-new',      ic: ICONS.plus,     label: 'Nouveau clip — importer une vidéo', run: () => onNewClip?.() },
+      ...(inProject ? [{ id: 'act-new', ic: ICONS.plus, label: 'Nouveau clip — importer une vidéo', run: () => onNewClip?.() }] : []),
+      { id: 'act-new-project', ic: ICONS.plus,  label: 'Nouveau projet',             run: () => onNewProject?.() },
       { id: 'act-help',     ic: ICONS.keyboard, label: 'Raccourcis clavier',         run: () => onShortcuts?.() },
     ]
     const clipItems = clips.map(c => ({
@@ -33,7 +39,7 @@ export default function CommandPalette({ open, onClose, onNavigate, onNewClip, o
     const query = q.trim().toLowerCase()
     const match = i => !query || i.label.toLowerCase().includes(query) || (i.meta || '').toLowerCase().includes(query)
     return [...base.filter(match), ...clipItems.filter(match).slice(0, 50)]
-  }, [q, clips, onNavigate, onNewClip, onShortcuts, onOpenClip])
+  }, [q, clips, onNavigate, onNewClip, onNewProject, onShortcuts, onOpenClip, inProject])
 
   useEffect(() => { if (sel >= items.length) setSel(Math.max(0, items.length - 1)) }, [items.length, sel])
 

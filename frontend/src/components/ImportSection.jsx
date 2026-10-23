@@ -18,7 +18,9 @@ const MARK_BTN = {
   range: { label: 'Ajouter le clip', title: 'Ajoute la plage IN → OUT aux clips en attente, puis marquez le suivant' },
 }
 
-export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
+// projectId: clips, picked files and library items join that project (null =
+// the default « Clips importés » bucket, e.g. the Atelier's inline import).
+export default function ImportSection({ projectId = null, video, onVideoSet, onClipsCreated }) {
   const [tab, setTab] = useState(TAB.LOCAL)
   const [error, setError] = useState(null)
   const [urlInput, setUrlInput] = useState('')
@@ -172,7 +174,7 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
     setPicking(true)
     stopPoll()
     try {
-      const res = await fetch('/api/files/pick', { method: 'POST' })
+      const res = await fetch(`/api/files/pick${projectId ? `?project_id=${encodeURIComponent(projectId)}` : ''}`, { method: 'POST' })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
       if (data.cancelled) return
@@ -322,6 +324,7 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
         {video ? (
           <>
             <VideoEditor
+              projectId={projectId}
               video={video}
               onClipsCreated={onClipsCreated}
               videoStream={videoStream}
@@ -343,7 +346,7 @@ export default function ImportSection({ video, onVideoSet, onClipsCreated }) {
             />
           </>
         ) : tab === TAB.LIBRARY ? (
-          <LibraryBrowser statuses={libraryStatus} onSourceSelected={handleLibrarySelected} onStatus={setProviderStatus} />
+          <LibraryBrowser projectId={projectId} statuses={libraryStatus} onSourceSelected={handleLibrarySelected} onStatus={setProviderStatus} />
         ) : tab === TAB.LOCAL ? (
           <EmptySource icon={ICONS.upload} onClick={handleLocalPick}
             title={picking ? 'Ouverture du sélecteur…' : 'Cliquez pour choisir un fichier local'}
