@@ -126,10 +126,15 @@ All 9 formats pass. Two design issues:
 - [ ] Mixed audio under the BR-band MP4 export (combine pipelines) — later
 
 ### Phase 2 — editor refactor (2–3 sessions, no behavior change)
-- [ ] Extract `useSubtitleManager` (CRUD/undo/autosave) — with Vitest coverage
-- [ ] Extract canvas renderer + drag machine + keyboard hooks
-- [ ] DubbingWorkspace → ~300-line orchestrator; panels lazy-loaded
-- [ ] Server-side export source of truth (DB subtitles, not client payload)
+- [x] Extract `useSubtitleManager` (CRUD/undo/autosave) — with Vitest coverage
+- [x] Extract canvas renderer (`band/`) + drag machine (`editor/useBandInteraction`) + keyboard
+  (`editor/useEditorKeys`) — 2026-10-23, branch `refactor/editor-split`
+- [x] DubbingWorkspace → orchestrator (1 581 → 548 lines — 3 650 at the audit; mostly layout props): `editor/usePlayback`,
+  `useLoops`, `useBoucles`, `useBandPrefs`, `useClipTools`, `useClipMedia` (scenes, proxy, waveform),
+  `useUploadedFonts`, `useEditorLayout`, `BandOverlays`, `ExportModal`, `CanvasCoachmark`.
+  Verified with a CDP probe (real input, writes blocked): 21 states + 7 screenshots identical before/after.
+- [ ] Panels lazy-loaded (ExportPanel) — not done, would add a loading state
+- [ ] Server-side export source of truth (DB subtitles, not client payload) — behaviour change, separate
 
 ### Phase 3 — pro workflow (later)
 - [ ] Jobs persisted to DB + retry after restart

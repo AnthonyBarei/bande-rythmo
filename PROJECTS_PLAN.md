@@ -267,8 +267,8 @@ Each phase ships on its own branch and leaves the app usable.
 ### P4 · Resume everywhere
 - [ ] `clips.ui_state`: playhead, zoom (skips auto-fit when saved), right tab, selection, Studio role/mode.
 - [ ] Per-clip sessionStorage/localStorage keys migrated, then removed.
-- Touches DubbingWorkspace. **Do it after REMAKE Phase 2** (editor split), or the 3,650-line
-  file gets one more cross-cutting concern.
+- Touches DubbingWorkspace — the editor split (REMAKE Phase 2) is done: playhead/zoom live in
+  `editor/usePlayback` and the orchestrator, selection in `useSubtitleManager`.
 
 ### P5 · Cast + lexicon per project
 - [ ] `project_roles` + `PUT /cast`. Studio RolePicker and the Voix tab read and write it.
