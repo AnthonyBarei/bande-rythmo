@@ -1,8 +1,6 @@
 import React, { useState, useMemo } from 'react'
 import ClipCard from './ClipCard'
 import { T, Icon, ICONS, Btn, Select, alpha } from '../ui'
-import { TRACK_HEXES } from '../config/tracks'
-import { useToast } from '../ToastContext'
 
 const FILTERS = [
   { id: 'all',     label: 'Tous' },
@@ -25,28 +23,22 @@ function fmtTotal(sec) {
   return `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}`
 }
 
-export default function ClipsLibrary({ clips, onDub, onRecord, onMeme, onDelete, onRename, onStatusChange, onNewClip, onSetProject }) {
-  const toast = useToast()
+// A project's clips (Clips stage). `sources` = the project's media bin, for the
+// source filter; clips whose source was removed fall under « Source inconnue ».
+export default function ClipsLibrary({ clips, sources = [], projectName, onDub, onRecord, onMeme, onDelete, onRename, onStatusChange, onNewClip, onMove }) {
   const [filter, setFilter] = useState('all')
   const [sort, setSort] = useState('recent')
   const [search, setSearch] = useState('')
-  const [projectFilter, setProjectFilter] = useState('__all')   // __all | __none | <name>
+  const [sourceFilter, setSourceFilter] = useState('__all')   // __all | __none | <source id>
 
-  const projects = useMemo(() => {
-    const set = new Set()
-    for (const c of clips) if (c.project) set.add(c.project)
-    return [...set].sort((a, b) => a.localeCompare(b))
-  }, [clips])
-  // A project that lost its last clip falls back to "all".
-  const activeProject = projectFilter === '__all' || projectFilter === '__none' || projects.includes(projectFilter)
-    ? projectFilter : '__all'
-
-  async function assignProject(clipId) {
-    const name = window.prompt('Nom du projet (vide = retirer du projet) :')
-    if (name == null) return
-    const ok = await onSetProject?.(clipId, name.trim())
-    if (ok) toast.success(name.trim() ? `Déplacé vers « ${name.trim()} »` : 'Retiré du projet')
-  }
+  const usedSources = useMemo(() => {
+    const used = new Set(clips.map(c => c.source_id))
+    return sources.filter(s => used.has(s.id))
+  }, [clips, sources])
+  const hasOrphans = clips.some(c => !c.source_id || !sources.some(s => s.id === c.source_id))
+  // A source that lost its last clip falls back to "all".
+  const activeSource = sourceFilter === '__all' || (sourceFilter === '__none' && hasOrphans) || usedSources.some(s => s.id === sourceFilter)
+    ? sourceFilter : '__all'
 
   const counts = useMemo(() => {
     const c = { all: clips.length, todo: 0, dubbing: 0, review: 0, done: 0 }
@@ -56,8 +48,8 @@ export default function ClipsLibrary({ clips, onDub, onRecord, onMeme, onDelete,
 
   const visible = useMemo(() => {
     let list = clips
-    if (activeProject === '__none') list = list.filter(c => !c.project)
-    else if (activeProject !== '__all') list = list.filter(c => c.project === activeProject)
+    if (activeSource === '__none') list = list.filter(c => !usedSources.some(s => s.id === c.source_id))
+    else if (activeSource !== '__all') list = list.filter(c => c.source_id === activeSource)
     if (filter !== 'all') list = list.filter(c => (c.status || 'todo') === filter)
     if (search.trim()) {
       const q = search.trim().toLowerCase()
@@ -69,15 +61,15 @@ export default function ClipsLibrary({ clips, onDub, onRecord, onMeme, onDelete,
     else if (sort === 'status') list.sort((a, b) => STATUS_ORDER.indexOf(a.status || 'todo') - STATUS_ORDER.indexOf(b.status || 'todo'))
     else list.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
     return list
-  }, [clips, filter, search, sort, activeProject])
+  }, [clips, filter, search, sort, activeSource, usedSources])
 
   const totalDur = useMemo(() => clips.reduce((s, c) => s + (c.end - c.start), 0), [clips])
 
-  const projectOptions = useMemo(() => [
-    { v: '__all', l: 'Tous les projets' },
-    ...projects.map((p, i) => ({ v: p, l: p, dot: TRACK_HEXES[i % TRACK_HEXES.length] })),
-    { v: '__none', l: 'Sans projet' },
-  ], [projects])
+  const sourceOptions = useMemo(() => [
+    { v: '__all', l: 'Toutes les vidéos' },
+    ...usedSources.map(s => ({ v: s.id, l: s.filename || 'Sans nom', icon: ICONS.film })),
+    ...(hasOrphans ? [{ v: '__none', l: 'Source inconnue' }] : []),
+  ], [usedSources, hasOrphans])
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -85,8 +77,8 @@ export default function ClipsLibrary({ clips, onDub, onRecord, onMeme, onDelete,
       <div style={{ padding: '26px 32px 0', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'flex-end', gap: 16, marginBottom: 22 }}>
           <div>
-            <div style={{ fontSize: T.fs.micro, color: T.text3, letterSpacing: 1.4, fontWeight: 600, marginBottom: 4 }}>BIBLIOTHÈQUE</div>
-            <div style={{ fontSize: T.fs.xxl, fontWeight: 600, letterSpacing: -0.6 }}>Mes clips</div>
+            <div style={{ fontSize: T.fs.micro, color: T.text3, letterSpacing: 1.4, fontWeight: 600, marginBottom: 4, textTransform: 'uppercase' }}>{projectName || 'Projet'}</div>
+            <div style={{ fontSize: T.fs.xxl, fontWeight: 600, letterSpacing: -0.6 }}>Clips</div>
           </div>
           <span style={{ fontSize: T.fs.sm, color: T.text3, fontFamily: T.fontMono, paddingBottom: 7 }}>
             {clips.length} clip{clips.length !== 1 ? 's' : ''} · {fmtTotal(totalDur)}
@@ -113,7 +105,7 @@ export default function ClipsLibrary({ clips, onDub, onRecord, onMeme, onDelete,
 
         {/* Filter tabs */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, borderBottom: `1px solid ${T.border}`, height: 42 }}>
-          <Select size="sm" width={176} value={activeProject} onChange={setProjectFilter} options={projectOptions} />
+          <Select size="sm" width={200} value={activeSource} onChange={setSourceFilter} options={sourceOptions} menuWidth={300} />
           <div style={{ width: 1, height: 20, background: T.border, margin: '0 6px', flexShrink: 0 }} />
           <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 4, overflowX: 'auto', overflowY: 'hidden', scrollbarWidth: 'none', height: 42 }}>
             {FILTERS.map(t => {
@@ -144,13 +136,13 @@ export default function ClipsLibrary({ clips, onDub, onRecord, onMeme, onDelete,
         <div style={{ flex: 1, overflow: 'auto', padding: 28, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, color: T.text3 }}>
           <Icon d={ICONS.grid} size={40} stroke={T.text4} />
           <div style={{ fontSize: T.fs.base, color: T.text2 }}>
-            {clips.length === 0 ? 'Aucun clip encore' : 'Aucun clip dans ce filtre'}
+            {clips.length === 0 ? 'Aucun clip dans ce projet' : 'Aucun clip dans ce filtre'}
           </div>
           {clips.length === 0 && (
             <>
-              <div style={{ fontSize: T.fs.xs }}>Importez une vidéo et découpez des segments</div>
+              <div style={{ fontSize: T.fs.xs }}>Ajoutez une vidéo dans Médias et découpez des segments</div>
               <Btn variant="primary" size="lg" icon={ICONS.plus} onClick={onNewClip} style={{ marginTop: 4 }}>
-                Importer une vidéo
+                Aller à Médias
               </Btn>
             </>
           )}
@@ -171,7 +163,7 @@ export default function ClipsLibrary({ clips, onDub, onRecord, onMeme, onDelete,
               onDelete={onDelete}
               onRename={onRename}
               onStatusChange={onStatusChange}
-              onAssignProject={assignProject}
+              onMove={onMove}
             />
           ))}
         </div>

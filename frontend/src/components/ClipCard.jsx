@@ -20,7 +20,7 @@ function hashHue(str) {
   return Math.abs(h) % 360
 }
 
-export default function ClipCard({ clip, onDub, onRecord, onMeme, onDelete, onRename, onStatusChange, onAssignProject }) {
+export default function ClipCard({ clip, onDub, onRecord, onMeme, onDelete, onRename, onStatusChange, onMove }) {
   const toast = useToast()
   const [editingName, setEditingName] = useState(false)
   const [nameInput, setNameInput] = useState(clip.name)
@@ -57,7 +57,6 @@ export default function ClipCard({ clip, onDub, onRecord, onMeme, onDelete, onRe
     clip.name,
     `${replCount} répl.`,
     chars.length ? chars.join(', ') : null,
-    clip.project ? `Projet : ${clip.project}` : null,
   ].filter(Boolean).join(' · ')
 
   // Enter/Escape unmount the input, which also fires blur — commit only once.
@@ -161,24 +160,23 @@ export default function ClipCard({ clip, onDub, onRecord, onMeme, onDelete, onRe
             fontSize: 10, fontWeight: 700, letterSpacing: 0.8, textTransform: 'uppercase',
             background: st.bg, color: st.color, backdropFilter: 'blur(6px)', cursor: 'pointer', fontFamily: T.fontUI,
           }}>{st.label}</button>
-        {onAssignProject && (
-          /* Top-right of the thumbnail so the hover action row never covers it.
-             "+ Projet" only on hover / focus (FIXES_R5 #8, CSS .clip-card-project);
-             an assigned project always shows. */
+        {onMove && (
+          /* Top-right of the thumbnail so the hover action row never covers it;
+             only on hover / focus (FIXES_R5 #8, CSS .clip-card-project). */
           <button
             data-rd
-            className={clip.project ? undefined : 'clip-card-project'}
-            onClick={e => { e.stopPropagation(); onAssignProject(clip.clip_id) }}
-            title={clip.project ? `Projet : ${clip.project} — cliquez pour changer` : 'Assigner à un projet'}
+            className="clip-card-project"
+            onClick={e => { e.stopPropagation(); onMove(clip) }}
+            title="Déplacer vers un autre projet"
             style={{
-              position: 'absolute', top: 10, right: 10, maxWidth: 140, padding: '3px 9px', borderRadius: 6, border: 'none',
-              display: 'inline-flex', alignItems: 'center', gap: 5, overflow: 'hidden',
+              position: 'absolute', top: 10, right: 10, padding: '3px 9px', borderRadius: 6, border: 'none',
+              display: 'inline-flex', alignItems: 'center', gap: 5,
               fontSize: 11, fontWeight: 600, fontFamily: T.fontUI, cursor: 'pointer',
-              background: 'rgba(0,0,0,.6)', color: clip.project ? T.accent : '#fff', backdropFilter: 'blur(6px)',
+              background: 'rgba(0,0,0,.6)', color: '#fff', backdropFilter: 'blur(6px)',
               transition: 'opacity .15s',
             }}>
-            <Icon d={clip.project ? ICONS.folder : ICONS.plus} size={12} stroke="currentColor" style={{ flexShrink: 0 }} />
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{clip.project || 'Projet'}</span>
+            <Icon d={ICONS.folder} size={12} stroke="currentColor" style={{ flexShrink: 0 }} />
+            Déplacer
           </button>
         )}
         <div style={{

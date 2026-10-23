@@ -14,12 +14,8 @@ export default class ErrorBoundary extends React.Component {
     console.error('UI crash:', error, info?.componentStack)
   }
 
-  resetToLibrary = () => {
-    try {
-      sessionStorage.setItem('br-nav', JSON.stringify({ section: 'clips' }))
-    } catch {
-      // storage blocked — reload still recovers
-    }
+  resetToProjects = () => {
+    window.location.hash = '#projects'
     window.location.reload()
   }
 
@@ -34,7 +30,7 @@ export default class ErrorBoundary extends React.Component {
           </div>
           <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
             <button onClick={() => window.location.reload()} style={btn('var(--accent, #f5c518)', '#000')}>Recharger</button>
-            <button onClick={this.resetToLibrary} style={btn('transparent', 'inherit')}>Retour à la bibliothèque</button>
+            <button onClick={this.resetToProjects} style={btn('transparent', 'inherit')}>Retour aux projets</button>
           </div>
         </div>
       </div>

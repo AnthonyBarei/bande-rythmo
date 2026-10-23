@@ -4,6 +4,7 @@ import { Btn, Segmented, Select, Toggle, Chip, Dot, ScreenHeader, Icon, ICONS, T
 import { STUDIO_COUNTS, STUDIO_LEADS, STUDIO_CHAINS } from '../config/studio'
 import { fetchUploadedFonts, fontOptions } from '../config/fonts'
 import { LIBRARY_PROVIDERS, writeLibraryConfigured } from '../config/libraryProviders'
+import { WHISPER_LANGS } from '../config/languages'
 
 // Réglages — reference screen-misc.jsx Settings (Section max 720 + Field rows).
 
@@ -26,12 +27,6 @@ const DENSITIES = [
   { v: 'compact',     l: 'Compact', desc: 'Interface dense' },
   { v: 'normal',      l: 'Normal',  desc: 'Par défaut' },
   { v: 'comfortable', l: 'Confort', desc: 'Plus d’espace' },
-]
-
-const WHISPER_LANGS = [
-  { v: 'fr', l: 'FR — Français' }, { v: 'en', l: 'EN — English' }, { v: 'es', l: 'ES — Español' },
-  { v: 'de', l: 'DE — Deutsch' }, { v: 'it', l: 'IT — Italiano' }, { v: 'pt', l: 'PT — Português' },
-  { v: 'ja', l: 'JA — 日本語' }, { v: 'auto', l: 'Auto-détection' },
 ]
 
 // VO level under a take played over the picture (Studio « Écouter sur l'image »).

@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import Sidebar from './components/Sidebar'
 import ImportSection from './components/ImportSection'
 import ClipsLibrary from './components/ClipsLibrary'
 import DubbingWorkspace from './components/DubbingWorkspace'
-import MemeGenerator from './components/MemeGenerator'
+import MemeGenerator, { MEME_PROJECT } from './components/MemeGenerator'
 import Preferences from './components/Preferences'
 import { T, Icon, ICONS, Btn, Kbd, Avatar, Popover, MenuItem, MenuSep } from './ui'
 import { useSettings } from './SettingsContext'
@@ -17,6 +17,11 @@ import CommandPalette from './components/CommandPalette'
 import ActivityCenter from './components/ActivityCenter'
 import StudioScreen from './components/StudioScreen'
 import { ExportScreenContext } from './components/exportScreen'
+import ProjectsHome from './components/projects/ProjectsHome'
+import ProjectBar from './components/projects/ProjectBar'
+import { MoveClipDialog } from './components/projects/ProjectDialogs'
+import { CLIP_STAGES, PROJECTS, formatRoute, parseRoute, projectRoute, resumeRoute } from './utils/route'
+import { createProject, getProject, listProjects, moveClip, patchProject } from './utils/projectsApi'
 
 export default function App() {
   return (
@@ -28,41 +33,10 @@ export default function App() {
   )
 }
 
-const NAV_KEY = 'br-nav'
-const RESTORABLE = new Set(['import', 'clips', 'dub', 'record', 'memes', 'settings', 'activity', 'account'])
-const CLIP_SCREENS = new Set(['dub', 'record'])
-
-function loadNav() {
-  try {
-    const nav = JSON.parse(sessionStorage.getItem(NAV_KEY) || '{}')
-    return RESTORABLE.has(nav.section) ? nav : {}
-  } catch {
-    return {} // storage blocked / corrupt — start fresh
-  }
-}
-
-function saveNav(nav) {
-  try {
-    sessionStorage.setItem(NAV_KEY, JSON.stringify(nav))
-  } catch {
-    // storage blocked — reload simply starts on Importer
-  }
-}
-
-// Hash routes (ACCOUNT.md): #login · #register · #reset=<token> open the auth
-// screen, #verify=<token> confirms an e-mail, #account opens Mon compte.
-function readHash() {
-  const h = window.location.hash.slice(1)
-  if (h === 'login' || h === 'register') return { auth: h }
-  if (h.startsWith('reset=')) return { auth: 'reset', token: h.slice(6) }
-  if (h.startsWith('verify=')) return { verify: h.slice(7) }
-  if (h === 'account') return { section: 'account' }
-  return {}
-}
-
-function clearHash() {
-  window.history.replaceState(null, '', window.location.pathname + window.location.search)
-}
+// Project stage → the screen it shows (export = the editor with its export screen open).
+const STAGE_SECTION = { media: 'import', clips: 'clips', dub: 'dub', record: 'record', export: 'dub' }
+// Legacy screen ids (palette, account menu) → project stage.
+const SECTION_STAGE = { import: 'media', clips: 'clips', dub: 'dub', record: 'record' }
 
 // Éditeur and Studio own their single-key shortcuts; N stays out of their way.
 const N_KEY_EXCLUDED = new Set(['dub', 'record', 'import'])
@@ -112,7 +86,7 @@ function AccountButton({ user, accent, onNavigate, onLogin, onLogout }) {
   )
 }
 
-// Top bar — port of redesign shell.jsx TopBar.
+// Top bar — port of redesign shell.jsx TopBar. Inside a project, ProjectBar replaces it.
 function TopBar({ onCmd, onHelp, onActivity, account }) {
   return (
     <div style={{ height: 52, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 14, padding: '0 18px', borderBottom: `1px solid ${T.border}`, background: T.bg }}>
@@ -135,28 +109,66 @@ function TopBar({ onCmd, onHelp, onActivity, account }) {
   )
 }
 
+const ATELIER = '__atelier'   // video slot of the Atelier's inline import
+
 function AppInner() {
   const toast = useToast()
   const { settings } = useSettings()
   const auth = useAuth()
   const authRef = useRef(auth)
   useEffect(() => { authRef.current = auth })
-  const [initialHash] = useState(readHash)
-  const [initialNav] = useState(loadNav)
-  const [section, setSection] = useState(initialHash.section || initialNav.section || 'import')
-  const [authView, setAuthView] = useState(initialHash.auth ? { mode: initialHash.auth, token: initialHash.token } : null)
-  const [video, setVideo] = useState(null)
+
+  // ── Routing: the hash is the source of truth (utils/route). ──
+  const [route, setRouteState] = useState(() => parseRoute(window.location.hash))
+  const routeRef = useRef(route)
+  const lastAppRouteRef = useRef(null)   // where to land after the auth screen
+
+  const go = useCallback((next, { replace = false } = {}) => {
+    const hash = formatRoute(next)
+    if (hash !== window.location.hash) {
+      const url = window.location.pathname + window.location.search + hash
+      if (replace) window.history.replaceState(null, '', url)
+      else window.history.pushState(null, '', url)
+    }
+    routeRef.current = next
+    setRouteState(next)
+  }, [])
+
+  useEffect(() => {
+    const sync = () => {
+      const next = parseRoute(window.location.hash)
+      routeRef.current = next
+      setRouteState(next)
+    }
+    window.addEventListener('popstate', sync)
+    window.addEventListener('hashchange', sync)
+    return () => { window.removeEventListener('popstate', sync); window.removeEventListener('hashchange', sync) }
+  }, [])
+
+  useEffect(() => {
+    if (!['auth', 'verify', 'none'].includes(route.view)) lastAppRouteRef.current = route
+  }, [route])
+
+  const projectId = route.view === 'project' ? route.projectId : null
+  const stage = projectId ? route.stage : null
+  const section = stage ? STAGE_SECTION[stage] : route.view
+  const dubExportOpen = stage === 'export'
+
+  // ── Data ──
   const [clips, setClips] = useState([])
-  const [activeClip, setActiveClip] = useState(null)
+  const [clipsLoaded, setClipsLoaded] = useState(false)
+  const [loadedProject, setProject] = useState(null)
+  const [videos, setVideos] = useState({})   // projectId | ATELIER → import screen source
   const [memeClip, setMemeClip] = useState(null)
   const [memeInitialTab, setMemeInitialTab] = useState(null)
-  // Long video handed over by the Atelier: once cut, return there with the first clip.
-  const returnToAtelierRef = useRef(false)
-  const [dubExportOpen, setDubExportOpen] = useState(false)
+  const [atelierImport, setAtelierImport] = useState(false)
   const [exportInitialFormat, setExportInitialFormat] = useState(null)
   const [exportSlot, setExportSlot] = useState(null)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [cmdOpen, setCmdOpen] = useState(false)
+  const [createPending, setCreatePending] = useState(false)   // N / palette → open « Nouveau projet »
+  const [moving, setMoving] = useState(null)   // clip being moved to another project
+  const lastClipRef = useRef({})               // projectId → last clip opened
 
   useEffect(() => {
     let live = true
@@ -165,28 +177,106 @@ function AppInner() {
         const res = await fetch('/api/clips/')
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         const data = await res.json()
-        if (!live) return
-        setClips(data)
-        if (CLIP_SCREENS.has(initialNav.section)) {
-          const clip = data.find(c => c.clip_id === initialNav.clipId)
-          if (clip) setActiveClip(clip)
-          else setSection('clips')
-        }
+        if (live) setClips(data)
       } catch (e) {
         console.error('Failed to fetch clips:', e)
-        if (!live) return
-        toast.error('Impossible de charger les clips — le serveur est-il lancé ?')
-        setSection(s => CLIP_SCREENS.has(s) ? 'clips' : s)
+        if (live) toast.error('Impossible de charger les clips — le serveur est-il lancé ?')
+      } finally {
+        if (live) setClipsLoaded(true)
       }
     }
     fetchClips()
     return () => { live = false }
   }, [])
 
-  // E-mail confirmation link (#verify=…) and later hash navigation.
+  const refreshProject = useCallback(async id => {
+    try {
+      const detail = await getProject(id)
+      if (routeRef.current.projectId === id) setProject(detail)
+    } catch (e) {
+      console.error(e)
+      if (routeRef.current.projectId !== id) return
+      toast.error(e.message === 'Project not found' ? 'Ce projet n’existe plus.' : `Projet : ${e.message}`)
+      if (e.message === 'Project not found') go(PROJECTS, { replace: true })
+    }
+  }, [go])
+
   useEffect(() => {
-    async function verify(token) {
-      clearHash()
+    if (projectId) refreshProject(projectId)
+  }, [projectId, refreshProject])
+  // The previous project's detail never shows under another project's id.
+  const project = loadedProject?.id === projectId ? loadedProject : null
+
+  const projectClips = useMemo(
+    () => (projectId ? clips.filter(c => c.project_id === projectId) : [])
+      .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || '')),
+    [clips, projectId])
+
+  const activeClip = route.view === 'project' && route.clipId
+    ? clips.find(c => c.clip_id === route.clipId) || null
+    : null
+
+  // No hash: reopen the last project where it was left, else the Projects home.
+  useEffect(() => {
+    if (route.view !== 'none' || !clipsLoaded) return
+    let live = true
+    listProjects()
+      .then(list => {
+        if (!live) return
+        const last = list.find(p => p.opened_at)
+        go(last ? resumeRoute(last, clips.filter(c => c.project_id === last.id)) : PROJECTS, { replace: true })
+      })
+      .catch(e => { console.error(e); if (live) go(PROJECTS, { replace: true }) })
+    return () => { live = false }
+  }, [route.view, clipsLoaded])
+
+  // Clip stages need a clip of this project.
+  useEffect(() => {
+    if (route.view !== 'project' || !CLIP_STAGES.has(route.stage) || !clipsLoaded) return
+    if (activeClip) {
+      if (activeClip.project_id && activeClip.project_id !== route.projectId) {
+        go(projectRoute(activeClip.project_id, route.stage, activeClip.clip_id), { replace: true })
+      }
+      return
+    }
+    if (route.clipId) toast.error('Ce clip n’existe plus.')
+    const fallback = !route.clipId && pickClip(route.projectId)
+    go(fallback ? projectRoute(route.projectId, route.stage, fallback) : projectRoute(route.projectId, 'clips'), { replace: true })
+  }, [route, activeClip, clipsLoaded])
+
+  function pickClip(pid, list = clips) {
+    const own = list.filter(c => c.project_id === pid)
+    const remembered = lastClipRef.current[pid] || (project?.id === pid ? project.ui_state?.clip_id : null)
+    if (remembered && own.some(c => c.clip_id === remembered)) return remembered
+    return own.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))[0]?.clip_id || null
+  }
+
+  // Where the project was left: saved on the project (PATCH ui_state), debounced.
+  const savedStateRef = useRef({})
+  useEffect(() => {
+    if (route.view !== 'project') return
+    if (route.clipId) lastClipRef.current[route.projectId] = route.clipId
+    const uiState = {
+      stage: route.stage === 'export' ? 'dub' : route.stage,
+      clip_id: route.clipId || lastClipRef.current[route.projectId] || null,
+    }
+    const key = JSON.stringify(uiState)
+    if (savedStateRef.current[route.projectId] === key) return
+    const pid = route.projectId
+    const t = setTimeout(() => {
+      patchProject(pid, { ui_state: uiState })
+        .then(() => { savedStateRef.current[pid] = key })
+        .catch(e => console.error('Projet : état non enregistré', e))
+    }, 400)
+    return () => clearTimeout(t)
+  }, [route])
+
+  // ── Auth / verify ──
+  useEffect(() => {
+    if (route.view !== 'verify') return
+    const token = route.token
+    go(lastAppRouteRef.current || PROJECTS, { replace: true })
+    ;(async () => {
       try {
         await authRef.current.verify(token)
         await authRef.current.refresh()
@@ -195,33 +285,20 @@ function AppInner() {
         console.error(e)
         toast.error(e.message)
       }
-    }
-    function onHash() {
-      const h = readHash()
-      if (h.auth) setAuthView({ mode: h.auth, token: h.token })
-      if (h.section) { clearHash(); setAuthView(null); setSection(h.section) }
-      if (h.verify) verify(h.verify)
-    }
-    if (initialHash.section) clearHash()
-    if (initialHash.verify) verify(initialHash.verify)
-    window.addEventListener('hashchange', onHash)
-    return () => window.removeEventListener('hashchange', onHash)
-  }, [])
+    })()
+  }, [route])
 
   // Already signed in: #login / #register have nothing to show.
   useEffect(() => {
-    if (auth.ready && auth.user && (authView?.mode === 'login' || authView?.mode === 'register')) leaveAuth()
-  }, [auth.ready, auth.user, authView])
+    if (auth.ready && auth.user && route.view === 'auth' && (route.mode === 'login' || route.mode === 'register')) leaveAuth()
+  }, [auth.ready, auth.user, route])
 
   function openAuth(mode) {
-    window.history.replaceState(null, '', `#${mode}`)
-    setAuthView({ mode })
+    go({ view: 'auth', mode }, { replace: true })
   }
 
-  function leaveAuth(next = 'clips') {
-    clearHash()
-    setAuthView(null)
-    setSection(next)
+  function leaveAuth() {
+    go(lastAppRouteRef.current || PROJECTS, { replace: true })
   }
 
   async function handleLogout() {
@@ -234,19 +311,14 @@ function AppInner() {
     openAuth('login')
   }
 
-  useEffect(() => {
-    if (CLIP_SCREENS.has(section) && !activeClip) return // still restoring
-    saveNav({ section, clipId: activeClip?.clip_id || null })
-  }, [section, activeClip])
-
   // Read by the global key handler (bound once) for the N guard.
   const keyCtxRef = useRef({})
   useEffect(() => {
-    keyCtxRef.current = { section, overlayOpen: cmdOpen || shortcutsOpen }
-  }, [section, cmdOpen, shortcutsOpen])
+    keyCtxRef.current = { section, overlayOpen: cmdOpen || shortcutsOpen, projectId }
+  }, [section, cmdOpen, shortcutsOpen, projectId])
 
   // Global keys: "?" → shortcuts · ⌘K/Ctrl+K → command palette · "/" → local
-  // search, else palette · N → Importer.
+  // search, else palette · N → Médias of the open project, else a new project.
   useEffect(() => {
     function onKey(e) {
       const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName) || e.target.isContentEditable
@@ -264,33 +336,21 @@ function AppInner() {
       }
       if (e.key.toLowerCase() === 'n' && isNewClipKey(e, keyCtxRef.current)) {
         e.preventDefault()
-        setDubExportOpen(false)
-        setSection('import')
+        const pid = keyCtxRef.current.projectId
+        if (pid) go(projectRoute(pid, 'media'))
+        else newProject()
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  function handleClipsCreated(newClips) {
-    addClips(newClips)
-    if (returnToAtelierRef.current && newClips.length) {
-      returnToAtelierRef.current = false
-      setMemeClip(newClips[0])
-      setMemeInitialTab(null)
-      setSection('memes')
-      return
-    }
-    // A batch job may finish after the user moved on — don't yank them away.
-    setSection(s => s === 'import' ? 'clips' : s)
+  function newProject() {
+    go(PROJECTS)
+    setCreatePending(true)
   }
 
-  function openInImporter(file) {
-    returnToAtelierRef.current = true
-    setVideo({ file, url: URL.createObjectURL(file), filename: file.name, sourcePath: null, sourceId: null })
-    setSection('import')
-  }
-
+  // ── Clips ──
   function addClips(newClips) {
     setClips(prev => {
       const ids = new Set(prev.map(c => c.clip_id))
@@ -298,28 +358,61 @@ function AppInner() {
     })
   }
 
-  function handleDub(clip) {
-    setActiveClip(clip)
-    setSection('dub')
+  function handleClipsCreated(newClips) {
+    addClips(newClips)
+    const r = routeRef.current
+    if (r.view !== 'project') return
+    refreshProject(r.projectId)
+    // A batch job may finish after the user moved on — don't yank them away.
+    if (r.stage === 'media') go(projectRoute(r.projectId, 'clips'))
   }
 
-  function handleRecord(clip) {
-    setDubExportOpen(false)
-    setActiveClip(clip)
-    setSection('record')
+  // Atelier « importer une longue vidéo »: cut, file the clips under the
+  // memes project, then back to the Atelier on the first one.
+  async function handleAtelierClipsCreated(newClips) {
+    const filed = await Promise.all(newClips.map(async clip => {
+      try {
+        const res = await fetch(`/api/clips/${clip.clip_id}/project`, {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ project: MEME_PROJECT }),
+        })
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        return await res.json()
+      } catch (e) {
+        console.error(e)
+        toast.error(`Clip « ${clip.name} » non rangé dans ${MEME_PROJECT} : ${e.message}`)
+        return clip
+      }
+    }))
+    addClips(filed)
+    setAtelierImport(false)
+    setVideos(v => ({ ...v, [ATELIER]: null }))
+    if (filed.length) { setMemeClip(filed[0]); setMemeInitialTab(null) }
   }
+
+  function openInImporter(file) {
+    setVideos(v => ({ ...v, [ATELIER]: { file, url: URL.createObjectURL(file), filename: file.name, sourcePath: null, sourceId: null } }))
+    setAtelierImport(true)
+    go({ view: 'memes' })
+  }
+
+  function openClip(clip, clipStage) {
+    const pid = clip.project_id || projectId
+    if (pid) go(projectRoute(pid, clipStage, clip.clip_id))
+  }
+
+  const handleDub = clip => openClip(clip, 'dub')
+  const handleRecord = clip => openClip(clip, 'record')
 
   function handleMeme(clip, initialTab = null) {
     setMemeClip(clip)
     setMemeInitialTab(initialTab)
-    setSection('memes')
+    setAtelierImport(false)
+    go({ view: 'memes' })
   }
 
-  // Never switch the open clip: a late auto-save of a previous clip must not
-  // yank the editor back to it.
   function handleClipUpdated(updated) {
     setClips(prev => prev.map(c => c.clip_id === updated.clip_id ? updated : c))
-    setActiveClip(prev => prev?.clip_id === updated.clip_id ? updated : prev)
     setMemeClip(prev => prev?.clip_id === updated.clip_id ? updated : prev)
   }
 
@@ -338,8 +431,8 @@ function AppInner() {
         try {
           const res = await fetch(`/api/clips/${clipId}`, { method: 'DELETE' })
           if (!res.ok && res.status !== 404) throw new Error(`HTTP ${res.status}`)
-          setActiveClip(prev => prev?.clip_id === clipId ? null : prev)
           setMemeClip(prev => prev?.clip_id === clipId ? null : prev)
+          if (snapshot.project_id) refreshProject(snapshot.project_id)
         } catch (e) {
           console.error(e)
           toast.error('Suppression échouée — clip restauré')
@@ -349,108 +442,122 @@ function AppInner() {
     })
   }
 
-  async function handleRename(clipId, name) {
+  async function putClip(clipId, path, body, failMsg) {
     try {
-      const res = await fetch(`/api/clips/${clipId}/name`, {
+      const res = await fetch(`/api/clips/${clipId}/${path}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name }),
+        body: JSON.stringify(body),
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       handleClipUpdated(await res.json())
       return true
     } catch (e) {
       console.error(e)
-      toast.error(`Renommage échoué : ${e.message}`)
+      toast.error(`${failMsg} : ${e.message}`)
       return false
     }
   }
 
-  async function handleStatusChange(clipId, status) {
-    try {
-      const res = await fetch(`/api/clips/${clipId}/status`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status }),
-      })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      handleClipUpdated(await res.json())
-      return true
-    } catch (e) {
-      console.error(e)
-      toast.error(`Changement de statut échoué : ${e.message}`)
-      return false
-    }
+  const handleRename = (clipId, name) => putClip(clipId, 'name', { name }, 'Renommage échoué')
+  const handleStatusChange = (clipId, status) => putClip(clipId, 'status', { status }, 'Changement de statut échoué')
+
+  async function moveTo(clip, targetId, targetName) {
+    const updated = await moveClip(clip.clip_id, targetId)
+    handleClipUpdated(updated)
+    setMoving(null)
+    toast.success(`« ${clip.name} » déplacé vers « ${targetName} »`)
+    if (projectId) refreshProject(projectId)
   }
 
-  async function handleSetProject(clipId, project) {
-    try {
-      const res = await fetch(`/api/clips/${clipId}/project`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ project }),
-      })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      handleClipUpdated(await res.json())
-      return true
-    } catch (e) {
-      console.error(e)
-      toast.error(`Changement de projet échoué : ${e.message}`)
-      return false
-    }
+  // A deleted project takes its clips with it.
+  function handleProjectsChanged(deletedId) {
+    if (deletedId) setClips(prev => prev.filter(c => c.project_id !== deletedId))
   }
 
+  // ── Navigation (rail, palette, account menu) ──
   function navigate(s) {
-    setDubExportOpen(false)
-    if (s === 'memes') { setMemeClip(null); setMemeInitialTab(null); setSection('memes'); return }
-    if (CLIP_SCREENS.has(s)) { const tgt = activeClip || clips[0]; if (tgt) { setActiveClip(tgt); setSection(s) } else setSection('clips'); return }
-    setSection(s)
+    if (s in SECTION_STAGE) {
+      const pid = projectId || lastAppRouteRef.current?.projectId
+      if (!pid) { go(PROJECTS); return }
+      const st = SECTION_STAGE[s]
+      go(projectRoute(pid, st, CLIP_STAGES.has(st) ? pickClip(pid) : null))
+      return
+    }
+    if (s === 'memes') { setMemeClip(null); setMemeInitialTab(null); setAtelierImport(false) }
+    go({ view: s })
+  }
+
+  function goStage(st) {
+    if (!projectId) return
+    const clipId = CLIP_STAGES.has(st) ? (route.clipId || pickClip(projectId)) : null
+    if (CLIP_STAGES.has(st) && !clipId) return
+    go(projectRoute(projectId, st, clipId))
+  }
+
+  function openProject(p) {
+    go(resumeRoute(p, clips.filter(c => c.project_id === p.id)))
   }
 
   // Export screen: opened from the editor (E / Exporter). The editor stays
   // mounted (hidden) so closing returns to it intact; its ExportPanel portals
   // into the slot below.
   const exportScreen = section === 'dub' && !!activeClip && dubExportOpen
-  const closeExport = () => { setDubExportOpen(false); setExportInitialFormat(null) }
+  const closeExport = () => { setExportInitialFormat(null); goStage('dub') }
 
-  if (authView) {
-    return <AuthScreen key={`${authView.mode}-${authView.token || ''}`} initialMode={authView.mode} resetToken={authView.token}
+  if (route.view === 'auth') {
+    return <AuthScreen key={`${route.mode}-${route.token || ''}`} initialMode={route.mode} resetToken={route.token}
       onDone={() => leaveAuth()} onLocal={() => leaveAuth()} />
   }
+
+  const account = <AccountButton user={auth.user} accent={settings.accent} onNavigate={navigate} onLogin={openAuth} onLogout={handleLogout} />
+  const projectVideo = projectId ? videos[projectId] || null : null
 
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: 'var(--bg)' }}>
 
       {/* Full-height rail (redesign shell — rail spans the whole window) */}
-      <Sidebar section={exportScreen ? 'export' : section} onNavigate={navigate} />
+      <Sidebar section={projectId ? 'projects' : section} onNavigate={navigate} />
 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden', position: 'relative' }}>
 
-        {/* Top bar — only over content; hidden on the full-bleed editor. */}
-        {(section !== 'dub' || exportScreen) && (
-          <TopBar onCmd={() => setCmdOpen(true)} onHelp={() => setShortcutsOpen(true)} onActivity={() => navigate('activity')}
-            account={<AccountButton user={auth.user} accent={settings.accent} onNavigate={navigate} onLogin={openAuth} onLogout={handleLogout} />} />
+        {projectId ? (
+          <ProjectBar project={project} stage={stage} clips={projectClips} clipId={route.clipId}
+            onStage={goStage} onClip={id => go(projectRoute(projectId, stage, id))}
+            onProjects={() => go(PROJECTS)}
+            onCmd={() => setCmdOpen(true)} onHelp={() => setShortcutsOpen(true)} onActivity={() => navigate('activity')}
+            account={account} />
+        ) : (
+          <TopBar onCmd={() => setCmdOpen(true)} onHelp={() => setShortcutsOpen(true)} onActivity={() => navigate('activity')} account={account} />
         )}
 
         <main style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+        {section === 'projects' && (
+          <ProjectsHome onOpen={openProject} createPending={createPending} onCreateHandled={() => setCreatePending(false)}
+            onProjectsChanged={handleProjectsChanged} />
+        )}
         {section === 'import' && (
           <ImportSection
-            video={video}
-            onVideoSet={setVideo}
+            key={projectId}
+            projectId={projectId}
+            video={projectVideo}
+            onVideoSet={v => setVideos(prev => ({ ...prev, [projectId]: v }))}
             onClipsCreated={handleClipsCreated}
           />
         )}
         {section === 'clips' && (
           <ClipsLibrary
-            clips={clips}
+            clips={projectClips}
+            sources={project?.sources || []}
+            projectName={project?.name}
             onDub={handleDub}
             onRecord={handleRecord}
             onMeme={handleMeme}
             onDelete={handleDelete}
             onRename={handleRename}
             onStatusChange={handleStatusChange}
-            onNewClip={() => setSection('import')}
-            onSetProject={handleSetProject}
+            onNewClip={() => goStage('media')}
+            onMove={setMoving}
           />
         )}
         {section === 'activity' && <ActivityCenter onOpenClip={handleDub} />}
@@ -463,10 +570,10 @@ function AppInner() {
                 key={activeClip.clip_id}
                 clip={activeClip}
                 onUpdate={handleClipUpdated}
-                onBack={() => { setDubExportOpen(false); setSection('clips') }}
+                onBack={() => goStage('clips')}
                 exportOpen={dubExportOpen}
-                onToggleExport={() => setDubExportOpen(v => !v)}
-                onRecord={() => handleRecord(activeClip)}
+                onToggleExport={() => goStage(dubExportOpen ? 'dub' : 'export')}
+                onRecord={() => goStage('record')}
                 onHelp={() => setShortcutsOpen(true)}
               />
             </div>
@@ -474,13 +581,19 @@ function AppInner() {
         )}
         {exportScreen && <div ref={setExportSlot} style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }} />}
         {section === 'record' && activeClip && (
-          <StudioScreen key={activeClip.clip_id} clip={activeClip} onBack={() => navigate('dub')}
-            onExportDubbed={() => { setExportInitialFormat('mp4-dubbed'); setSection('dub'); setDubExportOpen(true) }} />
+          <StudioScreen key={activeClip.clip_id} clip={activeClip} onBack={() => goStage('dub')}
+            onExportDubbed={() => { setExportInitialFormat('mp4-dubbed'); goStage('export') }} />
         )}
-        {section === 'memes' && (
+        {section === 'memes' && (atelierImport ? (
+          <ImportSection
+            video={videos[ATELIER] || null}
+            onVideoSet={v => { setVideos(prev => ({ ...prev, [ATELIER]: v })); if (!v) setAtelierImport(false) }}
+            onClipsCreated={handleAtelierClipsCreated}
+          />
+        ) : (
           <MemeGenerator clip={memeClip} initialTab={memeInitialTab}
             clips={clips} onSelectClip={setMemeClip} onClipsCreated={addClips} onOpenInImporter={openInImporter} />
-        )}
+        ))}
         {section === 'settings' && <Preferences />}
         {section === 'account' && <AccountScreen onLogin={openAuth} onSignedOut={() => openAuth('login')} />}
         </main>
@@ -493,10 +606,20 @@ function AppInner() {
         onClose={() => setCmdOpen(false)}
         onNavigate={navigate}
         onNewClip={() => navigate('import')}
+        onNewProject={newProject}
         onShortcuts={() => setShortcutsOpen(true)}
         clips={clips}
         onOpenClip={handleDub}
+        inProject={!!projectId}
       />
+      {moving && (
+        <MoveClipDialog clip={moving} currentProjectId={moving.project_id} onClose={() => setMoving(null)}
+          onMove={(targetId, targetName) => moveTo(moving, targetId, targetName)}
+          onCreateAndMove={async name => {
+            const created = await createProject({ name })
+            await moveTo(moving, created.id, created.name)
+          }} />
+      )}
     </div>
   )
 }

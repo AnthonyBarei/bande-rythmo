@@ -1,6 +1,6 @@
 # PROJECTS PLAN — from volatile screens to projects
 
-> Written 2026-10-23. Status: **decisions taken (§8). P1 in progress.**
+> Written 2026-10-23. Status: **decisions taken (§8). P1 + P2 done.**
 > Goal: the app works the way professional dubbing/editing tools do. You create a **project**,
 > import one or more videos into it, then go through cutting clips → bande rythmo → dubbing →
 > export. Everything is saved: leave, reload or restart and you land where you left off.
@@ -237,11 +237,19 @@ Each phase ships on its own branch and leaves the app usable.
     `{provider, item_id, media_source_id}` (Jellyfin).
 
 ### P2 · Projects home + project shell
-- [ ] Hash router, nav rail change, Projects home, New project dialog.
-- [ ] Project view with stage tabs wrapping the **existing** screens (no internal changes).
-- [ ] ClipsLibrary scoped by project, with a source filter and Déplacer vers….
-- [ ] `br-nav` replaced by the hash + `projects.ui_state.stage/clip_id`.
+- [x] Hash router (`utils/route.js`), nav rail (Projets · Atelier), Projects home (search, Actifs /
+  Archivés, card menu: modifier, archiver, supprimer with typed name), New project dialog (N, palette).
+- [x] Project view: `ProjectBar` replaces the top bar (Projets › name · Médias · Clips · Bande rythmo ·
+  Studio · Export · clip switcher) and wraps the **existing** screens. Clip stages are disabled until a
+  clip exists. Médias passes `project_id` to pick / register / batch.
+- [x] ClipsLibrary scoped by project, with a source-video filter and Déplacer vers… (or a new project).
+- [x] `br-nav` replaced by the hash + `projects.ui_state.stage/clip_id` (PATCH, debounced). No hash →
+  last opened project at its stage and clip.
 - **Done when:** a reload on any stage lands on the same project, stage and clip. Back/forward work.
+- Notes:
+  - The Atelier's « importer une longue vidéo » stays outside projects: its clips are filed under the
+    memes project once cut.
+  - Inside a project the editor loses 52 px of height to the ProjectBar (it had no top bar).
 
 ### P3 · Médias stage + import draft (fixes the original complaint)
 - [ ] Source list + Ajouter panel, chosen tracks saved on the Source.

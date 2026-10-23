@@ -451,7 +451,7 @@ function LibraryGrid({ api, sectionId, sectionTitle, onSelect, selectedKey, tool
   )
 }
 
-function ProviderBrowser({ provider, initialStatus, onSourceSelected, onStatus, switcher }) {
+function ProviderBrowser({ provider, projectId, initialStatus, onSourceSelected, onStatus, switcher }) {
   // Seeded from the Importer's own status fetch — no blank wait on tab open.
   const [status, setStatus] = useState(initialStatus ?? null)   // null=loading, {connected, configured, server?, url}
   const [libraries, setLibraries] = useState([])
@@ -504,7 +504,8 @@ function ProviderBrowser({ provider, initialStatus, onSourceSelected, onStatus, 
 
       const part = item.parts[0]
       const sourceId = crypto.randomUUID()
-      const reg = await fetch(`/api/files/register?source_id=${sourceId}&stream_url=${encodeURIComponent(part.stream_url)}&filename=${encodeURIComponent(part.filename)}`, { method: 'POST' })
+      const project = projectId ? `&project_id=${encodeURIComponent(projectId)}` : ''
+      const reg = await fetch(`/api/files/register?source_id=${sourceId}&stream_url=${encodeURIComponent(part.stream_url)}&filename=${encodeURIComponent(part.filename)}${project}`, { method: 'POST' })
       if (!reg.ok) throw new Error(`Enregistrement source : HTTP ${reg.status}`)
 
       onSourceSelected({
@@ -595,7 +596,7 @@ function ServerToolbar({ status, loadingItem, err }) {
 
 const PROVIDER_OPTIONS = LIBRARY_PROVIDERS.map(p => ({ v: p.id, l: p.label }))
 
-export default function LibraryBrowser({ statuses, onSourceSelected, onStatus }) {
+export default function LibraryBrowser({ projectId, statuses, onSourceSelected, onStatus }) {
   const [providerId, setProviderId] = useState(readLibraryProvider)
   const provider = providerById(providerId)
 
@@ -609,6 +610,7 @@ export default function LibraryBrowser({ statuses, onSourceSelected, onStatus })
     <ProviderBrowser
       key={provider.id}
       provider={provider}
+      projectId={projectId}
       initialStatus={statuses?.[provider.id]}
       onSourceSelected={onSourceSelected}
       onStatus={data => onStatus?.(provider.id, data)}
