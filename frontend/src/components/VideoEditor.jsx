@@ -27,7 +27,9 @@ const UNTITLED = 'Nom du clip…'
 export default function VideoEditor({ projectId, video, initialDraft, onDraftChange, onClipsCreated, videoStream, audioStream, audioSrc, fps, actionsRef, onStateChange }) {
   const videoRef = useRef(null)
   const progress = useProgress()
-  const [currentTime, setCurrentTime] = useState(0)
+  // Starts at the saved playhead: leaving before the video's metadata (and the
+  // restoring seek) arrives must not save the draft back at 0.
+  const [currentTime, setCurrentTime] = useState(() => initialDraft?.playhead || 0)
   const [duration, setDuration] = useState(0)
   const [pendingClips, setPendingClips] = useState(() => (initialDraft?.pending || []).map(c => ({ _id: newId(), ...c })))
   const [savedClips, setSavedClips] = useState([])
@@ -40,7 +42,7 @@ export default function VideoEditor({ projectId, video, initialDraft, onDraftCha
   const markRef = useRef(mark)
   const markNameRef = useRef(markName)
   const savingRef = useRef(false)
-  const currentTimeRef = useRef(0)
+  const currentTimeRef = useRef(currentTime)
   const seekToRef = useRef(initialDraft?.playhead || null)
   const rate = fps > 0 ? fps : DEFAULT_FPS
 
