@@ -5,6 +5,7 @@ import { Icon, ICONS, Input, T, alpha } from '../ui'
 import { useProgress } from '../ProgressContext'
 import { fmtSMPTE } from '../utils/timecode'
 import { MARK_ID, setIn, setOut, markStep, markPhase, isComplete } from '../utils/inOut'
+import { buildDraft } from '../utils/sources'
 
 let _pendingId = 0
 const newId = () => ++_pendingId
@@ -20,22 +21,27 @@ const UNTITLED = 'Nom du clip…'
 // the header button all edit `mark`. A complete IN→OUT range is a pending clip
 // (timeline block + list row, counted in "Créer N clips") until it is banked
 // into `pendingClips` or created with the batch.
-export default function VideoEditor({ projectId, video, onClipsCreated, videoStream, audioStream, audioSrc, fps, actionsRef, onStateChange }) {
+// Mounted per source (key = video.url). `initialDraft` restores a project
+// source's work in progress; `onDraftChange` receives it back (debounced, and
+// flushed on unmount / once clips are created).
+export default function VideoEditor({ projectId, video, initialDraft, onDraftChange, onClipsCreated, videoStream, audioStream, audioSrc, fps, actionsRef, onStateChange }) {
   const videoRef = useRef(null)
   const progress = useProgress()
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
-  const [pendingClips, setPendingClips] = useState([])
+  const [pendingClips, setPendingClips] = useState(() => (initialDraft?.pending || []).map(c => ({ _id: newId(), ...c })))
   const [savedClips, setSavedClips] = useState([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
   // Row whose name field takes focus once rendered (after « Ajouter le clip »).
   const [focusId, setFocusId] = useState(null)
-  const [mark, setMark] = useState(NO_MARK)
-  const [markName, setMarkName] = useState('')
-  const markRef = useRef(NO_MARK)
-  const markNameRef = useRef('')
+  const [mark, setMark] = useState(() => (initialDraft?.mark ? { markIn: initialDraft.mark.in, markOut: initialDraft.mark.out } : NO_MARK))
+  const [markName, setMarkName] = useState(() => initialDraft?.markName || '')
+  const markRef = useRef(mark)
+  const markNameRef = useRef(markName)
   const savingRef = useRef(false)
+  const currentTimeRef = useRef(0)
+  const seekToRef = useRef(initialDraft?.playhead || null)
   const rate = fps > 0 ? fps : DEFAULT_FPS
 
   const markClip = isComplete(mark) ? { _id: MARK_ID, name: markName, start: mark.markIn, end: mark.markOut, mark: true } : null
@@ -61,14 +67,51 @@ export default function VideoEditor({ projectId, video, onClipsCreated, videoStr
     updateMark(next)
   }, [updateMark])
 
+  // ── Draft: debounced save, flushed on unmount. `lastSaved` skips no-op saves
+  // (the restored draft itself, playback that ends where it started).
+  const draftCbRef = useRef(onDraftChange)
+  useEffect(() => { draftCbRef.current = onDraftChange })
+  const draftRef = useRef({ timer: null, dirty: false, latest: null, lastSaved: JSON.stringify(initialDraft || null) })
+
+  const flushDraft = useCallback(() => {
+    const d = draftRef.current
+    clearTimeout(d.timer)
+    if (!d.dirty) return
+    d.dirty = false
+    const key = JSON.stringify(d.latest)
+    if (key === d.lastSaved) return
+    d.lastSaved = key
+    draftCbRef.current?.(d.latest)
+  }, [])
+
+  const queueDraft = useCallback((draft, immediate = false) => {
+    const d = draftRef.current
+    d.latest = draft
+    d.dirty = true
+    clearTimeout(d.timer)
+    if (immediate) flushDraft()
+    else d.timer = setTimeout(flushDraft, 800)
+  }, [flushDraft])
+
+  const playheadKey = Math.round(currentTime * 10)
   useEffect(() => {
-    setCurrentTime(0)
-    setDuration(0)
-    setPendingClips([])
-    setSavedClips([])
-    setFocusId(null)
-    updateMark(NO_MARK)
-  }, [video?.url, updateMark])
+    if (!onDraftChange) return
+    queueDraft(buildDraft(pendingClips, mark, markName, playheadKey / 10))
+  }, [pendingClips, mark, markName, playheadKey, queueDraft])
+
+  useEffect(() => flushDraft, [flushDraft])
+
+  function handleTime(t) {
+    currentTimeRef.current = t
+    setCurrentTime(t)
+  }
+
+  function handleDuration(d) {
+    setDuration(d)
+    const at = seekToRef.current
+    if (at != null && videoRef.current && at < d) videoRef.current.currentTime = at
+    seekToRef.current = null
+  }
 
   // `names` ({ [rowId]: name }) carries a name still being typed (Ctrl+S from its field).
   const saveAll = useCallback(async (names = null) => {
@@ -86,14 +129,18 @@ export default function VideoEditor({ projectId, video, onClipsCreated, videoStr
     const dropSubmitted = () => {
       setPendingClips(prev => prev.filter(c => !submitted.has(c._id)))
       const m = markRef.current
-      if (submittedMark && m.markIn === submittedMark.start && m.markOut === submittedMark.end) updateMark(NO_MARK)
+      const markGone = submittedMark && m.markIn === submittedMark.start && m.markOut === submittedMark.end
+      if (markGone) updateMark(NO_MARK)
+      // Saved now: creating clips usually leaves this screen before a re-render.
+      const left = pendingRef.current.filter(c => c._id !== MARK_ID && !submitted.has(c._id))
+      queueDraft(buildDraft(left, markGone ? NO_MARK : m, markGone ? '' : markNameRef.current, currentTimeRef.current), true)
     }
     const sourcePath = video?.sourcePath
 
-    // Local/Plex source → job mode (per-segment progress + cancel).
-    if (sourcePath) {
+    // Local / library / project source → job mode (per-segment progress + cancel).
+    if (sourcePath || video?.sourceId) {
       const body = {
-        path: sourcePath,
+        path: sourcePath || '',
         source_filename: video.filename,
         ...(video.sourceId && { source_id: video.sourceId }),
         ...(projectId && { project_id: projectId }),
@@ -162,7 +209,7 @@ export default function VideoEditor({ projectId, video, onClipsCreated, videoStr
     } finally {
       finish()
     }
-  }, [video?.url, video?.file, video?.filename, video?.sourcePath, video?.sourceId, projectId, onClipsCreated, videoStream, audioStream, progress, updateMark])
+  }, [video?.url, video?.file, video?.filename, video?.sourcePath, video?.sourceId, projectId, onClipsCreated, videoStream, audioStream, progress, updateMark, queueDraft])
 
   // Header "Marquer un clip": IN, then OUT, then add the range to the pending clips.
   const markAtPlayhead = useCallback(() => applyMark(markStep, videoRef.current?.currentTime ?? 0, true), [applyMark])
@@ -224,7 +271,7 @@ export default function VideoEditor({ projectId, video, onClipsCreated, videoStr
     <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto', overflowX: 'hidden', paddingRight: 2 }}>
       <ImportPlayer key={video.url} src={video.url} audioSrc={audioSrc} videoRef={videoRef} fps={rate}
         markIn={mark.markIn} markOut={mark.markOut} onSetIn={handleSetIn} onSetOut={handleSetOut}
-        onTimeUpdate={setCurrentTime} onDuration={setDuration} />
+        onTimeUpdate={handleTime} onDuration={handleDuration} />
 
       <TimelineBar
         duration={duration}

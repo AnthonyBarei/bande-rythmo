@@ -1,6 +1,6 @@
 # PROJECTS PLAN — from volatile screens to projects
 
-> Written 2026-10-23. Status: **decisions taken (§8). P1 + P2 done.**
+> Written 2026-10-23. Status: **decisions taken (§8). P1 + P2 + P3 done.**
 > Goal: the app works the way professional dubbing/editing tools do. You create a **project**,
 > import one or more videos into it, then go through cutting clips → bande rythmo → dubbing →
 > export. Everything is saved: leave, reload or restart and you land where you left off.
@@ -252,9 +252,15 @@ Each phase ships on its own branch and leaves the app usable.
   - Inside a project the editor loses 52 px of height to the ProjectBar (it had no top bar).
 
 ### P3 · Médias stage + import draft (fixes the original complaint)
-- [ ] Source list + Ajouter panel, chosen tracks saved on the Source.
-- [ ] VideoEditor draft autosave/restore (`PUT /draft`). Remux reused if `sources/{sid}_a*.m4a` exists.
-- [ ] Offline badge + Relink.
+- [x] Source list (`import/SourceList`: name, duration, clips, « brouillon · n plages », offline badge) +
+  « Ajouter » (the local / Médiathèque / URL tabs). New files, library items and URLs become project
+  sources; the selected one is saved in `projects.ui_state.source_id`. Chosen tracks saved on the
+  Source (`PATCH`, library probe cache via `streams`).
+- [x] VideoEditor draft autosave/restore (`PUT /draft`, 800 ms debounce, flushed on unmount and right
+  after a cut): pending ranges + names, IN/OUT + name, playhead. Remux reused when the file is on disk.
+- [x] Offline panel + badge, « Relier… » (duration check; on a mismatch the confirmed path is reused
+  with `force=true&path=`, no second dialog).
+- Not done: timeline zoom / scroll position is not part of the draft; no « retirer la vidéo » action yet.
 - **Done when:** you can cut 3 ranges, leave, restart the backend, reload, and find the same
   source, tracks and 3 ranges.
 

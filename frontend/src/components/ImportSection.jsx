@@ -1,6 +1,10 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import VideoEditor from './VideoEditor'
 import LibraryBrowser from './LibraryBrowser'
+import SourceList from './import/SourceList'
+import Dialog from './projects/Dialog'
+import { addUrlSource, patchSource, putDraft, relinkSource, videoFromSource } from '../utils/sources'
+import { fmtDuration } from '../utils/duration'
 import { Btn, Dot, Kbd, Icon, ICONS, Spinner, T, alpha, pressable } from '../ui'
 import { useProgress } from '../ProgressContext'
 import { fmtSMPTE } from '../utils/timecode'
@@ -18,9 +22,23 @@ const MARK_BTN = {
   range: { label: 'Ajouter le clip', title: 'Ajoute la plage IN → OUT aux clips en attente, puis marquez le suivant' },
 }
 
-// projectId: clips, picked files and library items join that project (null =
-// the default « Clips importés » bucket, e.g. the Atelier's inline import).
-export default function ImportSection({ projectId = null, video, onVideoSet, onClipsCreated }) {
+// Two modes:
+// · project (Médias stage, `sources` given): the project's videos are listed;
+//   the selected one plays with its saved tracks and cut in progress (draft).
+//   New files / library items / URLs become sources of the project.
+// · loose (`video` / `onVideoSet`, the Atelier's inline import): one transient
+//   source, clips go to the default « Clips importés » bucket.
+export default function ImportSection({
+  projectId = null, sources = null, selectedSourceId = null, onSelectSource, onSourceUpdated,
+  video: looseVideo, onVideoSet, onClipsCreated,
+}) {
+  const projectMode = !!projectId && Array.isArray(sources)
+  const source = projectMode ? sources.find(s => s.id === selectedSourceId) || null : null
+  const video = useMemo(
+    () => (projectMode ? (source ? videoFromSource(source) : null) : looseVideo),
+    [projectMode, source, looseVideo])
+  const offline = !!source && !source.online
+  const [relinkAsk, setRelinkAsk] = useState(null)   // { source, detail } — duration mismatch
   const [tab, setTab] = useState(TAB.LOCAL)
   const [error, setError] = useState(null)
   const [urlInput, setUrlInput] = useState('')
@@ -58,6 +76,23 @@ export default function ImportSection({ projectId = null, video, onVideoSet, onC
     }
     return () => { alive = false }
   }, [setProviderStatus])
+
+  // Project mode: the selected source brings back its probed tracks and the
+  // tracks chosen last time (declared before the remux effect, which reads
+  // sourceIdRef in the same commit).
+  useEffect(() => {
+    if (!projectMode) return
+    stopPoll()
+    resetStreams()
+    setError(null)
+    sourceIdRef.current = source?.id || null
+    if (!source) return
+    const s = source.streams || {}
+    const hasStreams = (s.video_streams?.length || 0) + (s.audio_streams?.length || 0) > 0
+    setStreams(hasStreams ? s : null)
+    setVideoStream(source.video_stream ?? null)
+    setAudioStream(source.audio_stream ?? null)
+  }, [projectMode, source?.id])
 
   useEffect(() => {
     const sid = sourceIdRef.current
@@ -158,7 +193,7 @@ export default function ImportSection({ projectId = null, video, onVideoSet, onC
 
     startRemux()
     return () => { stale = true; stopPoll() }
-  }, [videoStream, audioStream])
+  }, [videoStream, audioStream, video?.url])
 
   function resetStreams() {
     setStreams(null)
@@ -178,6 +213,11 @@ export default function ImportSection({ projectId = null, video, onVideoSet, onC
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
       if (data.cancelled) return
+
+      if (projectMode) {
+        await adoptSource(data.source, { audio_stream: autoAudioStream(data.audio_streams) })
+        return
+      }
 
       resetStreams()
       sourceIdRef.current = data.source_id
@@ -199,11 +239,29 @@ export default function ImportSection({ projectId = null, video, onVideoSet, onC
     }
   }
 
-  function handleUrlLoad() {
+  // Project mode: a new source joins the list and gets selected; its first
+  // track choice (Dolby / DTS default → AAC remux) is saved with it.
+  async function adoptSource(src, fields = {}) {
+    const changes = Object.fromEntries(Object.entries(fields).filter(([, v]) => v != null))
+    const saved = Object.keys(changes).length ? await patchSource(src.id, changes) : src
+    onSourceUpdated(saved)
+    onSelectSource(saved.id)
+  }
+
+  async function handleUrlLoad() {
     const u = urlInput.trim()
     if (!u) return
     if (!/^https?:\/\//i.test(u)) { setError('URL invalide — doit commencer par http:// ou https://'); return }
     setError(null)
+    if (projectMode) {
+      try {
+        await adoptSource(await addUrlSource(projectId, u, urlFilename(u)))
+        setUrlInput('')
+      } catch (e) {
+        setError('Erreur : ' + e.message)
+      }
+      return
+    }
     resetStreams()
     stopPoll()
     sourceIdRef.current = null
@@ -218,8 +276,19 @@ export default function ImportSection({ projectId = null, video, onVideoSet, onC
     onVideoSet(null)
   }
 
-  function handleLibrarySelected(source) {
+  async function handleLibrarySelected(source) {
     setError(null)
+    if (projectMode) {
+      try {
+        await adoptSource({ id: source.sourceId }, {
+          streams: { video_streams: source.video_streams || [], audio_streams: source.audio_streams || [] },
+          audio_stream: autoAudioStream(source.audio_streams),
+        })
+      } catch (e) {
+        setError('Erreur : ' + e.message)
+      }
+      return
+    }
     resetStreams()
     stopPoll()
 
@@ -241,6 +310,36 @@ export default function ImportSection({ projectId = null, video, onVideoSet, onC
     setAudioStream(autoAudioStream(source.audio_streams))
   }
 
+  // Track picks are saved on the project source (restored on its next visit).
+  function chooseTracks(kind, value) {
+    if (kind === 'video') setVideoStream(value)
+    else setAudioStream(value)
+    if (!source) return
+    const fields = { [`${kind}_stream`]: value }
+    onSourceUpdated({ id: source.id, ...fields })
+    patchSource(source.id, fields).catch(e => { console.error(e); setError(`Piste non enregistrée : ${e.message}`) })
+  }
+
+  // Optimistic: the list badge and a later visit see the draft at once.
+  const saveDraft = useCallback((sid, draft) => {
+    onSourceUpdated({ id: sid, draft })
+    putDraft(sid, draft).catch(e => { console.error(e); setError(`Brouillon non enregistré : ${e.message}`) })
+  }, [onSourceUpdated])
+
+  async function relink(src, confirmedPath = null) {
+    setError(null)
+    try {
+      const res = await relinkSource(src.id, confirmedPath)
+      setRelinkAsk(null)
+      if (!res.cancelled) onSourceUpdated(res)
+    } catch (e) {
+      if (e.status === 409 && e.detail?.reason === 'duration_mismatch') { setRelinkAsk({ source: src, detail: e.detail }); return }
+      console.error(e)
+      setRelinkAsk(null)
+      setError('Relier : ' + e.message)
+    }
+  }
+
   const videoOptions = streams?.video_streams ?? []
   const audioOptions = streams?.audio_streams ?? []
   const connectedLibraries = LIBRARY_PROVIDERS.filter(p => libraryStatus[p.id]?.connected).map(p => p.label)
@@ -260,20 +359,20 @@ export default function ImportSection({ projectId = null, video, onVideoSet, onC
       <div style={{ padding: '26px 32px 0', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'flex-end', gap: 14, marginBottom: 18 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: T.fs.micro, color: T.text3, letterSpacing: 1.4, fontWeight: 600, marginBottom: 4 }}>IMPORTER</div>
+            <div style={{ fontSize: T.fs.micro, color: T.text3, letterSpacing: 1.4, fontWeight: 600, marginBottom: 4 }}>{projectMode ? 'MÉDIAS' : 'IMPORTER'}</div>
             <div title={video ? sourceTitle(video) : undefined} style={{ fontSize: T.fs.xxl, fontWeight: 600, letterSpacing: -0.6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {video ? sourceTitle(video) : tab === TAB.LIBRARY ? 'Choisir un fichier dans la médiathèque' : 'Importer une vidéo'}
             </div>
             <div style={{ fontSize: T.fs.xs, color: T.text3, fontFamily: T.fontMono, marginTop: 6, display: 'flex', gap: 8, alignItems: 'center', minWidth: 0, whiteSpace: 'nowrap' }}>
               {meta}
               {video?.libraryTitle && <><Dot color={T.success} size={6} /> <span style={{ color: T.success, overflow: 'hidden', textOverflow: 'ellipsis' }}>depuis {video.libraryName} · {video.libraryTitle}{video.libraryYear ? ` (${video.libraryYear})` : ''}</span></>}
-              {video && !video.libraryTitle && <span style={{ color: T.text4, overflow: 'hidden', textOverflow: 'ellipsis' }}>{video.sourceId ? video.sourcePath : 'URL directe'}</span>}
+              {video && !video.libraryTitle && <span style={{ color: T.text4, overflow: 'hidden', textOverflow: 'ellipsis' }}>{source?.kind === 'library' ? 'depuis la médiathèque' : video.sourceId ? video.sourcePath : 'URL directe'}</span>}
               {(picking || remuxing) && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, color: T.accent }}><Spinner />{picking ? 'Ouverture…' : 'Changement piste…'}</span>}
             </div>
           </div>
-          {video && (
+          {video && !offline && (
             <>
-              <Btn variant="outline" icon={ICONS.back} onClick={clearSource}>{tab === TAB.LIBRARY ? 'Médiathèque' : 'Changer de source'}</Btn>
+              {!projectMode && <Btn variant="outline" icon={ICONS.back} onClick={clearSource}>{tab === TAB.LIBRARY ? 'Médiathèque' : 'Changer de source'}</Btn>}
               <Btn variant="solid" icon={ICONS.scissors} onClick={() => editorActions.current?.mark()} active={phase !== 'none'}
                 title={markBtn.title}>
                 {markBtn.label}
@@ -288,8 +387,8 @@ export default function ImportSection({ projectId = null, video, onVideoSet, onC
           )}
         </div>
 
-        {/* Source switcher */}
-        <div style={{ display: 'flex', gap: 6, padding: 5, background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.r.ctl, width: 'fit-content' }}>
+        {/* Source switcher — while choosing a source */}
+        {!video && <div style={{ display: 'flex', gap: 6, padding: 5, background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.r.ctl, width: 'fit-content' }}>
           {[
             { id: TAB.LOCAL, label: 'Fichier local', ic: ICONS.upload, hint: 'glisser un .mp4' },
             { id: TAB.LIBRARY, label: 'Médiathèque', ic: ICONS.film, hint: libraryHint, online: connectedLibraries.length > 0 },
@@ -310,7 +409,7 @@ export default function ImportSection({ projectId = null, video, onVideoSet, onC
               </button>
             )
           })}
-        </div>
+        </div>}
 
         {error && (
           <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'rgba(232,89,93,.05)', border: `1px solid ${alpha(T.danger, '44')}`, borderRadius: T.r.ctl, color: T.danger, fontSize: T.fs.xs }}>
@@ -321,11 +420,20 @@ export default function ImportSection({ projectId = null, video, onVideoSet, onC
 
       {/* Body */}
       <div style={{ flex: 1, minHeight: 0, padding: '16px 32px 20px', display: 'flex', gap: 18, overflow: 'hidden' }}>
-        {video ? (
+        {projectMode && (
+          <SourceList sources={sources} selectedId={source?.id ?? null}
+            onSelect={id => onSelectSource(id)} onAdd={() => onSelectSource(null)} onRelink={src => relink(src)} />
+        )}
+        {offline ? (
+          <OfflinePanel source={source} onRelink={() => relink(source)} />
+        ) : video ? (
           <>
             <VideoEditor
+              key={video.url}
               projectId={projectId}
               video={video}
+              initialDraft={source?.draft}
+              onDraftChange={source ? draft => saveDraft(source.id, draft) : undefined}
               onClipsCreated={onClipsCreated}
               videoStream={videoStream}
               audioStream={audioStream}
@@ -339,8 +447,8 @@ export default function ImportSection({ projectId = null, video, onVideoSet, onC
               audioOptions={audioOptions}
               videoStream={videoStream}
               audioStream={audioStream}
-              onVideo={setVideoStream}
-              onAudio={setAudioStream}
+              onVideo={v => chooseTracks('video', v)}
+              onAudio={a => chooseTracks('audio', a)}
               remuxing={remuxing}
               hasStreams={!!streams}
             />
@@ -366,6 +474,38 @@ export default function ImportSection({ projectId = null, video, onVideoSet, onC
           </EmptySource>
         )}
       </div>
+      {relinkAsk && (
+        <Dialog title="Durée différente" onClose={() => setRelinkAsk(null)}
+          sub={`« ${relinkAsk.source.filename} » durait ${fmtDuration(relinkAsk.detail.expected)}, le fichier choisi dure ${fmtDuration(relinkAsk.detail.found)}. Ce n’est peut-être pas la même vidéo.`}
+          footer={<>
+            <Btn variant="ghost" onClick={() => setRelinkAsk(null)}>Annuler</Btn>
+            <Btn variant="primary" onClick={() => relink(relinkAsk.source, relinkAsk.detail.path)}>Relier quand même</Btn>
+          </>}>
+          <div style={{ fontSize: T.fs.xs, color: T.text3, fontFamily: T.fontMono, wordBreak: 'break-all' }}>{relinkAsk.detail.path}</div>
+        </Dialog>
+      )}
+    </div>
+  )
+}
+
+// A project source that can't be read: its clips still work (they are cut
+// already), only new cuts wait for the file.
+function OfflinePanel({ source, onRelink }) {
+  const library = source.kind === 'library'
+  return (
+    <div style={{
+      flex: 1, minHeight: 0, background: T.surface, border: `1px dashed ${alpha(T.danger, '66')}`, borderRadius: T.r.card,
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24, textAlign: 'center',
+    }}>
+      <Icon d={ICONS.warn} size={36} sw={1.4} stroke={T.danger} />
+      <div style={{ fontSize: T.fs.base, color: T.text }}>{library ? 'Médiathèque non configurée' : 'Fichier introuvable'}</div>
+      <div style={{ fontSize: T.fs.xs, color: T.text3, maxWidth: 480, lineHeight: 1.6 }}>
+        {library
+          ? 'Reconnecte Plex ou Jellyfin dans Réglages › Médiathèques pour relire cette vidéo.'
+          : <>La vidéo a été déplacée ou supprimée : <span style={{ fontFamily: T.fontMono, color: T.text2, wordBreak: 'break-all' }}>{source.path}</span></>}
+      </div>
+      <div style={{ fontSize: T.fs.xs, color: T.text3 }}>Les clips déjà découpés restent utilisables.</div>
+      {!library && <Btn variant="primary" icon={ICONS.link} onClick={onRelink}>Relier le fichier…</Btn>}
     </div>
   )
 }

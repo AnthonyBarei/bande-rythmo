@@ -149,6 +149,7 @@ async def pick_file(project_id: Optional[str] = None, db: Session = Depends(get_
         "filename": src.filename,
         "path": path,
         **streams,
+        "source": source_service.to_dict(src, 0),
     }
 
 
@@ -203,8 +204,8 @@ async def register_url_source(source_id: str, stream_url: str, filename: str,
         raise HTTPException(400, "Invalid source_id")
     if project_id and not db.get(Project, project_id):
         raise HTTPException(404, "Project not found")
-    source_service.create(db, stream_url, filename, project_id=project_id, source_id=source_id)
-    return {"ok": True}
+    src = source_service.create(db, stream_url, filename, project_id=project_id, source_id=source_id)
+    return {"ok": True, "source": source_service.to_dict(src, source_service.clip_count(db, src.id))}
 
 
 @router.get("/stream/{source_id}")

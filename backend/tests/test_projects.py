@@ -271,6 +271,8 @@ class SourcesTest(Base):
         self.assertEqual(self.c.put("/api/sources/s1/draft", json={"draft": draft}).json()["draft"], draft)
         r = self.c.patch("/api/sources/s1", json={"audio_stream": 2}).json()
         self.assertEqual((r["audio_stream"], r["online"], r["clip_count"]), (2, True, 1))
+        streams = {"video_streams": [], "audio_streams": [{"relative_index": 0, "label": "AC3 · fre"}]}
+        self.assertEqual(self.c.patch("/api/sources/s1", json={"streams": streams}).json()["streams"], streams)
         self.assertEqual(self.c.get("/api/sources/s1").json()["draft"], draft)
         os.remove(self.video)
         self.assertFalse(self.c.get("/api/sources/s1").json()["online"])
@@ -293,7 +295,11 @@ class SourcesTest(Base):
             r = self.c.post("/api/sources/s1/relink")
             self.assertEqual(r.status_code, 409)
             self.assertEqual(r.json()["detail"]["reason"], "duration_mismatch")
-            r = self.c.post("/api/sources/s1/relink?force=true")
+        # Confirmed: the path from the 409, no second dialog.
+        with mock.patch.object(sources, "open_video_dialog", side_effect=AssertionError("dialog reopened")), \
+             mock.patch.object(sources, "probe_streams", return_value={"duration": 42.0}):
+            self.assertEqual(self.c.post("/api/sources/s1/relink", params={"path": moved}).status_code, 400)
+            r = self.c.post("/api/sources/s1/relink", params={"force": "true", "path": moved})
         self.assertEqual(r.json()["path"], moved)
 
     def test_library_source_offline_without_config(self):
@@ -319,6 +325,7 @@ class FilesPersistenceTest(Base):
         r = self.c.post("/api/files/register", params={
             "source_id": "abc-123", "stream_url": JELLYFIN_URL, "filename": "Ep1.mkv"})
         self.assertEqual(r.status_code, 200)
+        self.assertEqual((r.json()["source"]["id"], r.json()["source"]["kind"]), ("abc-123", "library"))
         db = self.Local()
         src = db.get(Source, "abc-123")
         self.assertEqual(src.kind, "library")
@@ -346,6 +353,7 @@ class FilesPersistenceTest(Base):
              mock.patch.object(files, "probe_streams",
                                return_value={"video_streams": [], "audio_streams": [], "duration": 5.0}):
             r = self.c.post(f"/api/files/pick?project_id={p['id']}").json()
+        self.assertEqual((r["source"]["id"], r["source"]["online"]), (r["source_id"], True))
         db = self.Local()
         src = db.get(Source, r["source_id"])
         self.assertEqual((src.project_id, src.duration, src.path), (p["id"], 5.0, video))

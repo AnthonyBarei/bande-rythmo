@@ -25,6 +25,8 @@ class SourcePatch(BaseModel):
     video_stream: Optional[int] = None
     audio_stream: Optional[int] = None
     project_id: Optional[str] = None
+    # Probe cache for library sources (Plex/Jellyfin describe their own tracks).
+    streams: Optional[Dict[str, Any]] = None
 
 
 class DraftIn(BaseModel):
@@ -53,6 +55,8 @@ async def patch_source(source_id: str, body: SourcePatch, db: Session = Depends(
     fields = body.model_dump(exclude_unset=True)
     if fields.get("project_id") and not db.get(Project, fields["project_id"]):
         raise HTTPException(404, "Project not found")
+    if "streams" in fields:
+        fields["streams"] = json.dumps(fields["streams"]) if fields["streams"] else None
     return _dict(db, source_service.update(db, src, **fields))
 
 
@@ -64,13 +68,17 @@ async def put_draft(source_id: str, body: DraftIn, db: Session = Depends(get_db)
 
 
 @router.post("/{source_id}/relink")
-async def relink(source_id: str, force: bool = False, db: Session = Depends(get_db)):
+async def relink(source_id: str, force: bool = False, path: Optional[str] = None,
+                 db: Session = Depends(get_db)):
     """Point a local source at a moved file. Refused (409) when the duration
-    differs from the cached one, unless force=true after the user confirmed."""
+    differs from the cached one, unless force=true after the user confirmed —
+    then `path` (from the 409) skips a second file dialog."""
     src = _get(db, source_id)
     if src.kind != "local":
         raise HTTPException(400, "Only local sources can be relinked")
-    path = await asyncio.to_thread(open_video_dialog)
+    if path and not force:
+        raise HTTPException(400, "path is only accepted with force=true")
+    path = path or await asyncio.to_thread(open_video_dialog)
     if not path:
         return {"cancelled": True}
     if not os.path.isfile(path):
