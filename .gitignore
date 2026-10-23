@@ -67,6 +67,7 @@ backend/takes/
 
 # --- DBs ---
 *.db
+*.db.bak-*
 *.db-shm
 *.db-wal
 *.db-journal

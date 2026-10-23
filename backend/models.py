@@ -4,6 +4,66 @@ from datetime import datetime
 from database import Base
 
 
+class Project(Base):
+    """Unit of work: media bin (sources) → clips → BR → takes → exports."""
+    __tablename__ = "projects"
+
+    id = Column(String, primary_key=True)                    # uuid4 hex
+    name = Column(String, nullable=False)
+    color = Column(String, nullable=True)
+    language = Column(String, nullable=True)                 # Whisper default
+    status = Column(String, nullable=False, default="active")  # active | archived
+    kind = Column(String, nullable=False, default="normal")  # normal | memes (hidden from home)
+    owner_id = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    ui_state = Column(String, nullable=True)                 # JSON {stage, clip_id, source_id}
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now)
+    opened_at = Column(DateTime, nullable=True)
+
+
+class Source(Base):
+    """Imported video in a project's media bin. Library sources keep a provider
+    reference, never a tokenised stream URL — it is rebuilt from the config."""
+    __tablename__ = "sources"
+
+    id = Column(String, primary_key=True)
+    # Null = picked by the pre-project import screen, not yet in a project.
+    project_id = Column(String, ForeignKey("projects.id", ondelete="CASCADE"), nullable=True, index=True)
+    kind = Column(String, nullable=False)                    # local | url | library
+    path = Column(String, nullable=True)                     # local path or plain URL
+    library = Column(String, nullable=True)                  # JSON {provider, part_id | item_id+media_source_id, ...}
+    filename = Column(String, nullable=False, default="")
+    duration = Column(Float, nullable=True)
+    fps = Column(Float, nullable=True)
+    streams = Column(String, nullable=True)                  # JSON probe cache
+    video_stream = Column(Integer, nullable=True)
+    audio_stream = Column(Integer, nullable=True)
+    thumbnail_path = Column(String, nullable=True)
+    draft = Column(String, nullable=True)                    # JSON import work in progress
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now)
+
+
+class ProjectRole(Base):
+    """Cast: a role (Subtitle.character) and who voices it, once per project."""
+    __tablename__ = "project_roles"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    project_id = Column(String, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    role = Column(String, nullable=False)
+    comedien = Column(String, nullable=True)
+    color = Column(String, nullable=True)
+    order = Column(Integer, nullable=False, default=0)
+
+
+class Meta(Base):
+    """Key/value flags for one-shot data migrations."""
+    __tablename__ = "meta"
+
+    key = Column(String, primary_key=True)
+    value = Column(String, nullable=True)
+
+
 class Clip(Base):
     __tablename__ = "clips"
 
@@ -22,8 +82,14 @@ class Clip(Base):
     # JSON array of scene-change timecodes (seconds), detected via ffmpeg at
     # import or on-demand. Feeds the BR canvas + nav timeline plan-cut markers.
     scene_cuts = Column(String, nullable=True)
-    # Optional project/folder grouping (free-text). Null = ungrouped.
+    # Legacy free-text grouping — kept in sync with project_id until P6.
     project = Column(String, nullable=True)
+    project_id = Column(String, ForeignKey("projects.id", ondelete="CASCADE"), nullable=True, index=True)
+    # Clips are self-contained segments: losing the source only blocks new cuts.
+    source_id = Column(String, ForeignKey("sources.id", ondelete="SET NULL"), nullable=True, index=True)
+    # BR sync correction (seconds) — clip data, used by editor, Studio and exports.
+    br_offset = Column(Float, nullable=False, default=0.0)
+    ui_state = Column(String, nullable=True)                  # JSON — where to resume
     created_at = Column(DateTime, default=datetime.now)
 
     subtitles = relationship(
@@ -120,7 +186,8 @@ class LexiconEntry(Base):
     __tablename__ = "lexicon"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    project = Column(String, nullable=False, default="")   # '' = global
+    project = Column(String, nullable=False, default="")   # '' = global (legacy, until P6)
+    project_id = Column(String, ForeignKey("projects.id", ondelete="CASCADE"), nullable=True, index=True)
     term = Column(String, nullable=False)                  # source word/name
     translation = Column(String, nullable=True)            # agreed rendering
     phonetic = Column(String, nullable=True)               # pronunciation hint

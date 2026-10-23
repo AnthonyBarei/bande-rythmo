@@ -218,10 +218,14 @@ def _rate(value) -> Optional[float]:
 
 def probe_streams(path: str) -> dict:
     result = subprocess.run(
-        ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", path],
+        ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", "-show_format", path],
         capture_output=True,
     )
     data = json.loads(result.stdout or b"{}")
+    try:
+        duration = float(data.get("format", {}).get("duration"))
+    except (TypeError, ValueError):
+        duration = None
     video_streams, audio_streams = [], []
     for s in data.get("streams", []):
         codec_type = s.get("codec_type", "")
@@ -239,7 +243,7 @@ def probe_streams(path: str) -> dict:
             video_streams.append({"relative_index": len(video_streams), "label": label, "fps": _rate(s.get("avg_frame_rate") or s.get("r_frame_rate"))})
         elif codec_type == "audio":
             audio_streams.append({"relative_index": len(audio_streams), "label": label, "codec": codec_name, "channels": s.get("channels"), "sample_rate": int(s["sample_rate"]) if str(s.get("sample_rate", "")).isdigit() else None, "language": tags.get("language")})
-    return {"video_streams": video_streams, "audio_streams": audio_streams}
+    return {"video_streams": video_streams, "audio_streams": audio_streams, "duration": duration}
 
 
 def make_proxy(source: str, output: str, height: int = 720,

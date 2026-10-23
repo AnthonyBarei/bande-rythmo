@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from database import init_db
-from routes import video, transcription, export, clips, meme, files, plex, jellyfin, takes, jobs, fonts, lexicon, translate, auth
+from routes import video, transcription, export, clips, meme, files, plex, jellyfin, takes, jobs, fonts, lexicon, translate, auth, projects, sources
 from services import jobs as jobs_service
 import asyncio
 
@@ -57,6 +57,8 @@ app.include_router(fonts.router, prefix="/api/fonts", tags=["fonts"])
 app.include_router(lexicon.router, prefix="/api/lexicon", tags=["lexicon"])
 app.include_router(translate.router, prefix="/api/translate", tags=["translate"])
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
+app.include_router(sources.router, prefix="/api/sources", tags=["sources"])
 
 app.mount("/segments", StaticFiles(directory="segments"), name="segments")
 app.mount("/exports", StaticFiles(directory="exports"), name="exports")

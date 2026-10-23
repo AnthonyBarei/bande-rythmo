@@ -11,13 +11,16 @@ import uuid
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from database import get_db, SessionLocal
+from models import Project, Source
+from services import project_service, source_service
 from services.clip_service import (
     create_clip, delete_clip, get_clip,
     list_clips, update_name, update_status, update_subtitles,
     update_boucles, update_fps, update_scene_cuts, update_project,
+    update_br_offset, update_ui_state,
 )
 from services.ffmpeg_service import extract_segment, extract_thumbnail, probe_streams, probe_fps, detect_scene_cuts, make_proxy
 from services.jobs import create_job, raise_if_cancelled, CancelledJobError, JobStartResponse
@@ -43,6 +46,15 @@ class RenameRequest(BaseModel):
 
 class ProjectRequest(BaseModel):
     project: str = ""
+    project_id: Optional[str] = None   # wins over the legacy name when given
+
+
+class BrOffsetRequest(BaseModel):
+    br_offset: float
+
+
+class UiStateRequest(BaseModel):
+    ui_state: Dict[str, Any] = {}
 
 
 class StatusRequest(BaseModel):
@@ -66,9 +78,72 @@ class BatchLocalClip(BaseModel):
 
 
 class BatchLocalRequest(BaseModel):
-    path: str
+    path: str = ""
     source_filename: str = ""
     clips: List[BatchLocalClip]
+    source_id: Optional[str] = None    # project screens: path resolved from the Source
+    project_id: Optional[str] = None
+
+
+class _Target:
+    """Where a batch cut reads from and which project/source its clips join."""
+    def __init__(self, path: str, source_filename: str, project: Project, source_id: str):
+        self.path = path
+        self.source_filename = source_filename
+        self.project_id = project.id
+        self.legacy = project_service.legacy_name(project)
+        self.source_id = source_id
+
+
+def _project_or_default(db: Session, project_id: Optional[str]) -> Project:
+    if project_id:
+        project = db.get(Project, project_id)
+        if not project:
+            raise HTTPException(404, "Project not found")
+        return project
+    return project_service.get_or_create_by_name(db, None)
+
+
+def _same_source(src: Source, path: str) -> bool:
+    kind, stored, ref = source_service.classify(path)
+    if kind == "library":
+        return src.kind == "library" and json.loads(src.library or "{}") == ref
+    return src.kind == kind and src.path == stored
+
+
+def _find_or_create_source(db: Session, path: str, filename: str, project: Project) -> Source:
+    """Pre-project screens send a raw path: reuse the Source the pick/register
+    created (same path, same or no project), else record a new one."""
+    candidates = (db.query(Source)
+                  .filter((Source.project_id == project.id) | Source.project_id.is_(None))
+                  .order_by(Source.created_at.desc()))
+    for src in candidates:
+        if _same_source(src, path):
+            if src.project_id is None:
+                src = source_service.update(db, src, project_id=project.id)
+            return src
+    return source_service.create(db, path, filename, project_id=project.id)
+
+
+def _resolve_target(db: Session, req: BatchLocalRequest) -> _Target:
+    if req.source_id:
+        src = source_service.get(db, req.source_id)
+        if not src:
+            raise HTTPException(404, "Source not found")
+        try:
+            path = source_service.resolve_path(src)
+        except source_service.SourceOffline as e:
+            raise HTTPException(409, f"Source hors ligne : {e}")
+        project = _project_or_default(db, req.project_id or src.project_id)
+        if src.project_id != project.id:
+            src = source_service.update(db, src, project_id=project.id)
+        return _Target(path, req.source_filename or src.filename, project, src.id)
+    if not req.path.startswith("http") and not os.path.isfile(req.path):
+        raise HTTPException(400, f"File not found: {req.path}")
+    project = _project_or_default(db, req.project_id)
+    filename = req.source_filename or os.path.basename(req.path)
+    src = _find_or_create_source(db, req.path, filename, project)
+    return _Target(req.path, filename, project, src.id)
 
 
 def _discard_partial(path: str):
@@ -89,6 +164,7 @@ def _copy_upload(src, dst_path: str):
 async def create_batch(
     file: UploadFile = File(...),
     clips_json: str = Form(...),
+    project_id: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
     try:
@@ -100,6 +176,7 @@ async def create_batch(
     if any(float(c["end"]) <= float(c["start"]) for c in clips_data):
         raise HTTPException(400, "Clip end must be after start")
 
+    project = _project_or_default(db, project_id)
     ext = os.path.splitext(file.filename or "video.mp4")[1] or ".mp4"
     source_filename = file.filename or "video"
     tmp_path = None
@@ -152,29 +229,28 @@ async def create_batch(
         create_clip(
             db, e["clip_id"], e["name"], source_filename,
             e["start"], e["end"], e["segment_path"], e["thumbnail_path"],
-            fps=source_fps,
+            fps=source_fps, project_id=project.id, project=project_service.legacy_name(project),
         )
         for e in extracted
     ]
 
 
 @router.post("/batch-local-job", response_model=JobStartResponse)
-async def create_batch_local_job(req: BatchLocalRequest):
+async def create_batch_local_job(req: BatchLocalRequest, db: Session = Depends(get_db)):
     """Job-mode batch clip cut from a local/HTTP source.
     Per-clip progress: pct = (i + sub_pct) / total. Cancel = job.cancel_event.
     Worker owns its own DB session — request session is closed by the time
     the BG task runs."""
-    if not req.path.startswith("http") and not os.path.isfile(req.path):
-        raise HTTPException(400, f"File not found: {req.path}")
     if not req.clips:
         raise HTTPException(400, "No clips provided")
     if any(c.end <= c.start for c in req.clips):
         raise HTTPException(400, "Clip end must be after start")
+    target = _resolve_target(db, req)
 
-    source_filename = req.source_filename or os.path.basename(req.path)
+    source_filename = target.source_filename
     total = len(req.clips)
     clips_data = [c.dict() for c in req.clips]
-    path = req.path
+    path = target.path
     job = create_job("import-batch", title=f"Découpe {total} clip{'s' if total > 1 else ''}")
 
     def worker():
@@ -208,7 +284,8 @@ async def create_batch_local_job(req: BatchLocalRequest):
                 row = create_clip(
                     db, clip_id, c["name"].strip() or f"Clip {clip_id[:6]}",
                     source_filename, c["start"], c["end"], segment_path, thumb_path,
-                    source_path=path, fps=source_fps,
+                    source_path=path, fps=source_fps, project_id=target.project_id,
+                    project=target.legacy, source_id=target.source_id,
                 )
                 results.append(row)
 
@@ -233,16 +310,15 @@ async def probe_streams_local(req: ProbeLocalRequest):
 
 @router.post("/batch-local")
 async def create_batch_local(req: BatchLocalRequest, db: Session = Depends(get_db)):
-    if not req.path.startswith("http") and not os.path.isfile(req.path):
-        raise HTTPException(400, f"File not found: {req.path}")
     if not req.clips:
         raise HTTPException(400, "No clips provided")
     if any(c.end <= c.start for c in req.clips):
         raise HTTPException(400, "Clip end must be after start")
+    target = _resolve_target(db, req)
 
-    source_filename = req.source_filename or os.path.basename(req.path)
+    source_filename = target.source_filename
     extracted = []
-    source_fps = await asyncio.to_thread(probe_fps, req.path)
+    source_fps = await asyncio.to_thread(probe_fps, target.path)
 
     for c in req.clips:
         clip_id = str(uuid.uuid4())
@@ -250,7 +326,7 @@ async def create_batch_local(req: BatchLocalRequest, db: Session = Depends(get_d
         thumb_path = f"thumbnails/{clip_id}.jpg"
 
         await asyncio.to_thread(
-            extract_segment, req.path, c.start, c.end, segment_path,
+            extract_segment, target.path, c.start, c.end, segment_path,
             c.video_stream, c.audio_stream,
         )
 
@@ -273,16 +349,17 @@ async def create_batch_local(req: BatchLocalRequest, db: Session = Depends(get_d
         create_clip(
             db, e["clip_id"], e["name"], source_filename,
             e["start"], e["end"], e["segment_path"], e["thumbnail_path"],
-            source_path=req.path,
-            fps=source_fps,
+            source_path=target.path,
+            fps=source_fps, project_id=target.project_id,
+            project=target.legacy, source_id=target.source_id,
         )
         for e in extracted
     ]
 
 
 @router.get("/")
-async def list_all(db: Session = Depends(get_db)):
-    return list_clips(db)
+async def list_all(project_id: Optional[str] = None, db: Session = Depends(get_db)):
+    return list_clips(db, project_id)
 
 
 @router.get("/{clip_id}")
@@ -570,7 +647,27 @@ async def set_fps(clip_id: str, req: FpsRequest, db: Session = Depends(get_db)):
 
 @router.put("/{clip_id}/project")
 async def set_project(clip_id: str, req: ProjectRequest, db: Session = Depends(get_db)):
-    clip = update_project(db, clip_id, req.project)
+    if req.project_id:
+        project = _project_or_default(db, req.project_id)
+    else:
+        project = project_service.get_or_create_by_name(db, req.project)
+    clip = update_project(db, clip_id, project_service.legacy_name(project), project.id)
+    if not clip:
+        raise HTTPException(404, "Clip not found")
+    return clip
+
+
+@router.put("/{clip_id}/br-offset")
+async def set_br_offset(clip_id: str, req: BrOffsetRequest, db: Session = Depends(get_db)):
+    clip = update_br_offset(db, clip_id, req.br_offset)
+    if not clip:
+        raise HTTPException(404, "Clip not found")
+    return clip
+
+
+@router.put("/{clip_id}/ui-state")
+async def set_ui_state(clip_id: str, req: UiStateRequest, db: Session = Depends(get_db)):
+    clip = update_ui_state(db, clip_id, req.ui_state)
     if not clip:
         raise HTTPException(404, "Clip not found")
     return clip
