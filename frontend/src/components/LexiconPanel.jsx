@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { T, Btn, Icon, ICONS, Input, pressable } from '../ui'
+import { T, Btn, Icon, ICONS, Input, Toggle, pressable } from '../ui'
 
 const NO_PROVIDER_TIP = 'Aucun fournisseur de traduction configuré — voir Réglages › Auto-traduction'
 
 // Dubbing lexicon — per-project term glossary (translation + pronunciation).
-// Scoped to the clip's project; project='' entries are global (shown everywhere).
-export default function LexiconPanel({ project = '', translateAvailable = false, translateTarget = 'fr' }) {
+// Shows the clip's project terms + global ones (no project, shown everywhere).
+export default function LexiconPanel({ projectId = null, projectName = '', translateAvailable = false, translateTarget = 'fr' }) {
   const [entries, setEntries] = useState([])
+  const [asGlobal, setAsGlobal] = useState(!projectId)
   const [search, setSearch] = useState('')
   const [term, setTerm] = useState('')
   const [translation, setTranslation] = useState('')
@@ -17,13 +18,13 @@ export default function LexiconPanel({ project = '', translateAvailable = false,
 
   const refresh = useCallback(async () => {
     try {
-      const r = await fetch(`/api/lexicon?project=${encodeURIComponent(project)}`)
+      const r = await fetch(projectId ? `/api/lexicon?project_id=${encodeURIComponent(projectId)}` : '/api/lexicon?project=')
       if (!r.ok) throw new Error(`HTTP ${r.status}`)
       setEntries(await r.json())
     } catch (e) {
       setError('Chargement du lexique impossible : ' + e.message)
     }
-  }, [project])
+  }, [projectId])
   useEffect(() => { refresh() }, [refresh])
 
   async function add() {
@@ -35,7 +36,7 @@ export default function LexiconPanel({ project = '', translateAvailable = false,
     try {
       const r = await fetch('/api/lexicon', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ project, term: t, translation: translation.trim() }),
+        body: JSON.stringify({ project_id: projectId, global_entry: asGlobal || !projectId, term: t, translation: translation.trim() }),
       })
       if (!r.ok) throw new Error(`HTTP ${r.status}`)
       setTerm(''); setTranslation('')
@@ -111,7 +112,14 @@ export default function LexiconPanel({ project = '', translateAvailable = false,
             {translating ? 'Traduction…' : 'Traduire auto'}
           </Btn>
         </span>
-        <span style={{ fontSize: 10, color: T.text4 }}>{project ? `Projet « ${project} » + termes globaux` : 'Termes globaux (aucun projet)'}</span>
+        <div style={{ flex: 1 }} />
+        {projectId
+          ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 11, color: T.text3 }}
+              title={asGlobal ? 'Les nouveaux termes valent pour tous les projets' : `Les nouveaux termes valent pour « ${projectName || 'ce projet'} »`}>
+              Global
+              <Toggle on={asGlobal} onClick={() => setAsGlobal(g => !g)} label="Nouveaux termes globaux" />
+            </span>
+          : <span style={{ fontSize: 10, color: T.text4 }}>Termes globaux (aucun projet)</span>}
       </div>
       {error && <div style={{ fontSize: 11, color: T.danger, marginBottom: 8 }}>{error}</div>}
       {entries.length > 0 && (
@@ -151,7 +159,7 @@ function LexiconRow({ entry, onRemove, onSavePhonetic }) {
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 7 }}>
           <span style={{ fontSize: T.fs.sm, fontWeight: 600 }}>{entry.term}</span>
           {entry.translation && <span style={{ fontSize: T.fs.xs, color: T.accent }}>→ {entry.translation}</span>}
-          {!entry.project && <span style={{ fontSize: 8.5, color: T.text4, border: `1px solid ${T.border2}`, borderRadius: 3, padding: '0 4px' }}>global</span>}
+          {!entry.project_id && <span style={{ fontSize: 8.5, color: T.text4, border: `1px solid ${T.border2}`, borderRadius: 3, padding: '0 4px' }}>global</span>}
         </div>
         {editing ? (
           <input autoFocus value={draft} onChange={e => setDraft(e.target.value)} onBlur={commit}

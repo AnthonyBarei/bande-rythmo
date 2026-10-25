@@ -22,6 +22,8 @@ import ProjectBar from './components/projects/ProjectBar'
 import { MoveClipDialog } from './components/projects/ProjectDialogs'
 import { CLIP_STAGES, PROJECTS, formatRoute, parseRoute, projectRoute, resumeRoute } from './utils/route'
 import { createProject, getProject, listProjects, moveClip, patchProject } from './utils/projectsApi'
+import { castMap, dropLegacyCast, hasLegacyCast, legacyCastPatch, putCast } from './utils/cast'
+import useProjectCast from './hooks/useProjectCast'
 
 export default function App() {
   return (
@@ -234,6 +236,25 @@ function AppInner() {
     () => (projectId ? clips.filter(c => c.project_id === projectId) : [])
       .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || '')),
     [clips, projectId])
+
+  // Cast (P5): comédiens per project, shared by the Voix tab and the Studio.
+  const { comediens, setComedien } = useProjectCast(project, setProject)
+
+  // Pre-P5 per-clip comédien names join the project cast once, then go.
+  const castMigratedRef = useRef(new Set())
+  useEffect(() => {
+    if (!project || !clipsLoaded || castMigratedRef.current.has(project.id)) return
+    castMigratedRef.current.add(project.id)
+    const ids = projectClips.map(c => c.clip_id)
+    if (!hasLegacyCast(ids)) return
+    const { patch, conflicts } = legacyCastPatch(ids, castMap(project.cast))
+    if (conflicts.length) console.info('Distribution : noms différents selon les clips, le plus fréquent est gardé', conflicts)
+    const pid = project.id
+    const save = Object.keys(patch).length
+      ? putCast(pid, patch).then(cast => setProject(p => (p?.id === pid ? { ...p, cast } : p)))
+      : Promise.resolve()
+    save.then(() => dropLegacyCast(ids)).catch(e => console.error('Distribution : migration échouée', e))
+  }, [project, clipsLoaded, projectClips])
 
   const activeClip = route.view === 'project' && route.clipId
     ? clips.find(c => c.clip_id === route.clipId) || null
@@ -606,6 +627,9 @@ function AppInner() {
                 clip={activeClip}
                 onUpdate={handleClipUpdated}
                 onLocalState={handleClipLocal}
+                comediens={comediens}
+                onSetComedien={setComedien}
+                projectName={project?.name}
                 onBack={() => goStage('clips')}
                 exportOpen={dubExportOpen}
                 onToggleExport={() => goStage(dubExportOpen ? 'dub' : 'export')}
@@ -617,7 +641,8 @@ function AppInner() {
         )}
         {exportScreen && <div ref={setExportSlot} style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }} />}
         {section === 'record' && activeClip && (
-          <StudioScreen key={activeClip.clip_id} clip={activeClip} onLocalState={handleClipLocal} onBack={() => goStage('dub')}
+          <StudioScreen key={activeClip.clip_id} clip={activeClip} onLocalState={handleClipLocal}
+            comediens={comediens} onSetComedien={setComedien} onBack={() => goStage('dub')}
             onExportDubbed={() => { setExportInitialFormat('mp4-dubbed'); goStage('export') }} />
         )}
         {section === 'memes' && (atelierImport ? (

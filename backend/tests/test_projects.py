@@ -176,6 +176,28 @@ class ProjectsApiTest(Base):
         self.assertEqual(self.c.get("/api/projects").json(), [])
         self.assertEqual(len(self.c.get("/api/projects?status=archived").json()), 1)
 
+    def test_cast_merges_and_removes(self):
+        p = self.c.post("/api/projects", json={"name": "Cast"}).json()
+        r = self.c.put(f"/api/projects/{p['id']}/cast", json={"cast": {"LÉA": " Anne ", "MARC": "Paul"}})
+        self.assertEqual([(x["role"], x["comedien"]) for x in r.json()], [("LÉA", "Anne"), ("MARC", "Paul")])
+        # Only the roles sent change; '' = cleared on purpose; null removes.
+        r = self.c.put(f"/api/projects/{p['id']}/cast", json={"cast": {"MARC": "", "": "Zoé", "LÉA": None}})
+        self.assertEqual([(x["role"], x["comedien"]) for x in r.json()], [("MARC", ""), ("", "Zoé")])
+        self.assertEqual(len(self.c.get(f"/api/projects/{p['id']}").json()["cast"]), 2)
+        self.assertEqual(self.c.put("/api/projects/nope/cast", json={"cast": {}}).status_code, 404)
+
+    def test_lexicon_by_project_id(self):
+        a = self.c.post("/api/projects", json={"name": "A"}).json()
+        b = self.c.post("/api/projects", json={"name": "B"}).json()
+        self.c.post("/api/lexicon", json={"project_id": a["id"], "term": "a-term"})
+        self.c.post("/api/lexicon", json={"project_id": b["id"], "term": "b-term"})
+        self.c.post("/api/lexicon", json={"project_id": a["id"], "global_entry": True, "term": "global"})
+        terms = sorted(e["term"] for e in self.c.get(f"/api/lexicon?project_id={a['id']}").json())
+        self.assertEqual(terms, ["a-term", "global"])
+        entry = next(e for e in self.c.get(f"/api/lexicon?project_id={a['id']}").json() if e["term"] == "a-term")
+        self.assertEqual((entry["project_id"], entry["project"]), (a["id"], "A"))
+        self.assertEqual(self.c.post("/api/lexicon", json={"project_id": "nope", "term": "x"}).status_code, 404)
+
     def test_rename_keeps_legacy_tags_in_step(self):
         db = self.Local()
         self.add_clip(db, "k1")

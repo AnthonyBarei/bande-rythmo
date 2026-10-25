@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from typing import Optional
 
 from database import get_db
-from models import LexiconEntry
+from models import LexiconEntry, Project
 from services import project_service
 
 router = APIRouter()
@@ -17,7 +17,10 @@ def _project_id(db: Session, name: str) -> Optional[str]:
 
 
 class LexiconIn(BaseModel):
-    project: Optional[str] = None   # PUT: None = keep the entry's scope
+    project: Optional[str] = None   # legacy scope name; PUT: None = keep the entry's scope
+    # Scope by id (P5). With `global_entry`, the entry is global whatever the project.
+    project_id: Optional[str] = None
+    global_entry: bool = False
     term: str
     translation: Optional[str] = None
     phonetic: Optional[str] = None
@@ -62,10 +65,19 @@ async def create_entry(body: LexiconIn, db: Session = Depends(get_db)):
     term = (body.term or "").strip()
     if not term:
         raise HTTPException(400, "term is required")
-    scope = (body.project or "").strip()
+    if body.project_id and not body.global_entry:
+        project = db.get(Project, body.project_id)
+        if not project:
+            raise HTTPException(404, "Project not found")
+        scope, scope_id = project_service.legacy_name(project) or "", project.id
+    elif body.global_entry:
+        scope, scope_id = "", None
+    else:
+        scope = (body.project or "").strip()
+        scope_id = _project_id(db, scope)
     e = LexiconEntry(
         project=scope,
-        project_id=_project_id(db, scope),
+        project_id=scope_id,
         term=term,
         translation=(body.translation or "").strip() or None,
         phonetic=(body.phonetic or "").strip() or None,
