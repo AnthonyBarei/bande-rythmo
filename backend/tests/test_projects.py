@@ -247,6 +247,9 @@ class ClipFieldsTest(Base):
         self.assertEqual(self.c.put("/api/clips/a/br-offset", json={"br_offset": -0.4}).json()["br_offset"], -0.4)
         r = self.c.put("/api/clips/a/ui-state", json={"ui_state": {"playhead": 3.5, "pxPerSec": 180}}).json()
         self.assertEqual(r["ui_state"], {"playhead": 3.5, "pxPerSec": 180})
+        # Shallow merge: the Studio's key joins the editor's; null removes a key.
+        r = self.c.put("/api/clips/a/ui-state", json={"ui_state": {"studio": {"role": "LÉA", "mode": "line"}, "pxPerSec": None}}).json()
+        self.assertEqual(r["ui_state"], {"playhead": 3.5, "studio": {"role": "LÉA", "mode": "line"}})
         self.assertEqual(self.c.put("/api/clips/zz/br-offset", json={"br_offset": 1}).status_code, 404)
 
 

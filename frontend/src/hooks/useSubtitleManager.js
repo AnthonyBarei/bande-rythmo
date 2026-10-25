@@ -19,9 +19,10 @@ export const COALESCE_MS = 1000
 //   finishDrag()               end of a drag: sort + history + save now
 //   saveNow()                  flush the pending save immediately
 //   undo() / redo() / canUndo / canRedo / undoRedoRef (stable for keydown)
-export default function useSubtitleManager({ clipId, initialSubtitles, onSaved }) {
+export default function useSubtitleManager({ clipId, initialSubtitles, initialSelectedIdx = null, onSaved }) {
   const [subtitles, setSubtitles] = useState(initialSubtitles || [])
-  const [selectedIdx, setSelectedIdx] = useState(null)
+  const [selectedIdx, setSelectedIdx] = useState(
+    () => (initialSelectedIdx != null && (initialSubtitles || [])[initialSelectedIdx] ? initialSelectedIdx : null))
   const [saveStatus, setSaveStatus] = useState('saved')   // saved|unsaved|saving|error
   const [canUndo, setCanUndo] = useState(false)
   const [canRedo, setCanRedo] = useState(false)

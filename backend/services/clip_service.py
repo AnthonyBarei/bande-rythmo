@@ -229,11 +229,15 @@ def update_br_offset(db: Session, clip_id, br_offset):
     return _to_dict(clip)
 
 
-def update_ui_state(db: Session, clip_id, ui_state):
+def update_ui_state(db: Session, clip_id, patch):
+    """Shallow merge: the editor and the Studio each own their keys. A null
+    value removes its key."""
     clip = db.query(Clip).filter(Clip.clip_id == clip_id).first()
     if not clip:
         return None
-    clip.ui_state = json.dumps(ui_state) if ui_state else None
+    merged = {**_parse_ui_state(clip.ui_state), **(patch or {})}
+    merged = {k: v for k, v in merged.items() if v is not None}
+    clip.ui_state = json.dumps(merged) if merged else None
     db.commit()
     db.refresh(clip)
     return _to_dict(clip)

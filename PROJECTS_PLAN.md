@@ -1,6 +1,6 @@
 # PROJECTS PLAN — from volatile screens to projects
 
-> Written 2026-10-23. Status: **decisions taken (§8). P1 + P2 + P3 done.**
+> Written 2026-10-23. Status: **decisions taken (§8). P1 → P4 done.**
 > Goal: the app works the way professional dubbing/editing tools do. You create a **project**,
 > import one or more videos into it, then go through cutting clips → bande rythmo → dubbing →
 > export. Everything is saved: leave, reload or restart and you land where you left off.
@@ -265,8 +265,14 @@ Each phase ships on its own branch and leaves the app usable.
   source, tracks and 3 ranges.
 
 ### P4 · Resume everywhere
-- [ ] `clips.ui_state`: playhead, zoom (skips auto-fit when saved), right tab, selection, Studio role/mode.
-- [ ] Per-clip sessionStorage/localStorage keys migrated, then removed.
+- [x] `clips.ui_state` (shallow-merged by `PUT /ui-state`, null removes a key): editor `playhead`,
+  `pxPerSec` (only a zoom the user chose — auto-fit is skipped then), `rightTab`, `selected`; Studio
+  `studio: {role, mode}`. `clips.br_offset` saved from the style panel (debounced). One writer,
+  `hooks/useClipUiState` (800 ms debounce, flush on unmount); App keeps its copy of ui_state /
+  br_offset over subtitle-save responses.
+- [x] Per-clip keys: `br-studio-role/mode-{id}` read once as a fallback, then dropped when the Studio
+  saves; `br-editor-sel-{id}` (sessionStorage) replaced by an in-memory Éditeur → Studio handoff with
+  `ui_state.selected` as fallback. `br-comediens-{id}` stays until P5 (project cast).
 - Touches DubbingWorkspace — the editor split (REMAKE Phase 2) is done: playhead/zoom live in
   `editor/usePlayback` and the orchestrator, selection in `useSubtitleManager`.
 
