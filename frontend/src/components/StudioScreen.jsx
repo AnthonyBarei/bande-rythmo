@@ -5,7 +5,7 @@ import { useSettings } from '../SettingsContext'
 import { useToast } from '../ToastContext'
 import { adjacentLine, characterProgress, nextOpenLine } from '../utils/studio'
 import { usePlayerVolume, applyPlayerVolume, toggleMuted } from '../utils/playerVolume'
-import { readComediens, writeComediens, withComedienDefault } from '../utils/studioPrefs'
+import { withComedienDefault } from '../utils/studioPrefs'
 import { dropLegacyStudioKeys, studioStateOf, takeHandoff } from '../utils/clipState'
 import useClipUiState from '../hooks/useClipUiState'
 import { useAuth } from '../AuthContext'
@@ -72,7 +72,8 @@ function useVideoClock(videoRef) {
 // `onExportDubbed` (optional): opens the export screen on "MP4 doublé" — the
 // action of the "toutes les répliques validées" toast.
 // `onLocalState(clipId, { ui_state })`: mirrors the saved role / mode into the app's clip.
-export default function StudioScreen({ clip, onLocalState, onBack, onExportDubbed }) {
+// comediens / onSetComedien(role, name): the project cast (App, P5).
+export default function StudioScreen({ clip, onLocalState, comediens = {}, onSetComedien, onBack, onExportDubbed }) {
   const videoRef = useRef(null)
   const subtitles = useMemo(() => clip.subtitles || [], [clip.subtitles])
   // Opens on the réplique selected in the Éditeur, else on the last role's
@@ -184,7 +185,6 @@ export default function StudioScreen({ clip, onLocalState, onBack, onExportDubbe
 
   // ── Role (STUDIO_V2 §1): the character of the current réplique, chosen
   // explicitly from the picker or 1–9.
-  const [comediens, setComediens] = useState(() => readComediens(clip.clip_id))
   const { user } = useAuth()
   const accountComedien = user ? (user.comedien || user.name) : ''
   const shownComediens = useMemo(() => withComedienDefault(comediens, Object.keys(charMap), accountComedien),
@@ -210,11 +210,7 @@ export default function StudioScreen({ clip, onLocalState, onBack, onExportDubbe
   }, [clip.clip_id, role, mode, saveUi])
 
   function setComedien(name) {
-    setComediens(prev => {
-      const next = { ...prev, [role]: name }
-      writeComediens(clip.clip_id, next)
-      return next
-    })
+    onSetComedien?.(role, name)
   }
 
   // Switching role opens its first réplique without a validated take.

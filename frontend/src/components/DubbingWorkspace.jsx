@@ -28,7 +28,7 @@ import { useAuth } from '../AuthContext'
 import useSubtitleManager from '../hooks/useSubtitleManager'
 import { isActiveAt, activeIndexAt } from '../utils/band'
 import { usePlayerVolume, applyPlayerVolume } from '../utils/playerVolume'
-import { readComediens, writeComediens, withComedienDefault } from '../utils/studioPrefs'
+import { withComedienDefault } from '../utils/studioPrefs'
 import { handOffSelection, putBrOffset } from '../utils/clipState'
 import useClipUiState from '../hooks/useClipUiState'
 import { nextOpenLine } from '../utils/studio'
@@ -40,7 +40,8 @@ const CANVAS_HINT = 'glisser pour créer · ⇧ glisser : boucle · double-clic 
 
 // BR editor — orchestrates the editor hooks (editor/use*) and lays out header,
 // video, transport, nav bar, band toolbar, band and inspector.
-export default function DubbingWorkspace({ clip, onUpdate, onLocalState, onBack, onSaveStatus, exportOpen, onToggleExport, onRecord, onHelp }) {
+// comediens / onSetComedien(role, name): the project cast (App, P5).
+export default function DubbingWorkspace({ clip, onUpdate, onLocalState, comediens = {}, onSetComedien, projectName = '', onBack, onSaveStatus, exportOpen, onToggleExport, onRecord, onHelp }) {
   // Where this clip was left (clips.ui_state, P4): playhead, zoom, tab, selection.
   const [saved] = useState(() => clip.ui_state || {})
   // Subtitle state machine (array, selection, undo/redo, debounced autosave).
@@ -82,7 +83,6 @@ export default function DubbingWorkspace({ clip, onUpdate, onLocalState, onBack,
   const pxPerSecRef = useLatestRef(pxPerSec)
   const [rightTab, setRightTab] = useState(saved.rightTab || 'repliques')
   const [takes, setTakes] = useState([])
-  const [comediens, setComediens] = useState({})
   // DOUBLAGE_IA_REVIEW §6.2 — header character pills FILTER the band.
   // Empty set = no filter (show all). Multi-select toggle: click adds/removes.
   const [charFilter, setCharFilter] = useState(() => new Set())
@@ -128,16 +128,6 @@ export default function DubbingWorkspace({ clip, onUpdate, onLocalState, onBack,
     getBandTime, seekBand, setLoopRegion: loops.setLoopRegion, loopRegionRef: loops.loopRegionRef, loopSub: loops.loopSub,
     changeSubtitles, setSubtitlesTransient, dragCommit: commitDrag, finishDrag, deleteReplica: deleteReplicaWithUndo,
   })
-
-  // Load comédien names (per-clip, local — shared with the Studio)
-  useEffect(() => { setComediens(readComediens(clip.clip_id)) }, [clip.clip_id])
-  function setComedien(char, name) {
-    setComediens(prev => {
-      const next = { ...prev, [char]: name }
-      writeComediens(clip.clip_id, next)
-      return next
-    })
-  }
 
   // Working state saved per clip: playhead, chosen zoom, inspector tab, selection.
   const saveUi = useClipUiState(clip.clip_id, (id, patch) => onLocalState?.(id, { ui_state: patch }))
@@ -555,7 +545,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onLocalState, onBack,
           }}
           voixProps={{
             charList, charMap, subtitles, activeSubtitle, selectedIdx, setSelectedIdx,
-            takes, bandNow, comediens: shownComediens, onSetComedien: setComedien,
+            takes, bandNow, comediens: shownComediens, onSetComedien,
             onRecord: recordRoleInStudio,
             onSeek: seekBand, clipDuration: clip.end - clip.start, onAddCharacter: addCharacter,
           }}
@@ -564,7 +554,7 @@ export default function DubbingWorkspace({ clip, onUpdate, onLocalState, onBack,
             setDetectionAuto: prefs.setDetectionAuto, wordByWord: prefs.wordByWord, setWordByWord: prefs.setWordByWord,
           }}
           bouclesProps={{ boucles: boucles.boucles, subtitles, onAdd: boucles.addBoucleAtCursor, onRemove: boucles.removeBoucle, onSeek: seekBand, clipFps }}
-          lexiqueProps={{ project: clip.project, translateAvailable: !!tools.translateProvider?.available, translateTarget: tools.translateTarget }}
+          lexiqueProps={{ projectId: clip.project_id, projectName, translateAvailable: !!tools.translateProvider?.available, translateTarget: tools.translateTarget }}
         />
       </div>
 

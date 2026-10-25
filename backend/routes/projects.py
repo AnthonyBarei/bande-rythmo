@@ -36,6 +36,10 @@ class SourceIn(BaseModel):
     filename: str = ""
 
 
+class CastIn(BaseModel):
+    cast: Dict[str, Optional[str]]   # role → comédien ('' cleared on purpose, null removes)
+
+
 def _get(db: Session, project_id: str) -> Project:
     project = db.get(Project, project_id)
     if not project:
@@ -92,6 +96,12 @@ async def delete_project(project_id: str, confirm: str = "", db: Session = Depen
         raise HTTPException(400, "Confirmation does not match the project name")
     freed = await asyncio.to_thread(project_service.delete, db, project)
     return {"ok": True, "freed_bytes": freed}
+
+
+@router.put("/{project_id}/cast")
+async def put_cast(project_id: str, body: CastIn, db: Session = Depends(get_db)):
+    """Merge: only the roles sent change."""
+    return project_service.update_cast(db, _get(db, project_id), body.cast)
 
 
 @router.post("/{project_id}/sources/pick")

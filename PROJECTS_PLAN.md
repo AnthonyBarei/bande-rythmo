@@ -1,6 +1,6 @@
 # PROJECTS PLAN — from volatile screens to projects
 
-> Written 2026-10-23. Status: **decisions taken (§8). P1 → P4 done.**
+> Written 2026-10-23. Status: **decisions taken (§8). P1 → P5 done.**
 > Goal: the app works the way professional dubbing/editing tools do. You create a **project**,
 > import one or more videos into it, then go through cutting clips → bande rythmo → dubbing →
 > export. Everything is saved: leave, reload or restart and you land where you left off.
@@ -277,9 +277,13 @@ Each phase ships on its own branch and leaves the app usable.
   `editor/usePlayback` and the orchestrator, selection in `useSubtitleManager`.
 
 ### P5 · Cast + lexicon per project
-- [ ] `project_roles` + `PUT /cast`. Studio RolePicker and the Voix tab read and write it.
-- [ ] Comédiens localStorage one-shot migration (§3.5).
-- [ ] Lexicon on `project_id`.
+- [x] `project_roles` + `PUT /api/projects/{id}/cast` `{cast: {role: comédien}}` (merge; '' = cleared on
+  purpose, null removes). The Studio role field and the Voix tab read and write it through App
+  (`hooks/useProjectCast`: shown at once, saved 600 ms after typing stops).
+- [x] Comédiens localStorage one-shot migration (§3.5): on opening a project, `br-comediens-{clipId}` of
+  its clips fill the roles not cast yet (name used on most clips wins, conflicts logged), then the keys go.
+- [x] Lexicon on `project_id`: `GET ?project_id=` (project + globals), `POST {project_id, global_entry}`;
+  the panel has a « Global » toggle (globals could no longer be created once every clip had a project).
 
 ### P6 · Project lifecycle + cleanup
 - [ ] Rename / colour / archive / delete (Q2) / move clips between projects.

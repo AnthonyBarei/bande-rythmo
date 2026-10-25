@@ -1,6 +1,6 @@
 import React from 'react'
 import LexiconPanel from '../LexiconPanel'
 
-export default function InspectorLexique({ project, translateAvailable, translateTarget }) {
-  return <LexiconPanel project={project || ''} translateAvailable={translateAvailable} translateTarget={translateTarget} />
+export default function InspectorLexique({ projectId, projectName, translateAvailable, translateTarget }) {
+  return <LexiconPanel projectId={projectId} projectName={projectName} translateAvailable={translateAvailable} translateTarget={translateTarget} />
 }

@@ -114,17 +114,41 @@ def list_projects(db: Session, status: Optional[str] = "active", include_memes: 
     return [to_dict(db, p, counts[p.id]) for p in rows]
 
 
+def cast_of(db: Session, project_id: str) -> list[dict]:
+    rows = (db.query(ProjectRole).filter(ProjectRole.project_id == project_id)
+            .order_by(ProjectRole.order, ProjectRole.id).all())
+    return [{"role": r.role, "comedien": r.comedien or "", "color": r.color, "order": r.order} for r in rows]
+
+
+def update_cast(db: Session, project: Project, patch: dict) -> list[dict]:
+    """{role: comédien} upserts; '' keeps a role cleared on purpose (the
+    account's comédien name is then not shown); None removes the role."""
+    rows = {r.role: r for r in db.query(ProjectRole).filter(ProjectRole.project_id == project.id)}
+    next_order = max((r.order for r in rows.values()), default=-1) + 1
+    for role, comedien in patch.items():
+        row = rows.get(role)
+        if comedien is None:
+            if row:
+                db.delete(row)
+            continue
+        if row:
+            row.comedien = comedien.strip()
+        else:
+            db.add(ProjectRole(project_id=project.id, role=role, comedien=comedien.strip(), order=next_order))
+            next_order += 1
+    project.updated_at = datetime.now()
+    db.commit()
+    return cast_of(db, project.id)
+
+
 def detail(db: Session, project: Project) -> dict:
     sources = db.query(Source).filter(Source.project_id == project.id).order_by(Source.created_at).all()
     per_source = dict(db.query(Clip.source_id, func.count(Clip.clip_id))
                       .filter(Clip.project_id == project.id).group_by(Clip.source_id).all())
-    cast = (db.query(ProjectRole).filter(ProjectRole.project_id == project.id)
-            .order_by(ProjectRole.order, ProjectRole.id).all())
     return {
         **to_dict(db, project),
         "sources": [source_service.to_dict(s, per_source.get(s.id, 0)) for s in sources],
-        "cast": [{"role": r.role, "comedien": r.comedien or "", "color": r.color, "order": r.order}
-                 for r in cast],
+        "cast": cast_of(db, project.id),
         "disk_bytes": disk_bytes(db, project.id),
     }
 
