@@ -31,20 +31,25 @@ Second backend (worktree) : `BR_API_TARGET=http://127.0.0.1:8010` redirige le pr
 backend/
   main.py                  # FastAPI app, lifespan init_db, static mounts
   database.py              # SQLite init + accès + idempotent ALTER TABLE guards
-  models.py                # Clip (fps,scene_cuts,project), Subtitle (words,off,dos,ambiance,plan_cut,note), Boucle, Take, Export, LexiconEntry
+  models.py                # Project, Source, ProjectRole, Meta, Clip (fps,scene_cuts,project_id,source_id,br_offset,ui_state),
+                           # Subtitle (words,off,dos,ambiance,plan_cut,note), Boucle, Take, Export, LexiconEntry (project_id)
   routes/
     video.py               # upload + découpe ffmpeg
     transcription.py       # Whisper (extrait audio WAV avant transcription) — language par requête
-    clips.py               # CRUD + status + boucles + fps + import-subtitles + detect-scenes + proxy + project + separate-vocals
+    clips.py               # CRUD + status + boucles + fps + import-subtitles + detect-scenes + proxy + separate-vocals
+                           # + project (déplacer) + br-offset + ui-state (fusion) ; batch → project_id/source_id
+    projects.py            # /api/projects : liste, création, détail (sources, cast, disk_bytes), patch, suppression (nom tapé),
+                           # sources/pick + sources URL, PUT /cast
+    sources.py             # /api/sources/{id} : pistes, brouillon (PUT /draft), relink (contrôle durée), suppression
     export.py              # SRT/ASS/DetX/Croisillé/MP4/GIF/MP3/WAV + quality presets + GPU + plage perso + historique
     meme.py                # génération memes (image/GIF)
-    files.py               # upload vidéos source
+    files.py               # pick / register / remux / stream des sources (table `sources`, survit au redémarrage)
     plex.py                # intégration Plex
     jellyfin.py            # intégration Jellyfin (même forme de réponses que plex.py)
     takes.py               # prises d'enregistrement (recording) — Take.lead = marge avant la réplique (continu)
     jobs.py                # statut/cancel/result/ws des jobs (fire-and-poll)
     fonts.py               # upload TTF/OTF + registry + resolve_font_path
-    lexicon.py             # CRUD lexique de doublage (scope projet + globaux)
+    lexicon.py             # CRUD lexique de doublage (project_id + globaux)
     translate.py           # /status + traduction (DeepL/LibreTranslate)
     auth.py                # comptes locaux : register/login/logout, /me (profil, prefs, mdp, e-mail, sessions, export, suppression), forgot/reset/verify
   services/
@@ -52,7 +57,11 @@ backend/
     whisper_service.py     # transcribe_segment (singleton model)
     subtitle_service.py    # export_srt/ass/detx (pro BR)/croisille
     subtitle_import_service.py # parse_srt/ass/vtt/detx → dicts
-    clip_service.py        # store clips + update_boucles/fps/scene_cuts/project/...
+    clip_service.py        # store clips + update_boucles/fps/scene_cuts/project/br_offset/ui_state/...
+    project_service.py     # projets : CRUD, compteurs, cast, disk_bytes, suppression (fichiers dérivés)
+    source_service.py      # sources : classify (local/url/library), resolve_path, offline, remux
+    project_migration.py   # au démarrage : tags texte → projets/sources (+ sauvegarde), purge des sources orphelines
+    files_dialog.py        # sélecteur de fichier Windows natif
     br_renderer.py         # rendu bande rythmo + _draw_signs (burn détection) + polices uploadées
     detection.py           # classify_char() (miroir detection.js)
     plex_service.py        # client Plex
@@ -192,12 +201,28 @@ plan_cut REAL        # timecode d'un changement de plan dans la ligne (nullable)
 note     TEXT        # annotation libre par réplique (point accent sur canvas)
 ```
 
+### Projets (PROJECTS_PLAN.md, 2026-10-23 → 25)
+```python
+Project      id, name, color, language, status (active|archived), kind (normal|memes), owner_id, ui_state(JSON
+             {stage, clip_id, source_id}), created_at, updated_at, opened_at
+Source       id, project_id (NULL = hors projet, purgé au démarrage sans clips), kind (local|url|library),
+             path, library(JSON {provider, part_id | item_id+media_source_id} — jamais de jeton), filename,
+             duration, fps, streams(JSON), video_stream, audio_stream, draft(JSON brouillon de découpe)
+ProjectRole  project_id, role, comedien ('' = vidé exprès), color, order        # distribution
+Meta         key, value                                                          # drapeaux de migration
+```
+Projet par défaut « Clips importés » ; « Memes & extraits » = `kind='memes'` (masqué de l'accueil).
+
 ### Clip (colonnes ajoutées)
 ```python
 fps        REAL  # frame rate source détecté via ffprobe à l'import (PAL=25 défaut)
 scene_cuts TEXT  # JSON [sec] — changements de plan détectés (ffmpeg scene filter)
-project    TEXT  # dossier/projet (nullable) — groupement ClipsLibrary
+project_id TEXT  # FK projects
+source_id  TEXT  # FK sources (SET NULL — un clip survit à sa source)
+br_offset  REAL  # décalage BR (donnée du clip)
+ui_state   TEXT  # JSON {playhead, pxPerSec?, rightTab, selected, studio:{role, mode}} — PUT fusionne
 # has_proxy = dérivé (os.path.isfile segments/{id}_proxy.mp4), pas une colonne
+# project / source_path : colonnes historiques, lues seulement par project_migration
 ```
 
 ### Boucle (table créée)
@@ -214,8 +239,9 @@ id, clip_id FK, format, path, filename, media_type, size_bytes, quality, params(
 
 ### LexiconEntry (table créée) — lexique de doublage
 ```python
-id, project, term, translation, phonetic, note, created_at   # project='' = global
-# GET/POST /api/lexicon (scope projet + globaux) · PUT/DELETE /{id}
+id, project_id, term, translation, phonetic, note, created_at   # project_id NULL = global
+# GET /api/lexicon?project_id= (projet + globaux) · POST {project_id, global_entry} · PUT/DELETE /{id}
+# project (texte) : colonne historique, lue seulement par project_migration
 ```
 
 ### Migrations
@@ -422,6 +448,16 @@ Briefs `design/design_handoff_redesign_v2/HOME.md` + `ACCOUNT.md`, refs `referen
 - **Préférences** suivent le compte : celles du compte gagnent à la connexion, puis chaque changement est poussé.
   Stockées versionnées `{"v": 1, "settings": {…}}` (migration vers un compte hébergé).
 - **Comédien** : rôle sans comédien → nom de comédien du compte affiché (Studio + onglet Voix), stocké seulement si édité.
+
+### Fait — Projets (2026-10-23 → 25) — `PROJECTS_PLAN.md`
+- **P1** tables projets/sources/distribution + migration au démarrage (sauvegarde `*.db.bak-projects-*`),
+  sources persistées (remux/stream survivent au redémarrage), jetons Plex/Jellyfin hors de la base.
+- **P2** accueil Projets, routeur hash (`utils/route.js`), `ProjectBar` (Médias · Clips · Bande rythmo · Studio · Export).
+- **P3** étape Médias : vidéos du projet, brouillon de découpe + pistes sauvés, hors ligne + Relier.
+- **P4** éditeur et Studio reprennent par clip (`clips.ui_state`, `br_offset`, `hooks/useClipUiState`).
+- **P5** distribution par projet (`PUT /cast`, `hooks/useProjectCast`), lexique par `project_id` + bascule Global.
+- **P6** menu projet dans la `ProjectBar` (modifier, archiver/restaurer, supprimer), colonnes historiques
+  plus lues hors migration, purge des sources orphelines.
 
 ### Reste à faire (non démarré)
 - **Phase 2 (REMAKE_PLAN) — suite** : DubbingWorkspace découpé en hooks `editor/use*` (2026-10-23) ;

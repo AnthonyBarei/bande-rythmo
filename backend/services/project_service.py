@@ -41,7 +41,8 @@ def create(db: Session, name: str, language: Optional[str] = None, color: Option
 
 
 def get_or_create_by_name(db: Session, name: Optional[str]) -> Project:
-    """Legacy text tag → project. Empty → the default bucket for untagged clips."""
+    """Project by name, created if missing. Empty → the default bucket (« Clips
+    importés »). Used by the migration of pre-project tags and the Atelier."""
     name = (name or "").strip() or DEFAULT_PROJECT_NAME
     project = (db.query(Project).filter(Project.name == name)
                .order_by(Project.created_at).first())
@@ -49,11 +50,6 @@ def get_or_create_by_name(db: Session, name: Optional[str]) -> Project:
         return project
     kind = "memes" if name == MEMES_PROJECT_NAME else "normal"
     return create(db, name, kind=kind)
-
-
-def legacy_name(project: Project) -> Optional[str]:
-    """Clip.project text that matches a project (None for the default bucket)."""
-    return None if project.name == DEFAULT_PROJECT_NAME else project.name
 
 
 def _counts(db: Session, project_ids: list[str]) -> dict:
@@ -156,11 +152,6 @@ def detail(db: Session, project: Project) -> dict:
 def update(db: Session, project: Project, fields: dict) -> Project:
     if "name" in fields:
         project.name = fields["name"].strip()
-        # Keep the legacy text tag on clips + lexicon in step until P6.
-        db.query(Clip).filter(Clip.project_id == project.id).update(
-            {Clip.project: legacy_name(project)}, synchronize_session=False)
-        db.query(LexiconEntry).filter(LexiconEntry.project_id == project.id).update(
-            {LexiconEntry.project: legacy_name(project) or ""}, synchronize_session=False)
     for key in ("color", "language"):
         if key in fields:
             setattr(project, key, fields[key] or None)

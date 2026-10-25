@@ -45,8 +45,9 @@ class RenameRequest(BaseModel):
 
 
 class ProjectRequest(BaseModel):
+    project_id: Optional[str] = None
+    # Else a project by name, created if missing (the Atelier's memes project).
     project: str = ""
-    project_id: Optional[str] = None   # wins over the legacy name when given
 
 
 class BrOffsetRequest(BaseModel):
@@ -91,7 +92,6 @@ class _Target:
         self.path = path
         self.source_filename = source_filename
         self.project_id = project.id
-        self.legacy = project_service.legacy_name(project)
         self.source_id = source_id
 
 
@@ -229,7 +229,7 @@ async def create_batch(
         create_clip(
             db, e["clip_id"], e["name"], source_filename,
             e["start"], e["end"], e["segment_path"], e["thumbnail_path"],
-            fps=source_fps, project_id=project.id, project=project_service.legacy_name(project),
+            fps=source_fps, project_id=project.id,
         )
         for e in extracted
     ]
@@ -284,8 +284,7 @@ async def create_batch_local_job(req: BatchLocalRequest, db: Session = Depends(g
                 row = create_clip(
                     db, clip_id, c["name"].strip() or f"Clip {clip_id[:6]}",
                     source_filename, c["start"], c["end"], segment_path, thumb_path,
-                    source_path=path, fps=source_fps, project_id=target.project_id,
-                    project=target.legacy, source_id=target.source_id,
+                    fps=source_fps, project_id=target.project_id, source_id=target.source_id,
                 )
                 results.append(row)
 
@@ -349,9 +348,7 @@ async def create_batch_local(req: BatchLocalRequest, db: Session = Depends(get_d
         create_clip(
             db, e["clip_id"], e["name"], source_filename,
             e["start"], e["end"], e["segment_path"], e["thumbnail_path"],
-            source_path=target.path,
-            fps=source_fps, project_id=target.project_id,
-            project=target.legacy, source_id=target.source_id,
+            fps=source_fps, project_id=target.project_id, source_id=target.source_id,
         )
         for e in extracted
     ]
@@ -651,7 +648,7 @@ async def set_project(clip_id: str, req: ProjectRequest, db: Session = Depends(g
         project = _project_or_default(db, req.project_id)
     else:
         project = project_service.get_or_create_by_name(db, req.project)
-    clip = update_project(db, clip_id, project_service.legacy_name(project), project.id)
+    clip = update_project(db, clip_id, project.id)
     if not clip:
         raise HTTPException(404, "Clip not found")
     return clip

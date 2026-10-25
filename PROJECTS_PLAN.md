@@ -1,6 +1,6 @@
 # PROJECTS PLAN — from volatile screens to projects
 
-> Written 2026-10-23. Status: **decisions taken (§8). P1 → P5 done.**
+> Written 2026-10-23. Status: **done — P1 → P6 (2026-10-25).**
 > Goal: the app works the way professional dubbing/editing tools do. You create a **project**,
 > import one or more videos into it, then go through cutting clips → bande rythmo → dubbing →
 > export. Everything is saved: leave, reload or restart and you land where you left off.
@@ -286,12 +286,18 @@ Each phase ships on its own branch and leaves the app usable.
   the panel has a « Global » toggle (globals could no longer be created once every clip had a project).
 
 ### P6 · Project lifecycle + cleanup
-- [ ] Rename / colour / archive / delete (Q2) / move clips between projects.
-- [ ] Drop reads of `Clip.project`, `LexiconEntry.project`, `source_path`. Prune sources
-  with no project and no clips.
-- [ ] Update CLAUDE.md architecture + data model sections.
+- [x] Rename / colour / archive / delete (Q2) from the Projects home **and** the project view
+  (`ProjectBar` ⋯ menu: Modifier…, Archiver / Restaurer, Supprimer… with the typed name; archiving from
+  inside goes back to the Projects home, an archived project shows a badge). Move clips: Clips › Déplacer.
+- [x] `Clip.project`, `Clip.source_path`, `LexiconEntry.project` are no longer read or written outside
+  `services/project_migration.py` (which still needs them for databases upgrading from before P1). Clip
+  JSON drops `project` / `source_path`; `legacy_name` and the rename sync are gone; the lexicon API is
+  by `project_id` only (no param = globals). `PUT /clips/{id}/project` takes `project_id`, or a project
+  name (created if missing — the Atelier's memes project).
+- [x] Sources with no project and no clip are pruned at startup (with their remuxed audio).
+- [x] CLAUDE.md architecture + data model sections.
 - Later: project ZIP export/import, `owner_id` + sharing with hosted accounts, project-level
-  batch export (REMAKE Phase 3).
+  batch export (REMAKE Phase 3), dropping the historical columns once no pre-P1 database remains.
 
 **Suggested order:** P1 → P2 → P3 (fixes what users feel) → REMAKE Phase 2 → P4 → P5 → P6.
 
