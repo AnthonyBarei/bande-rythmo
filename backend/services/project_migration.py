@@ -1,7 +1,9 @@
 """Text tags → Project/Source rows (PROJECTS_PLAN §3).
 
 Every step only touches rows still missing a project/source, so it runs at
-each startup: idempotent, and it also adopts clips created by older screens."""
+each startup: idempotent, and it also adopts clips created by older screens.
+This module is the only reader of the pre-project columns (clips.project,
+clips.source_path, lexicon.project), kept for databases upgrading from them."""
 import json
 import logging
 import os
@@ -78,6 +80,20 @@ def _assign_lexicon(db: Session) -> int:
     return len(rows)
 
 
+def _prune_orphan_sources(db: Session) -> int:
+    """Sources outside any project with no clip: previews registered before
+    projects (pre-P3 Médiathèque) or by the Atelier's loose import, whose
+    state never survives a restart anyway. Their remuxed audio goes too."""
+    used = {sid for (sid,) in db.query(Clip.source_id).filter(Clip.source_id.isnot(None)).distinct()}
+    orphans = [s for s in db.query(Source).filter(Source.project_id.is_(None)) if s.id not in used]
+    for src in orphans:
+        db.delete(src)
+    db.commit()
+    for src in orphans:
+        source_service.remove_remuxes(src.id)
+    return len(orphans)
+
+
 def migrate_projects(bind) -> None:
     db = sessionmaker(bind=bind)()
     try:
@@ -87,11 +103,12 @@ def migrate_projects(bind) -> None:
         clips = _assign_projects(db)
         sources = _assign_sources(db)
         lexicon = _assign_lexicon(db)
+        pruned = _prune_orphan_sources(db)
         if first:
             db.merge(Meta(key=FLAG, value=datetime.now().isoformat()))
             db.commit()
-        if clips or sources or lexicon:
-            log.info("projects migration: %d clips → projects, %d → sources, %d lexicon entries",
-                     clips, sources, lexicon)
+        if clips or sources or lexicon or pruned:
+            log.info("projects migration: %d clips → projects, %d → sources, %d lexicon entries, "
+                     "%d orphan sources pruned", clips, sources, lexicon, pruned)
     finally:
         db.close()

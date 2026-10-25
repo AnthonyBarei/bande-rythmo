@@ -19,9 +19,9 @@ import StudioScreen from './components/StudioScreen'
 import { ExportScreenContext } from './components/exportScreen'
 import ProjectsHome from './components/projects/ProjectsHome'
 import ProjectBar from './components/projects/ProjectBar'
-import { MoveClipDialog } from './components/projects/ProjectDialogs'
+import { DeleteProjectDialog, MoveClipDialog, ProjectFormDialog } from './components/projects/ProjectDialogs'
 import { CLIP_STAGES, PROJECTS, formatRoute, parseRoute, projectRoute, resumeRoute } from './utils/route'
-import { createProject, getProject, listProjects, moveClip, patchProject } from './utils/projectsApi'
+import { createProject, deleteProject, fmtBytes, getProject, listProjects, moveClip, patchProject } from './utils/projectsApi'
 import { castMap, dropLegacyCast, hasLegacyCast, legacyCastPatch, putCast } from './utils/cast'
 import useProjectCast from './hooks/useProjectCast'
 
@@ -168,6 +168,7 @@ function AppInner() {
   const [cmdOpen, setCmdOpen] = useState(false)
   const [createPending, setCreatePending] = useState(false)   // N / palette → open « Nouveau projet »
   const [moving, setMoving] = useState(null)   // clip being moved to another project
+  const [projectDialog, setProjectDialog] = useState(null)   // 'edit' | 'delete' — the open project
   const lastClipRef = useRef({})               // projectId → last clip opened
   const [sourceSel, setSourceSel] = useState({})   // projectId → Médias source id (null = « Ajouter »)
   // Drafts written this session win over a project refresh that raced their PUT.
@@ -525,6 +526,36 @@ function AppInner() {
     if (projectId) refreshProject(projectId)
   }
 
+  // Project menu (ProjectBar ⋯) — same actions as the Projects home cards.
+  async function editProject(fields) {
+    await patchProject(project.id, fields)
+    setProjectDialog(null)
+    toast.success('Projet modifié')
+    refreshProject(project.id)
+  }
+
+  async function toggleArchiveProject() {
+    const archived = project.status === 'archived'
+    try {
+      await patchProject(project.id, { status: archived ? 'active' : 'archived' })
+      toast.success(archived ? `« ${project.name} » restauré` : `« ${project.name} » archivé`)
+      if (archived) refreshProject(project.id)
+      else go(PROJECTS)
+    } catch (e) {
+      console.error(e)
+      toast.error(`Échec : ${e.message}`)
+    }
+  }
+
+  async function removeProject(typed) {
+    const { id, name } = project
+    const { freed_bytes: freed } = await deleteProject(id, typed)
+    setProjectDialog(null)
+    handleProjectsChanged(id)
+    toast.success(`« ${name} » supprimé — ${fmtBytes(freed)} libérés`)
+    go(PROJECTS, { replace: true })
+  }
+
   // A deleted project takes its clips with it.
   function handleProjectsChanged(deletedId) {
     if (deletedId) setClips(prev => prev.filter(c => c.project_id !== deletedId))
@@ -579,6 +610,9 @@ function AppInner() {
           <ProjectBar project={project} stage={stage} clips={projectClips} clipId={route.clipId}
             onStage={goStage} onClip={id => go(projectRoute(projectId, stage, id))}
             onProjects={() => go(PROJECTS)}
+            onEdit={() => setProjectDialog('edit')}
+            onArchive={toggleArchiveProject}
+            onDelete={() => setProjectDialog('delete')}
             onCmd={() => setCmdOpen(true)} onHelp={() => setShortcutsOpen(true)} onActivity={() => navigate('activity')}
             account={account} />
         ) : (
@@ -673,6 +707,12 @@ function AppInner() {
         onOpenClip={handleDub}
         inProject={!!projectId}
       />
+      {project && projectDialog === 'edit' && (
+        <ProjectFormDialog project={project} onClose={() => setProjectDialog(null)} onSave={editProject} />
+      )}
+      {project && projectDialog === 'delete' && (
+        <DeleteProjectDialog project={project} onClose={() => setProjectDialog(null)} onDelete={removeProject} />
+      )}
       {moving && (
         <MoveClipDialog clip={moving} currentProjectId={moving.project_id} onClose={() => setMoving(null)}
           onMove={(targetId, targetName) => moveTo(moving, targetId, targetName)}

@@ -61,7 +61,6 @@ def _to_dict(clip: Clip) -> dict:
         "clip_id": clip.clip_id,
         "name": clip.name,
         "source_filename": clip.source_filename,
-        "source_path": _redact_token(clip.source_path),
         "start": clip.start,
         "end": clip.end,
         "segment_path": clip.segment_path,
@@ -69,7 +68,6 @@ def _to_dict(clip: Clip) -> dict:
         "status": clip.status or "todo",
         "fps": clip.fps or 25.0,
         "scene_cuts": _parse_scene_cuts(clip.scene_cuts),
-        "project": clip.project or "",
         "project_id": clip.project_id,
         "source_id": clip.source_id,
         "br_offset": clip.br_offset or 0.0,
@@ -96,14 +94,12 @@ def _to_dict(clip: Clip) -> dict:
 
 
 def create_clip(db: Session, clip_id, name, source_filename, start, end, segment_path, thumbnail_path,
-                source_path=None, fps=25.0, project_id=None, project=None, source_id=None):
+                fps=25.0, project_id=None, source_id=None):
     clip = Clip(
         clip_id=clip_id,
         name=name,
         source_filename=source_filename,
-        source_path=source_path,
         project_id=project_id,
-        project=project,
         source_id=source_id,
         start=start,
         end=end,
@@ -207,12 +203,10 @@ def update_scene_cuts(db: Session, clip_id, cuts):
     return _to_dict(clip)
 
 
-def update_project(db: Session, clip_id, project, project_id):
-    """Legacy text tag + project_id are written together until P6."""
+def update_project(db: Session, clip_id, project_id):
     clip = db.query(Clip).filter(Clip.clip_id == clip_id).first()
     if not clip:
         return None
-    clip.project = (project or "").strip() or None
     clip.project_id = project_id
     db.commit()
     db.refresh(clip)

@@ -18,7 +18,7 @@ export default function LexiconPanel({ projectId = null, projectName = '', trans
 
   const refresh = useCallback(async () => {
     try {
-      const r = await fetch(projectId ? `/api/lexicon?project_id=${encodeURIComponent(projectId)}` : '/api/lexicon?project=')
+      const r = await fetch(projectId ? `/api/lexicon?project_id=${encodeURIComponent(projectId)}` : '/api/lexicon')
       if (!r.ok) throw new Error(`HTTP ${r.status}`)
       setEntries(await r.json())
     } catch (e) {

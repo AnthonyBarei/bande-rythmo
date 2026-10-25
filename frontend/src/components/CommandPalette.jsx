@@ -33,7 +33,7 @@ export default function CommandPalette({ open, onClose, onNavigate, onNewClip, o
     const clipItems = clips.map(c => ({
       id: 'clip-' + c.clip_id, ic: ICONS.film,
       label: `Ouvrir — ${c.name || c.clip_id}`,
-      meta: c.project || (c.subtitles?.length ? `${c.subtitles.length} répl.` : ''),
+      meta: c.subtitles?.length ? `${c.subtitles.length} répl.` : '',
       run: () => onOpenClip?.(c),
     }))
     const query = q.trim().toLowerCase()

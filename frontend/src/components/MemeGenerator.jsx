@@ -96,11 +96,11 @@ export default function MemeGenerator({
   const clip = pickedId ? (clipList.find(c => c.clip_id === pickedId) || null) : clipProp
   const segmentUrl = clip?.segment_path ? `/${clip.segment_path}` : null
 
-  // Same project → color mapping as the library's project filter.
+  // One dot colour per project, so clips of the same project read as a group.
   const clipOptions = useMemo(() => {
-    const projects = [...new Set(clipList.map(c => c.project).filter(Boolean))].sort((a, b) => a.localeCompare(b))
+    const projects = [...new Set(clipList.map(c => c.project_id).filter(Boolean))]
     const color = p => p ? TRACK_HEXES[projects.indexOf(p) % TRACK_HEXES.length] : T.text4
-    return clipList.map(c => ({ v: c.clip_id, l: c.name || `Clip ${c.clip_id.slice(0, 6)}`, dot: color(c.project) }))
+    return clipList.map(c => ({ v: c.clip_id, l: c.name || `Clip ${c.clip_id.slice(0, 6)}`, dot: color(c.project_id) }))
   }, [clipList])
 
   // MEME_PLEX_HANDOFF §2 entry intent:

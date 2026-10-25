@@ -142,6 +142,25 @@ class MigrationTest(Base):
         self.assertIsNotNone(clip.source_id)
         db.close()
 
+    def test_prunes_orphan_sources(self):
+        self.init()
+        db = self.Local()
+        p = Project(id="p1", name="P")
+        db.add(p)
+        db.add(Source(id="loose", project_id=None, kind="local", path="C:/x.mov", filename="x.mov"))
+        db.add(Source(id="used", project_id=None, kind="local", path="C:/y.mov", filename="y.mov"))
+        db.add(Source(id="inproj", project_id="p1", kind="local", path="C:/z.mov", filename="z.mov"))
+        db.commit()
+        self.add_clip(db, "u1", project_id="p1", source_id="used")
+        db.close()
+        with open("sources/loose_a0.m4a", "wb") as f:
+            f.write(b"a")
+        self.init()
+        db = self.Local()
+        self.assertEqual(sorted(s.id for s in db.query(Source)), ["inproj", "used"])
+        db.close()
+        self.assertFalse(os.path.exists("sources/loose_a0.m4a"))
+
     def dump(self):
         with self.engine.connect() as conn:
             return {t: sorted(map(str, conn.execute(text(f"SELECT * FROM {t}")).fetchall()))
@@ -195,19 +214,21 @@ class ProjectsApiTest(Base):
         terms = sorted(e["term"] for e in self.c.get(f"/api/lexicon?project_id={a['id']}").json())
         self.assertEqual(terms, ["a-term", "global"])
         entry = next(e for e in self.c.get(f"/api/lexicon?project_id={a['id']}").json() if e["term"] == "a-term")
-        self.assertEqual((entry["project_id"], entry["project"]), (a["id"], "A"))
+        self.assertEqual(entry["project_id"], a["id"])
+        self.assertEqual([e["term"] for e in self.c.get("/api/lexicon").json()], ["global"])
         self.assertEqual(self.c.post("/api/lexicon", json={"project_id": "nope", "term": "x"}).status_code, 404)
 
-    def test_rename_keeps_legacy_tags_in_step(self):
+    def test_no_legacy_columns_written(self):
         db = self.Local()
         self.add_clip(db, "k1")
         db.close()
         self.c.put("/api/clips/k1/project", json={"project": "Old"})
-        pid = self.c.get("/api/clips/k1").json()["project_id"]
-        self.c.post("/api/lexicon", json={"project": "Old", "term": "t"})
-        self.c.patch(f"/api/projects/{pid}", json={"name": "New"})
-        self.assertEqual(self.c.get("/api/clips/k1").json()["project"], "New")
-        self.assertEqual(self.c.get("/api/lexicon?project=New").json()[0]["term"], "t")
+        clip = self.c.get("/api/clips/k1").json()
+        self.assertNotIn("project", clip)
+        self.assertNotIn("source_path", clip)
+        self.c.patch(f"/api/projects/{clip['project_id']}", json={"name": "New"})
+        with self.engine.connect() as conn:
+            self.assertIsNone(conn.execute(text("SELECT project FROM clips WHERE clip_id = 'k1'")).scalar())
 
     def test_delete_needs_typed_name_and_spares_source_video(self):
         p = self.c.post("/api/projects", json={"name": "Doomed"}).json()
@@ -255,14 +276,14 @@ class ClipFieldsTest(Base):
 
     def test_project_by_name_or_id_and_filter(self):
         r = self.c.put("/api/clips/a/project", json={"project": "Doc"}).json()
-        self.assertEqual(r["project"], "Doc")
         pid = r["project_id"]
+        self.assertEqual(self.c.get(f"/api/projects/{pid}").json()["name"], "Doc")
         self.assertEqual([c["clip_id"] for c in self.c.get(f"/api/clips/?project_id={pid}").json()], ["a"])
         other = self.c.post("/api/projects", json={"name": "Other"}).json()
         r = self.c.put("/api/clips/a/project", json={"project_id": other["id"]}).json()
-        self.assertEqual((r["project"], r["project_id"]), ("Other", other["id"]))
+        self.assertEqual(r["project_id"], other["id"])
         r = self.c.put("/api/clips/a/project", json={"project": ""}).json()
-        self.assertEqual(r["project"], "")
+        self.assertEqual(self.c.get(f"/api/projects/{r['project_id']}").json()["name"], "Clips importés")
         self.assertEqual(self.c.put("/api/clips/a/project", json={"project_id": "nope"}).status_code, 404)
 
     def test_br_offset_and_ui_state(self):

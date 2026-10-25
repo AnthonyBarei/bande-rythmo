@@ -1,5 +1,5 @@
 import React from 'react'
-import { T, Icon, ICONS, Btn, Select, Kbd, Dot } from '../../ui'
+import { T, Icon, ICONS, Btn, Select, Kbd, Dot, Popover, MenuItem, MenuSep } from '../../ui'
 import { CLIP_STAGES } from '../../utils/route'
 import { projectColor } from './ProjectDialogs'
 
@@ -14,7 +14,8 @@ export const STAGE_TABS = [
 // Project shell bar (PROJECTS_PLAN §4): Projets › name · stage tabs · clip
 // switcher on clip stages · the top bar's tools. Replaces the top bar inside
 // a project so every stage keeps one 52 px header.
-export default function ProjectBar({ project, stage, clips, clipId, onStage, onClip, onProjects, onCmd, onHelp, onActivity, account }) {
+// onEdit / onArchive / onDelete: the project menu (⋯), same actions as the Projects home cards.
+export default function ProjectBar({ project, stage, clips, clipId, onStage, onClip, onProjects, onEdit, onArchive, onDelete, onCmd, onHelp, onActivity, account }) {
   const clipStage = CLIP_STAGES.has(stage)
   const index = clips.findIndex(c => c.clip_id === clipId)
   const options = clips.map(c => ({ v: c.clip_id, l: c.name || `Clip ${c.clip_id.slice(0, 6)}` }))
@@ -36,7 +37,25 @@ export default function ProjectBar({ project, stage, clips, clipId, onStage, onC
       <div title={project?.name} style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, maxWidth: 240, flexShrink: 1 }}>
         <Dot color={projectColor(project)} size={8} />
         <span style={{ fontSize: T.fs.sm, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{project?.name || '…'}</span>
+        {project?.status === 'archived' && (
+          <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.8, textTransform: 'uppercase', color: T.text3, border: `1px solid ${T.border2}`, borderRadius: 5, padding: '1px 6px', flexShrink: 0 }}>Archivé</span>
+        )}
       </div>
+      {project && (
+        <Popover width={210} trigger={(open, toggle) => (
+          <Btn size="sm" variant={open ? 'solid' : 'ghost'} onClick={toggle} title="Actions du projet"
+            style={{ width: 30, padding: 0, fontSize: 16, letterSpacing: 1 }}>⋯</Btn>
+        )}>
+          {close => <>
+            <MenuItem icon={ICONS.edit} onClick={() => { close(); onEdit() }}>Modifier…</MenuItem>
+            <MenuItem icon={ICONS.folder} onClick={() => { close(); onArchive() }}>
+              {project.status === 'archived' ? 'Restaurer' : 'Archiver'}
+            </MenuItem>
+            <MenuSep />
+            <MenuItem icon={ICONS.trash} danger onClick={() => { close(); onDelete() }}>Supprimer…</MenuItem>
+          </>}
+        </Popover>
+      )}
 
       <nav aria-label="Étapes du projet" style={{ display: 'flex', alignItems: 'center', gap: 2, marginLeft: 10, height: 52, flexShrink: 0 }}>
         {STAGE_TABS.map(t => {
