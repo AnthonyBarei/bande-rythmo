@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { T, Icon, ICONS, Btn, alpha, pressable } from '../../ui'
 import { fmtDuration } from '../../utils/duration'
 import { draftRangeCount } from '../../utils/sources'
@@ -7,7 +7,7 @@ const KIND_ICON = { local: ICONS.film, library: ICONS.layers, url: ICONS.plug }
 
 // Médias stage — the project's videos (PROJECTS_PLAN §4). A row restores its
 // cut in progress; « Ajouter » shows the import tabs.
-export default function SourceList({ sources, selectedId, onSelect, onAdd, onRelink }) {
+export default function SourceList({ sources, selectedId, onSelect, onAdd, onRelink, onRemove }) {
   const adding = selectedId == null
   return (
     <div style={{ width: 260, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 8, minHeight: 0 }}>
@@ -23,13 +23,14 @@ export default function SourceList({ sources, selectedId, onSelect, onAdd, onRel
             Aucune vidéo pour l’instant. Ajoute un fichier, un élément de la médiathèque ou une URL.
           </div>
         )}
-        {sources.map(s => <SourceRow key={s.id} source={s} on={s.id === selectedId} onSelect={onSelect} onRelink={onRelink} />)}
+        {sources.map(s => <SourceRow key={s.id} source={s} on={s.id === selectedId} onSelect={onSelect} onRelink={onRelink} onRemove={onRemove} />)}
       </div>
     </div>
   )
 }
 
-function SourceRow({ source, on, onSelect, onRelink }) {
+function SourceRow({ source, on, onSelect, onRelink, onRemove }) {
+  const [h, setH] = useState(false)
   const ranges = draftRangeCount(source.draft)
   const offline = !source.online
   const meta = [
@@ -38,6 +39,7 @@ function SourceRow({ source, on, onSelect, onRelink }) {
   ].filter(Boolean).join(' · ')
   return (
     <div {...pressable(() => onSelect(source.id))} onClick={() => onSelect(source.id)}
+      onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)} onFocus={() => setH(true)} onBlur={() => setH(false)}
       aria-current={on ? 'true' : undefined} title={source.path || source.filename}
       style={{
         display: 'flex', gap: 10, padding: '10px 11px', borderRadius: T.r.ctl, cursor: 'pointer',
@@ -46,8 +48,17 @@ function SourceRow({ source, on, onSelect, onRelink }) {
       }}>
       <Icon d={KIND_ICON[source.kind] || ICONS.film} size={16} stroke={on ? T.accent : T.text3} style={{ flexShrink: 0, marginTop: 1 }} />
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
-        <div style={{ fontSize: T.fs.sm, fontWeight: 500, color: on ? T.text : T.text2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {source.filename || 'Sans nom'}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ flex: 1, minWidth: 0, fontSize: T.fs.sm, fontWeight: 500, color: on ? T.text : T.text2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {source.filename || 'Sans nom'}
+          </div>
+          {onRemove && (
+            <button data-rd onClick={e => { e.stopPropagation(); onRemove(source) }} title="Retirer la vidéo du projet"
+              aria-label={`Retirer ${source.filename || 'la vidéo'} du projet`}
+              style={{ background: 'transparent', border: 'none', padding: 2, cursor: 'pointer', display: 'flex', opacity: h || on ? 1 : 0, transition: 'opacity .15s', flexShrink: 0 }}>
+              <Icon d={ICONS.trash} size={13} stroke={T.text3} />
+            </button>
+          )}
         </div>
         <div style={{ fontSize: 11, color: T.text3, fontFamily: T.fontMono }}>{meta}</div>
         {(ranges > 0 || offline) && (

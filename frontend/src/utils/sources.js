@@ -32,6 +32,39 @@ export function relinkSource(id, path = null) {
   return call(`/api/sources/${enc(id)}/relink${q}`, { method: 'POST' })
 }
 
+// Removes the video from the project; its clips stay (cut already).
+export function deleteSource(id) {
+  return call(`/api/sources/${enc(id)}`, { method: 'DELETE' })
+}
+
+// Reads the tracks of a source that has none stored (registered before P3).
+export function probeSource(id) {
+  return call(`/api/sources/${enc(id)}/probe`, { method: 'POST' })
+}
+
+// { tracks: [{ index, label, codec, language, direct, ready }], job_id }
+export function getAudioTracks(id) {
+  return call(`/api/sources/${enc(id)}/audio`)
+}
+
+// Extracts every track the browser can't play as is, once: { status, job_id }.
+export function prepareAudio(id) {
+  return call(`/api/sources/${enc(id)}/prepare-audio`, { method: 'POST' })
+}
+
+export function hasTracks(src) {
+  const s = src?.streams || {}
+  return (s.video_streams?.length || 0) + (s.audio_streams?.length || 0) > 0
+}
+
+// The separate audio to play next to the video: none when the video's own
+// default track plays (Auto on a browser-safe default, or that track picked).
+export function audioSrcFor(sourceId, tracks, chosen) {
+  const t = (tracks || []).find(x => x.index === (chosen ?? 0))
+  if (!t || t.direct || !t.ready) return null
+  return `/api/files/stream/${encodeURIComponent(sourceId)}?audio=${t.index}`
+}
+
 export function addUrlSource(projectId, path, filename) {
   return call(`/api/projects/${enc(projectId)}/sources`, { method: 'POST', body: JSON.stringify({ path, filename }) })
 }

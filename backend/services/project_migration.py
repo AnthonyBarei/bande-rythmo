@@ -14,7 +14,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session, sessionmaker
 
 from models import Clip, LexiconEntry, Meta, Source
-from services import project_service, source_service
+from services import project_service, source_audio, source_service
 
 log = logging.getLogger("br.migration")
 
@@ -91,6 +91,10 @@ def _prune_orphan_sources(db: Session) -> int:
     db.commit()
     for src in orphans:
         source_service.remove_remuxes(src.id)
+    known = {sid for (sid,) in db.query(Source.id)}
+    strays = source_audio.prune_stray_remuxes(known)
+    if strays:
+        log.info("projects migration: %d stray remux files removed", strays)
     return len(orphans)
 
 
