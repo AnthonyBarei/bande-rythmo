@@ -150,16 +150,23 @@ class MigrationTest(Base):
         db.add(Source(id="loose", project_id=None, kind="local", path="C:/x.mov", filename="x.mov"))
         db.add(Source(id="used", project_id=None, kind="local", path="C:/y.mov", filename="y.mov"))
         db.add(Source(id="inproj", project_id="p1", kind="local", path="C:/z.mov", filename="z.mov"))
+        live = "1a2b3c4d-0000-4000-8000-000000000001"
+        db.add(Source(id=live, project_id="p1", kind="local", path="C:/w.mov", filename="w.mov"))
         db.commit()
         self.add_clip(db, "u1", project_id="p1", source_id="used")
         db.close()
-        with open("sources/loose_a0.m4a", "wb") as f:
-            f.write(b"a")
+        stray = "0d5e1f2a-0000-4000-8000-000000000000"
+        for name in ("loose_a0.m4a", "inproj_a1.m4a", f"{live}_a0.m4a", f"{live}_a2.m4a.part",
+                     f"{stray}_a0.m4a", f"{stray}_v0_a1.mp4", "film.mov"):
+            with open(os.path.join("sources", name), "wb") as f:
+                f.write(b"a")
         self.init()
         db = self.Local()
-        self.assertEqual(sorted(s.id for s in db.query(Source)), ["inproj", "used"])
+        self.assertEqual(sorted(s.id for s in db.query(Source)), sorted(["inproj", "used", live]))
         db.close()
-        self.assertFalse(os.path.exists("sources/loose_a0.m4a"))
+        # Remuxes of pruned / unknown sources and half-written parts go; a live
+        # source's remux and the videos stay.
+        self.assertEqual(sorted(os.listdir("sources")), sorted(["film.mov", "inproj_a1.m4a", f"{live}_a0.m4a"]))
 
     def dump(self):
         with self.engine.connect() as conn:
@@ -325,6 +332,46 @@ class SourcesTest(Base):
         r = self.c.post("/api/clips/batch-local-job",
                         json={"source_id": "s1", "clips": [{"start": 0, "end": 1}]})
         self.assertEqual(r.status_code, 409)
+
+    def test_probe_fills_missing_tracks(self):
+        streams = {"video_streams": [{"relative_index": 0, "label": "H264"}],
+                   "audio_streams": [{"relative_index": 0, "label": "AC3 · fre", "codec": "AC3"}], "duration": 9.5}
+        with mock.patch.object(sources, "probe_streams", return_value=streams):
+            r = self.c.post("/api/sources/s1/probe").json()
+        self.assertEqual((r["streams"]["audio_streams"][0]["codec"], r["duration"]), ("AC3", 9.5))
+
+    def test_audio_tracks_prepared_in_one_pass(self):
+        streams = {"video_streams": [], "audio_streams": [
+            {"relative_index": 0, "label": "AAC · eng", "codec": "AAC"},
+            {"relative_index": 1, "label": "AC3 · fre", "codec": "AC3"},
+            {"relative_index": 2, "label": "MP3 · ita", "codec": "MP3"},
+        ]}
+        self.c.patch("/api/sources/s1", json={"streams": streams})
+        tracks = self.c.get("/api/sources/s1/audio").json()["tracks"]
+        self.assertEqual([(t["index"], t["direct"], t["ready"]) for t in tracks],
+                         [(0, True, True), (1, False, False), (2, False, False)])
+        seen = {}
+
+        def fake_ffmpeg(cmd, duration, **kw):
+            seen["cmd"] = cmd
+            for out in [a for a in cmd if a.endswith(".part")]:
+                with open(out, "wb") as f:
+                    f.write(b"a")
+            return 0
+        with mock.patch.object(sources, "run_ffmpeg_with_progress", side_effect=fake_ffmpeg), \
+             mock.patch.object(sources, "_run_in_background", side_effect=lambda fn: fn()):
+            r = self.c.post("/api/sources/s1/prepare-audio").json()
+        self.assertEqual(r["status"], "pending")
+        cmd = seen["cmd"]
+        self.assertEqual(cmd.count("-i"), 1)                       # one read of the source
+        self.assertIn("0:a:1", cmd)
+        self.assertIn("0:a:2", cmd)
+        self.assertNotIn("0:a:0", cmd)                             # default AAC plays as is
+        self.assertEqual(cmd[cmd.index("0:a:1") + 3], "aac")       # AC3 → AAC
+        self.assertEqual(cmd[cmd.index("0:a:2") + 3], "copy")      # MP3 copied
+        self.assertTrue(all(t["ready"] for t in self.c.get("/api/sources/s1/audio").json()["tracks"]))
+        self.assertEqual(self.c.post("/api/sources/s1/prepare-audio").json()["status"], "ready")
+        self.assertFalse(any(n.endswith(".part") for n in os.listdir("sources")))
 
     def test_delete_source_keeps_clips(self):
         self.assertTrue(self.c.delete("/api/sources/s1").json()["ok"])

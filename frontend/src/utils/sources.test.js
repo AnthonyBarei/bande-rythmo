@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildDraft, draftRangeCount, videoFromSource } from './sources'
+import { audioSrcFor, buildDraft, draftRangeCount, videoFromSource } from './sources'
 
 describe('videoFromSource', () => {
   it('streams local and library sources through the backend', () => {
@@ -30,5 +30,23 @@ describe('buildDraft / draftRangeCount', () => {
 
   it('does not count a half-open IN', () => {
     expect(draftRangeCount(buildDraft([], { markIn: 3, markOut: null }, '', 0))).toBe(0)
+  })
+})
+
+describe('audioSrcFor', () => {
+  const tracks = [
+    { index: 0, direct: false, ready: true },
+    { index: 1, direct: false, ready: false },
+    { index: 2, direct: true, ready: true },
+  ]
+  it('plays an extracted track next to the video', () => {
+    expect(audioSrcFor('s', tracks, null)).toBe('/api/files/stream/s?audio=0')
+  })
+  it('waits for a track still being prepared', () => {
+    expect(audioSrcFor('s', tracks, 1)).toBeNull()
+  })
+  it('lets the video play its own direct track', () => {
+    expect(audioSrcFor('s', tracks, 2)).toBeNull()
+    expect(audioSrcFor('s', [], null)).toBeNull()
   })
 })

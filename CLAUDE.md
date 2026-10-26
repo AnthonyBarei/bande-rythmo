@@ -40,7 +40,8 @@ backend/
                            # + project (déplacer) + br-offset + ui-state (fusion) ; batch → project_id/source_id
     projects.py            # /api/projects : liste, création, détail (sources, cast, disk_bytes), patch, suppression (nom tapé),
                            # sources/pick + sources URL, PUT /cast
-    sources.py             # /api/sources/{id} : pistes, brouillon (PUT /draft), relink (contrôle durée), suppression
+    sources.py             # /api/sources/{id} : pistes (+ /probe), audio navigateur (GET /audio, POST /prepare-audio),
+                           # brouillon (PUT /draft), relink (contrôle durée), suppression (clips gardés)
     export.py              # SRT/ASS/DetX/Croisillé/MP4/GIF/MP3/WAV + quality presets + GPU + plage perso + historique
     meme.py                # génération memes (image/GIF)
     files.py               # pick / register / remux / stream des sources (table `sources`, survit au redémarrage)
@@ -60,6 +61,8 @@ backend/
     clip_service.py        # store clips + update_boucles/fps/scene_cuts/project/br_offset/ui_state/...
     project_service.py     # projets : CRUD, compteurs, cast, disk_bytes, suppression (fichiers dérivés)
     source_service.py      # sources : classify (local/url/library), resolve_path, offline, remux
+    source_audio.py        # pistes audio navigateur : état par piste, extraction de toutes en 1 passe ffmpeg,
+                           # purge des remux orphelins / .part au démarrage
     project_migration.py   # au démarrage : tags texte → projets/sources (+ sauvegarde), purge des sources orphelines
     files_dialog.py        # sélecteur de fichier Windows natif
     br_renderer.py         # rendu bande rythmo + _draw_signs (burn détection) + polices uploadées
@@ -87,7 +90,8 @@ frontend/src/
   detection.js             # classifyChar() + SIGN_KINDS + DEFAULT_SIGN_TOGGLES (miroir detection.py)
   components/
     Sidebar.jsx            # nav rail: Projets / Atelier · Activité / Réglages
-    ImportSection.jsx      # étape Médias : vidéos du projet (pistes + brouillon de découpe sauvés) + onglets Ajouter
+    ImportSection.jsx      # étape Médias : vidéos du projet (pistes + brouillon de découpe sauvés, retirer une vidéo),
+                           # pistes audio préparées une fois → changement de langue immédiat ; onglets Ajouter
                            # (fichier / Médiathèque / URL) ; mode libre pour l'import de l'Atelier
     VideoEditor.jsx        # éditeur clip (job-mode batch)
     TimelineBar.jsx        # timeline zoom + minimap (import)
@@ -123,6 +127,8 @@ frontend/app/index.html    # entrée de l'atelier (/app/) ; frontend/index.html 
 - ~~BR décalée ~1s~~ : `-ss` après `-i` dans extract_segment (fix appliqué). Slider `brOffset` (-2s/+2s) = échappatoire.
 - ~~Deadlock jobs ffmpeg~~ : `run_ffmpeg_with_progress` stderr PIPE non drainé → DEVNULL (fix).
 - Vite proxy doit cibler `http://127.0.0.1:8000` (pas `localhost`) — Windows IPv6
+- Chrome ne lit que la piste audio par défaut d'un fichier (pas de `audioTracks`) et reste muet en AC3/EAC3/DTS :
+  les autres pistes sont extraites une fois (`sources/{id}_a{n}.m4a`) et lues à côté de la vidéo muette.
 - `uvicorn --reload` figé sous Windows : au reload il attend la fermeture de toutes les connexions (WebSocket des jobs, streaming vidéo) → le worker ne redémarre jamais et l'API ne répond plus. Toujours lancer avec `--timeout-graceful-shutdown 2`.
 
 ## Export MP4 + BR — bonnes pratiques (texte défilant lisible)

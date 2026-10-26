@@ -222,6 +222,13 @@ function AppInner() {
     return project.sources.some(s => s.id === saved) ? saved : project.sources[0]?.id ?? null
   }, [project, projectId, sourceSel])
 
+  // A video taken out of the project: its clips stay, without a source.
+  const removeSourceLocal = useCallback(id => {
+    delete localDraftsRef.current[id]
+    setProject(p => (p ? { ...p, sources: p.sources.filter(s => s.id !== id) } : p))
+    setClips(prev => prev.map(c => (c.source_id === id ? { ...c, source_id: null } : c)))
+  }, [])
+
   // Partial source update (track pick, draft) or a new source of this project.
   const updateSource = useCallback(patch => {
     if ('draft' in patch) localDraftsRef.current[patch.id] = patch.draft
@@ -632,6 +639,7 @@ function AppInner() {
             selectedSourceId={selectedSourceId}
             onSelectSource={id => setSourceSel(prev => ({ ...prev, [projectId]: id }))}
             onSourceUpdated={updateSource}
+            onSourceRemoved={removeSourceLocal}
             onClipsCreated={handleClipsCreated}
           />
         )}

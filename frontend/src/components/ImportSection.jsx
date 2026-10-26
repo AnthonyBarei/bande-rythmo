@@ -3,7 +3,10 @@ import VideoEditor from './VideoEditor'
 import LibraryBrowser from './LibraryBrowser'
 import SourceList from './import/SourceList'
 import Dialog from './projects/Dialog'
-import { addUrlSource, patchSource, putDraft, relinkSource, videoFromSource } from '../utils/sources'
+import {
+  addUrlSource, audioSrcFor, deleteSource, getAudioTracks, hasTracks, patchSource, prepareAudio, probeSource,
+  putDraft, relinkSource, videoFromSource,
+} from '../utils/sources'
 import { fmtDuration } from '../utils/duration'
 import { Btn, Dot, Kbd, Icon, ICONS, Spinner, T, alpha, pressable } from '../ui'
 import { useProgress } from '../ProgressContext'
@@ -29,7 +32,7 @@ const MARK_BTN = {
 // · loose (`video` / `onVideoSet`, the Atelier's inline import): one transient
 //   source, clips go to the default « Clips importés » bucket.
 export default function ImportSection({
-  projectId = null, sources = null, selectedSourceId = null, onSelectSource, onSourceUpdated,
+  projectId = null, sources = null, selectedSourceId = null, onSelectSource, onSourceUpdated, onSourceRemoved,
   video: looseVideo, onVideoSet, onClipsCreated,
 }) {
   const projectMode = !!projectId && Array.isArray(sources)
@@ -39,6 +42,12 @@ export default function ImportSection({
     [projectMode, source, looseVideo])
   const offline = !!source && !source.online
   const [relinkAsk, setRelinkAsk] = useState(null)   // { source, detail } — duration mismatch
+  const [removeAsk, setRemoveAsk] = useState(null)   // source to take out of the project
+  // Project mode: every audio track is extracted once (one ffmpeg pass), then
+  // picking a language only swaps the audio element — no per-pick remux.
+  const [audioTracks, setAudioTracks] = useState(null)   // [{ index, direct, ready, … }]
+  const [preparing, setPreparing] = useState(false)
+  const streamsKey = JSON.stringify(source?.streams || null)
   const [tab, setTab] = useState(TAB.LOCAL)
   const [error, setError] = useState(null)
   const [urlInput, setUrlInput] = useState('')
@@ -92,11 +101,57 @@ export default function ImportSection({
     setStreams(hasStreams ? s : null)
     setVideoStream(source.video_stream ?? null)
     setAudioStream(source.audio_stream ?? null)
-  }, [projectMode, source?.id])
+  }, [projectMode, source?.id, streamsKey])
 
+  // A source registered before its tracks were stored: read them now.
+  useEffect(() => {
+    if (!projectMode || !source || !source.online || hasTracks(source)) return
+    let live = true
+    probeSource(source.id)
+      .then(updated => { if (live) onSourceUpdated(updated) })
+      .catch(e => { console.error(e); if (live) setError('Lecture des pistes impossible : ' + e.message) })
+    return () => { live = false }
+  }, [projectMode, source?.id, source?.online, streamsKey])
+
+  // Audio tracks: what is playable now, and one preparation job for the rest.
+  useEffect(() => {
+    setAudioTracks(null)
+    setPreparing(false)
+    if (!projectMode || !source || !source.online || !hasTracks(source)) return
+    let live = true
+    const sid = source.id
+    const refresh = () => getAudioTracks(sid).then(r => { if (live) setAudioTracks(r.tracks) })
+    const follow = jobId => {
+      setPreparing(true)
+      progress.start({
+        kind: 'audio-tracks', title: 'Préparation des pistes audio', jobId,
+        retry: () => prepareAudio(sid).then(r => r.job_id),
+        onDone: () => { if (!live) return; setPreparing(false); refresh().catch(e => console.error(e)) },
+        onError: err => { if (!live) return; setPreparing(false); setError('Pistes audio : ' + err.message) },
+        onCancel: () => { if (live) setPreparing(false) },
+      })
+    }
+    ;(async () => {
+      try {
+        const { tracks, job_id: running } = await getAudioTracks(sid)
+        if (!live) return
+        setAudioTracks(tracks)
+        if (running) { follow(running); return }
+        if (tracks.every(t => t.ready)) return
+        const r = await prepareAudio(sid)
+        if (live && r.job_id) follow(r.job_id)
+      } catch (e) {
+        console.error(e)
+        if (live) setError('Pistes audio : ' + e.message)
+      }
+    })()
+    return () => { live = false }
+  }, [projectMode, source?.id, source?.online, streamsKey])
+
+  // Loose mode (the Atelier's import): extract the picked track on demand.
   useEffect(() => {
     const sid = sourceIdRef.current
-    if (!sid) return
+    if (projectMode || !sid) return
     if (audioStream === null && videoStream === null) {
       setAudioSrc(null)  // back to Auto = use video's default audio
       return
@@ -347,6 +402,7 @@ export default function ImportSection({
   const { count, saving, duration, phase } = editorState
   const markBtn = MARK_BTN[phase] || MARK_BTN.none
   const sourceFps = videoOptions[videoStream ?? 0]?.fps
+  const playAudioSrc = projectMode ? audioSrcFor(source?.id, audioTracks, audioStream) : audioSrc
 
   const meta = video ? [
     duration ? fmtSMPTE(duration, sourceFps) : null,
@@ -367,7 +423,7 @@ export default function ImportSection({
               {meta}
               {video?.libraryTitle && <><Dot color={T.success} size={6} /> <span style={{ color: T.success, overflow: 'hidden', textOverflow: 'ellipsis' }}>depuis {video.libraryName} · {video.libraryTitle}{video.libraryYear ? ` (${video.libraryYear})` : ''}</span></>}
               {video && !video.libraryTitle && <span style={{ color: T.text4, overflow: 'hidden', textOverflow: 'ellipsis' }}>{source?.kind === 'library' ? 'depuis la médiathèque' : video.sourceId ? video.sourcePath : 'URL directe'}</span>}
-              {(picking || remuxing) && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, color: T.accent }}><Spinner />{picking ? 'Ouverture…' : 'Changement piste…'}</span>}
+              {(picking || remuxing || preparing) && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, color: T.accent }}><Spinner />{picking ? 'Ouverture…' : preparing ? 'Préparation des pistes…' : 'Changement piste…'}</span>}
             </div>
           </div>
           {video && !offline && (
@@ -422,7 +478,8 @@ export default function ImportSection({
       <div style={{ flex: 1, minHeight: 0, padding: '16px 32px 20px', display: 'flex', gap: 18, overflow: 'hidden' }}>
         {projectMode && (
           <SourceList sources={sources} selectedId={source?.id ?? null}
-            onSelect={id => onSelectSource(id)} onAdd={() => onSelectSource(null)} onRelink={src => relink(src)} />
+            onSelect={id => onSelectSource(id)} onAdd={() => onSelectSource(null)} onRelink={src => relink(src)}
+            onRemove={src => setRemoveAsk(src)} />
         )}
         {offline ? (
           <OfflinePanel source={source} onRelink={() => relink(source)} />
@@ -437,7 +494,7 @@ export default function ImportSection({
               onClipsCreated={onClipsCreated}
               videoStream={videoStream}
               audioStream={audioStream}
-              audioSrc={audioSrc}
+              audioSrc={playAudioSrc}
               fps={sourceFps}
               actionsRef={editorActions}
               onStateChange={setEditorState}
@@ -449,8 +506,9 @@ export default function ImportSection({
               audioStream={audioStream}
               onVideo={v => chooseTracks('video', v)}
               onAudio={a => chooseTracks('audio', a)}
-              remuxing={remuxing}
+              remuxing={projectMode ? false : remuxing}
               hasStreams={!!streams}
+              audioTracks={projectMode ? audioTracks : null}
             />
           </>
         ) : tab === TAB.LIBRARY ? (
@@ -474,6 +532,16 @@ export default function ImportSection({
           </EmptySource>
         )}
       </div>
+      {removeAsk && (
+        <RemoveSourceDialog source={removeAsk} onClose={() => setRemoveAsk(null)}
+          onConfirm={async () => {
+            const src = removeAsk
+            await deleteSource(src.id)
+            setRemoveAsk(null)
+            onSourceRemoved(src.id)
+            if (src.id === source?.id) onSelectSource(sources.find(s => s.id !== src.id)?.id ?? null)
+          }} />
+      )}
       {relinkAsk && (
         <Dialog title="Durée différente" onClose={() => setRelinkAsk(null)}
           sub={`« ${relinkAsk.source.filename} » durait ${fmtDuration(relinkAsk.detail.expected)}, le fichier choisi dure ${fmtDuration(relinkAsk.detail.found)}. Ce n’est peut-être pas la même vidéo.`}
@@ -485,6 +553,44 @@ export default function ImportSection({
         </Dialog>
       )}
     </div>
+  )
+}
+
+// Take a video out of the project: its clips stay (already cut), the file on
+// disk is never touched, the draft and extracted audio go.
+function RemoveSourceDialog({ source, onClose, onConfirm }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+  const clips = source.clip_count || 0
+  async function confirm() {
+    if (busy) return
+    setBusy(true)
+    try {
+      await onConfirm()
+    } catch (e) {
+      console.error(e)
+      setError(e.message)
+      setBusy(false)
+    }
+  }
+  return (
+    <Dialog title={`Retirer « ${source.filename} » du projet ?`} onClose={onClose} onSubmit={confirm}
+      footer={<>
+        <Btn variant="ghost" onClick={onClose}>Annuler</Btn>
+        <Btn variant="solid" danger onClick={confirm} disabled={busy}>Retirer la vidéo</Btn>
+      </>}>
+      <div style={{ fontSize: T.fs.sm, color: T.text2, lineHeight: 1.6 }}>
+        {clips
+          ? <>Les {clips} clip{clips > 1 ? 's' : ''} déjà découpé{clips > 1 ? 's' : ''} restent dans le projet.</>
+          : 'Aucun clip n’a été découpé dans cette vidéo.'}
+        {source.draft?.pending?.length ? ' Les plages en attente seront perdues.' : ''}
+      </div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: T.fs.xs, color: T.text3, lineHeight: 1.5 }}>
+        <Icon d={ICONS.check} size={14} stroke={T.success} style={{ flexShrink: 0, marginTop: 1 }} />
+        Le fichier vidéo n’est pas supprimé du disque.
+      </div>
+      {error && <div role="alert" style={{ fontSize: 12, color: T.danger }}>{error}</div>}
+    </Dialog>
   )
 }
 
@@ -528,8 +634,12 @@ function EmptySource({ icon, title, hint, onClick, children }) {
 // Reference screen-import.jsx StreamPicker. "Auto" rows keep the app's
 // default-track behaviour (no remux) — the reference has no such row.
 // FIXES_R5 #19: a single track is a read-only row; the picker starts at 2.
-function StreamPicker({ videoOptions, audioOptions, videoStream, audioStream, onVideo, onAudio, remuxing, hasStreams }) {
+// audioTracks (project mode): readiness per track — every track is prepared
+// once, so a pick only waits while that track is still being extracted.
+function StreamPicker({ videoOptions, audioOptions, videoStream, audioStream, onVideo, onAudio, remuxing, hasStreams, audioTracks }) {
   const canPick = videoOptions.length > 1 || audioOptions.length > 1
+  const pending = i => audioTracks && audioTracks.find(t => t.index === i)?.ready === false
+  const anyPending = !!audioTracks && audioTracks.some(t => !t.ready)
   return (
     <div style={{ width: 264, flexShrink: 0, background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.r.card, padding: 16, display: 'flex', flexDirection: 'column', gap: 16, overflow: 'auto' }}>
       <div>
@@ -558,18 +668,23 @@ function StreamPicker({ videoOptions, audioOptions, videoStream, audioStream, on
           {audioOptions.length === 1 ? <StreamInfo icon={ICONS.volume} label={streamLabel(audioOptions[0])} /> : (<>
             <StreamRow on={audioStream == null} onClick={() => onAudio(null)} disabled={remuxing} icon={ICONS.volume} label="Auto" meta="piste par défaut" />
             {audioOptions.map(s => (
-              <StreamRow key={s.relative_index} icon={ICONS.volume} label={streamLabel(s)} meta={`A${s.relative_index}`}
+              <StreamRow key={s.relative_index} icon={ICONS.volume} label={streamLabel(s)}
+                meta={pending(s.relative_index) ? `A${s.relative_index} · préparation…` : `A${s.relative_index}`}
                 on={audioStream === s.relative_index} disabled={remuxing}
                 onClick={() => onAudio(s.relative_index)} />
             ))}
           </>)}
         </div>
       )}
-      {hasStreams && (canPick || remuxing) && (
+      {hasStreams && (canPick || remuxing || anyPending) && (
         <div style={{ padding: 11, background: T.bg2, border: `1px solid ${T.border}`, borderRadius: T.r.ctl, fontSize: 11, color: T.text3, lineHeight: 1.5, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-          {remuxing
-            ? <><Spinner size={10} /><span>Remux en cours — <span style={{ color: T.text2 }}>extraction de la piste</span> choisie.</span></>
-            : <span>Une piste autre qu’Auto est <span style={{ color: T.text2 }}>extraite (remux)</span> avant la découpe.</span>}
+          {audioTracks
+            ? anyPending
+              ? <><Spinner size={10} /><span>Préparation des pistes audio — <span style={{ color: T.text2 }}>une seule fois</span>, ensuite le changement de langue est immédiat.</span></>
+              : <span>Toutes les pistes sont prêtes : <span style={{ color: T.text2 }}>changement de langue immédiat</span>.</span>
+            : remuxing
+              ? <><Spinner size={10} /><span>Remux en cours — <span style={{ color: T.text2 }}>extraction de la piste</span> choisie.</span></>
+              : <span>Une piste autre qu’Auto est <span style={{ color: T.text2 }}>extraite (remux)</span> avant la découpe.</span>}
         </div>
       )}
       <div style={{ flex: 1 }} />
